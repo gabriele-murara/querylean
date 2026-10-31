@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=QueryLean
+Comment=Client MySQL minimale per query di sola lettura
+Exec=querylean
+Icon=querylean
+Categories=Development;Database;
+Terminal=false

@@ -1,0 +1,60 @@
+# --- Segreti e configurazioni locali (mai committare credenziali) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.cer
+*.mobileprovision
+
+# --- Ambienti virtuali Python ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- Bytecode e artefatti di build Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+.eggs/
+pip-wheel-metadata/
+
+# --- Build e packaging (PyInstaller, AppImage, DMG) ---
+build/
+dist/
+*.AppImage
+*.dmg
+*.spec.bak
+appimagetool-*.AppImage
+
+# --- Test, coverage e analisi statica ---
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.tox/
+.nox/
+
+# --- Log locali ---
+*.log
+
+# --- IDE ed editor ---
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# --- File di sistema ---
+.DS_Store
+._*
+Thumbs.db
+.directory
