@@ -1,28 +1,25 @@
 #!/usr/bin/env bash
-# Genera dist/querylean-<versione>-x86_64.AppImage.
+# Genera dist/querylean-<versione>-<arch>.AppImage.
 # Requisiti: Python con le dipendenze di build (`pip install -e .[build]`),
 # curl, file, FUSE oppure APPIMAGE_EXTRACT_AND_RUN=1 per eseguire
-# appimagetool.
+# appimagetool. Per la massima compatibilità va eseguito sulla distribuzione
+# più vecchia da supportare (Ubuntu 22.04).
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$ROOT"
-PYTHON="${PYTHON:-python}"
+. "$(dirname "$0")/common.sh"
+
 ARCH="$(uname -m)"
-# The version is read only from the .version file.
-VERSION="$(tr -d '[:space:]' < .version)"
-if [ -z "$VERSION" ]; then
-    echo "File .version mancante o vuoto" >&2
-    exit 1
-fi
 APPIMAGETOOL_VERSION="1.9.0"
 APPIMAGETOOL="build/appimagetool-${ARCH}.AppImage"
 APPIMAGETOOL_URL="https://github.com/AppImage/appimagetool/releases/download"
 APPIMAGETOOL_URL+="/${APPIMAGETOOL_VERSION}/appimagetool-${ARCH}.AppImage"
+# The AppImage runtime is downloaded here (curl follows GitHub redirects,
+# appimagetool's own downloader does not always) and passed explicitly.
+RUNTIME="build/runtime-${ARCH}"
+RUNTIME_URL="https://github.com/AppImage/type2-runtime/releases/download"
+RUNTIME_URL+="/continuous/runtime-${ARCH}"
 
-"$PYTHON" -m PyInstaller --noconfirm --clean \
-    --distpath dist --workpath build/pyinstaller \
-    packaging/querylean.spec
+querylean_pyinstaller
 
 APPDIR="build/AppDir"
 rm -rf "$APPDIR"
@@ -35,12 +32,16 @@ cp packaging/querylean.desktop "$APPDIR/usr/share/applications/"
 cp packaging/querylean.svg "$APPDIR/"
 cp packaging/querylean.svg "$APPDIR/usr/share/icons/hicolor/scalable/apps/"
 
+mkdir -p build
 if [ ! -x "$APPIMAGETOOL" ]; then
-    mkdir -p build
     curl -fsSL -o "$APPIMAGETOOL" "$APPIMAGETOOL_URL"
     chmod +x "$APPIMAGETOOL"
 fi
+if [ ! -s "$RUNTIME" ]; then
+    curl -fsSL -o "$RUNTIME" "$RUNTIME_URL"
+fi
 
 OUTPUT="dist/querylean-${VERSION}-${ARCH}.AppImage"
-ARCH="$ARCH" "$APPIMAGETOOL" --no-appstream "$APPDIR" "$OUTPUT"
+ARCH="$ARCH" "$APPIMAGETOOL" --no-appstream --runtime-file "$RUNTIME" \
+    "$APPDIR" "$OUTPUT"
 echo "Creato $OUTPUT"

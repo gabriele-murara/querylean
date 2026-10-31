@@ -74,14 +74,45 @@ jobs:
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
         run: packaging/build_linux_appimage.sh
-      - name: Smoke test del binario
+      - name: Smoke test dell'AppImage
         env:
           QT_QPA_PLATFORM: offscreen
-        run: timeout 10 dist/querylean/querylean --smoke-test
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: timeout 30 dist/querylean-*.AppImage --smoke-test
       - uses: actions/upload-artifact@v4
         with:
           name: linux-appimage
           path: dist/*.AppImage
+
+  package-deb:
+    name: Pacchetto .deb (Ubuntu/Lubuntu 24.04 amd64)
+    needs: test
+    runs-on: ubuntu-24.04  # stessa glibc del sistema di destinazione
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install -e ".[build]"
+      - name: Build
+        run: packaging/build_linux_deb.sh
+      - name: Installazione del pacchetto (risolve le dipendenze)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ./dist/querylean-*.deb
+      - name: Smoke test del pacchetto installato
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: timeout 30 querylean --smoke-test
+      - name: Rimozione pulita
+        run: |
+          sudo apt-get remove -y querylean
+          test ! -e /opt/querylean && test ! -e /usr/bin/querylean
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-deb
+          path: dist/*.deb
 
   package-macos:
     name: DMG (macOS ${{ matrix.arch }})

@@ -41,12 +41,13 @@ La compatibilità macOS va considerata confermata solo quando la pipeline CI cor
 | Driver | mysql-connector-python (implementazione pure Python) | Non richiede un client MySQL installato. Consente il controllo di multi-statement e LOCAL INFILE |
 | Parser SQL | sqlglot (dialetto MySQL) | Parser puro Python, usato come secondo livello del validatore |
 | Segreti | keyring | Secret Service su Linux, Keychain su macOS |
-| Packaging | PyInstaller → AppImage / `.app` + `.dmg` | L'utente finale non deve installare alcun runtime |
+| Packaging | PyInstaller → AppImage / `.deb` / `.app` + `.dmg` | L'utente finale non deve installare alcun runtime |
 | Test | pytest, pytest-qt | |
 
 ## Installazione (utente finale)
 
-- **Linux**: scarica `querylean-<versione>-x86_64.AppImage`, rendilo eseguibile (`chmod +x`) e avvialo. Se il sistema non ha FUSE 2 (`libfuse2`), puoi usare `./querylean-….AppImage --appimage-extract-and-run`.
+- **Ubuntu/Lubuntu 24.04 (`.deb`)**: `sudo apt install ./querylean-<versione>-amd64.deb`. QueryLean compare nel menu delle applicazioni (sezione Sviluppo) e si avvia anche da terminale con `querylean`. Si rimuove con `sudo apt remove querylean`.
+- **Linux (AppImage)**: scarica `querylean-<versione>-x86_64.AppImage`, rendilo eseguibile (`chmod +x`) e avvialo. Serve FUSE 2: su Ubuntu/Lubuntu 24.04 il pacchetto è `libfuse2t64`, su 22.04 `libfuse2`. In alternativa usa `./querylean-….AppImage --appimage-extract-and-run`.
 - **macOS**: apri il `.dmg` e trascina *QueryLean* in *Applicazioni*. Il pacchetto non è firmato con un certificato Developer ID (vedi [Firma e notarizzazione](#firma-e-notarizzazione-macos)): al primo avvio usa *clic destro → Apri*, oppure esegui `xattr -dr com.apple.quarantine "/Applications/QueryLean.app"`.
 
 ### Requisiti di sistema
@@ -212,6 +213,8 @@ La versione di QueryLean si legge **solo** dal file `.version` nella radice del 
 
 Dopo una modifica, dai sorgenti va rieseguito `pip install -e .` perché anche i metadati del pacchetto riportino la nuova versione.
 
+Gli script condividono `packaging/common.sh`, che legge la versione da `.version` ed esegue PyInstaller. Con `PYTHON=.venv/bin/python` si sceglie l'interprete.
+
 ### Linux (AppImage)
 
 ```bash
@@ -219,7 +222,25 @@ pip install -e ".[build]"
 packaging/build_linux_appimage.sh     # → dist/querylean-<ver>-x86_64.AppImage
 ```
 
-Lo script scarica `appimagetool` (versione fissata nello script). Senza FUSE usa `APPIMAGE_EXTRACT_AND_RUN=1`. Per la massima compatibilità, conviene fare la build sulla distribuzione più vecchia da supportare (Ubuntu 22.04).
+Lo script scarica `appimagetool` (versione fissata nello script) e il runtime AppImage in `build/`; al secondo avvio li riusa. Senza FUSE usa `APPIMAGE_EXTRACT_AND_RUN=1`. Per la massima compatibilità, conviene fare la build sulla distribuzione più vecchia da supportare (Ubuntu 22.04).
+
+### Ubuntu/Lubuntu 24.04 (.deb)
+
+```bash
+pip install -e ".[build]"
+packaging/build_linux_deb.sh          # → dist/querylean-<ver>-amd64.deb
+```
+
+La build va fatta su Ubuntu 24.04 (o una derivata come Lubuntu): il bundle richiede glibc ≥ 2.38. Il pacchetto installa:
+
+- il bundle PyInstaller in `/opt/querylean`;
+- il lanciatore `/usr/bin/querylean`;
+- la voce di menu e l'icona;
+- la licenza in `/usr/share/doc/querylean/copyright`.
+
+Qt, Python e le altre librerie sono inclusi nel bundle. Le dipendenze dichiarate sono solo `libc6 (>= 2.38)`, `libegl1`, `libgl1` e `libxcb1`, ricavate dalle librerie che il bundle carica dal sistema. Il portachiavi (`gnome-keyring` o `keepassxc`) e le librerie Wayland sono *Recommends*.
+
+La versione del pacchetto deriva da `.version`: `-` diventa `~` e si aggiunge la revisione `-1` (`X.Y.Z-dev` → `X.Y.Z~dev-1`), così una versione di sviluppo viene ordinata prima della release finale.
 
 ### macOS (.app + .dmg)
 
@@ -248,7 +269,8 @@ Per una firma valida ai fini della notarizzazione serve anche l'hardened runtime
 
 - `ruff`;
 - test unitari, GUI e integrazione su Ubuntu 22.04 con MySQL 8 in un service container;
-- build dell'AppImage e dei DMG arm64 e x86_64, ciascuna con smoke test (`--smoke-test`) del binario;
+- build dell'AppImage (Ubuntu 22.04), del `.deb` (Ubuntu 24.04) e dei DMG arm64 e x86_64, ciascuna con smoke test (`--smoke-test`);
+- il `.deb` viene installato con `apt`, verificato e poi rimosso;
 - pubblicazione dei pacchetti come artefatti della build.
 
 ## Limiti di questa versione

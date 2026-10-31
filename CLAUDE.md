@@ -24,6 +24,7 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"   # setup (aggiungere
 .venv/bin/pytest -q                                          # unit + GUI; conftest imposta QT_QPA_PLATFORM=offscreen
 .venv/bin/pytest tests/test_read_only_validator.py -q        # solo validatore
 PYTHON=.venv/bin/python APPIMAGE_EXTRACT_AND_RUN=1 packaging/build_linux_appimage.sh   # → dist/*.AppImage
+PYTHON=.venv/bin/python packaging/build_linux_deb.sh                              # → dist/*.deb (su 24.04)
 ```
 
 Test d'integrazione (`tests/integration/`): vengono saltati se mancano le variabili `QUERYLEAN_TEST_HOST/PORT/DATABASE/USER/PASSWORD`. Per prepararli, un amministratore esegue una sola volta `sudo mysql < tests/integration/setup_test_db.sql`, che crea il database `querylean_test` e l'utente `querylean_ro` con solo SELECT. Sono test non distruttivi: non vanno mai puntati su database reali.
@@ -174,6 +175,11 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
 ## Packaging
 
 - La build si fa con PyInstaller in modalità onedir (`packaging/querylean.spec`, entry `packaging/launcher.py` → `Application.run()`).
-- Prodotti: Linux AppImage (`build_linux_appimage.sh`, build su Ubuntu 22.04) e macOS `.app` + `.dmg` (`build_macos_dmg.sh`, firma ad-hoc, un'architettura per build).
-- La CI è in `.github/workflows/ci.yml`. Esegue lint e test con MySQL 8 come service; costruisce AppImage e DMG arm64/x86_64, con smoke test su ciascuno.
+- Prodotti:
+  - Linux AppImage (`build_linux_appimage.sh`, build su Ubuntu 22.04);
+  - `.deb` per Ubuntu/Lubuntu 24.04 (`build_linux_deb.sh`, build su 24.04): bundle in `/opt/querylean`, lanciatore `/usr/bin/querylean`, versione Debian derivata da `.version`;
+  - macOS `.app` + `.dmg` (`build_macos_dmg.sh`, firma ad-hoc, un'architettura per build).
+- Gli script includono `packaging/common.sh` (versione da `.version`, funzione `querylean_pyinstaller`).
+- Le dipendenze del `.deb` (`Depends`) vanno ricavate dalle librerie che il bundle carica dal sistema (`readelf -d`, con `LC_ALL=C`), non scritte a intuito.
+- La CI è in `.github/workflows/ci.yml`. Esegue lint e test con MySQL 8 come service; costruisce AppImage, `.deb` (installato e rimosso con `apt`) e DMG arm64/x86_64, con smoke test su ciascuno.
 - Il pacchetto macOS non è ancora verificato: non dichiararlo compatibile finché la CI non passa.

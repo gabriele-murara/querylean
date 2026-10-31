@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# Genera dist/querylean-<versione>-<arch>.deb per Ubuntu/Lubuntu 24.04.
+# Va eseguito su Ubuntu 24.04: il bundle richiede la glibc del sistema di
+# build (2.38 o successiva).
+# Requisiti: Python con le dipendenze di build (`pip install -e .[build]`) e
+# dpkg-deb (pacchetto dpkg).
+#
+# Contenuto del pacchetto:
+#   /opt/querylean/                      bundle PyInstaller (onedir)
+#   /usr/bin/querylean                   lanciatore
+#   /usr/share/applications/             voce di menu (.desktop)
+#   /usr/share/icons/hicolor/scalable/   icona
+#   /usr/share/doc/querylean/copyright   licenza
+set -euo pipefail
+
+. "$(dirname "$0")/common.sh"
+
+MAINTAINER="Gabriele Murara <gabriele@murara.computer>"
+DEB_ARCH="$(dpkg --print-architecture)"
+# Debian version: "X.Y.Z-dev" becomes "X.Y.Z~dev-1" ("~" sorts before the
+# final release; "-1" is the package revision).
+DEB_VERSION="${VERSION/-/\~}-1"
+
+querylean_pyinstaller
+
+PKG="build/deb/querylean"
+rm -rf "build/deb"
+mkdir -p "$PKG/DEBIAN" "$PKG/opt" "$PKG/usr/bin" \
+         "$PKG/usr/share/applications" \
+         "$PKG/usr/share/icons/hicolor/scalable/apps" \
+         "$PKG/usr/share/doc/querylean"
+
+cp -a dist/querylean "$PKG/opt/querylean"
+install -m 0755 /dev/stdin "$PKG/usr/bin/querylean" <<'EOF'
+#!/bin/sh
+exec /opt/querylean/querylean "$@"
+EOF
+install -m 0644 packaging/querylean.desktop "$PKG/usr/share/applications/"
+install -m 0644 packaging/querylean.svg \
+    "$PKG/usr/share/icons/hicolor/scalable/apps/"
+COPYRIGHT_FORMAT="https://www.debian.org/doc/packaging-manuals"
+COPYRIGHT_FORMAT+="/copyright-format/1.0/"
+{
+    echo "Format: ${COPYRIGHT_FORMAT}"
+    echo "Upstream-Name: QueryLean"
+    echo
+    echo "Files: *"
+    echo "Copyright: $(sed -n 's/^Copyright (c) //p' LICENSE)"
+    echo "License: MIT"
+    sed 's/^$/./; s/^/ /' LICENSE
+} > "$PKG/usr/share/doc/querylean/copyright"
+
+# Standard permissions: directories 755, files 644, executables 755.
+find "$PKG" -type d -exec chmod 0755 {} +
+find "$PKG" -type f ! -perm -u+x -exec chmod 0644 {} +
+find "$PKG" -type f -perm -u+x -exec chmod 0755 {} +
+
+INSTALLED_SIZE="$(du -sk --exclude=DEBIAN "$PKG" | cut -f1)"
+# Qt, Python and the other libraries are bundled; only the C library and the
+# graphics stack come from the system.
+cat > "$PKG/DEBIAN/control" <<EOF
+Package: querylean
+Version: ${DEB_VERSION}
+Section: database
+Priority: optional
+Architecture: ${DEB_ARCH}
+Maintainer: ${MAINTAINER}
+Installed-Size: ${INSTALLED_SIZE}
+Depends: libc6 (>= 2.38), libegl1, libgl1, libxcb1
+Recommends: gnome-keyring | keepassxc, libwayland-client0,
+ libwayland-cursor0, libwayland-egl1
+Description: client MySQL minimale per query di sola lettura
+ QueryLean esegue solo istruzioni di lettura (SELECT, SHOW, DESCRIBE,
+ EXPLAIN) su una singola connessione MySQL, con editor SQL, tabella dei
+ risultati e password conservata nel portachiavi di sistema.
+EOF
+chmod 0644 "$PKG/DEBIAN/control"
+
+OUTPUT="dist/querylean-${VERSION}-${DEB_ARCH}.deb"
+rm -f "$OUTPUT"
+dpkg-deb --build --root-owner-group -Zxz "$PKG" "$OUTPUT"
+echo "Creato $OUTPUT"
