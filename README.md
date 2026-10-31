@@ -85,7 +85,7 @@ Le celle copiate sono separate da tabulazioni e le righe da a capo. La selezione
 ### Sola lettura: due barriere
 
 1. **Account MySQL con privilegi minimi (barriera principale).** L'applicazione presume che l'account abbia solo privilegi `SELECT`. Non tenta mai di creare utenti o di modificare permessi.
-2. **Validatore applicativo (barriera aggiuntiva)**, in `src/querylean/database/readonly_validator.py`. È fail-closed: se una query non può essere classificata con certezza, viene rifiutata. Lavora su tre livelli:
+2. **Validatore applicativo (barriera aggiuntiva)**, in `src/querylean/database/validation/` (`ReadOnlyValidator`). È fail-closed: se una query non può essere classificata con certezza, viene rifiutata. Lavora su tre livelli:
    - **Lexer MySQL**: riconosce stringhe, identificatori e commenti con le regole del server. Rifiuta istruzioni multiple, commenti eseguibili `/*! … */`, hint `/*+ … */`, `--` non seguito da spazio (in MySQL non è un commento), assegnazioni `:=`, stringhe e commenti non chiusi.
    - **Parole e funzioni**: fuori da stringhe e commenti blocca le parole riservate di scrittura (`INSERT`, `UPDATE`, `DELETE`, `INTO`, `LOCK`, `CALL`, `LOAD`, …) e le funzioni con effetti collaterali (`GET_LOCK`, `LOAD_FILE`, …).
    - **Parser sqlglot**: richiede esattamente un'istruzione di un tipo ammesso, senza nodi di DML/DDL, `SELECT … INTO` o `FOR UPDATE`/`LOCK IN SHARE MODE`.
@@ -167,15 +167,18 @@ Su Ubuntu servono `python3-venv` e, per i test GUI, le librerie elencate nei req
 
 ### Struttura
 
+Ogni file contiene una sola classe; le regole di stile complete sono in `CLAUDE.md`.
+
 ```
 src/querylean/
-  main.py                    avvio, logging, --smoke-test
-  ui/                        finestra principale, dialog, editor, tabella, worker QThread
-  database/                  connessione, esecuzione, validatore, traduzione errori
-  config/                    configurazione JSON e portachiavi
-  utils/logging_config.py    log ruotato con redazione dei segreti
-tests/                       unit, GUI (pytest-qt), integration/
-packaging/                   spec PyInstaller, script AppImage/DMG, desktop file, icona
+  app/          avvio (Application), metadati (AppInfo), smoke test
+  log/          logger dell'applicazione, log ruotato, redazione dei segreti
+  config/       modello della configurazione e persistenza JSON
+  security/     password nel portachiavi (SecretStore astratta, KeyringSecretStore)
+  database/     errors/, connection/, execution/, validation/ (validatore a stadi)
+  ui/           main/, dialogs/, editor/, results/, worker/ (thread QThread)
+tests/          una classe Test… per file; fakes/ (doppioni), support/ (basi), integration/
+packaging/      spec PyInstaller, script AppImage/DMG, desktop file, icona
 .github/workflows/ci.yml     lint, test, build degli artefatti
 ```
 

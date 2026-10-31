@@ -8,7 +8,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 PYTHON="${PYTHON:-python}"
 ARCH="$(uname -m)"
-VERSION="$("$PYTHON" -c 'import querylean as m; print(m.__version__)')"
+VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)"
 APP="dist/QueryLean.app"
 
 "$PYTHON" -m PyInstaller --noconfirm --clean --distpath dist --workpath build/pyinstaller \

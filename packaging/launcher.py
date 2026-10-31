@@ -1,5 +1,5 @@
-"""Script di avvio per PyInstaller."""
+"""PyInstaller entry script."""
 
-from querylean.main import main
+from querylean.app.application import Application
 
-raise SystemExit(main())
+raise SystemExit(Application.run())

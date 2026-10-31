@@ -1,3 +1,5 @@
-from querylean.main import main
+"""Allows running the application with ``python -m querylean``."""
 
-raise SystemExit(main())
+from querylean.app.application import Application
+
+raise SystemExit(Application.run())
