@@ -13,7 +13,8 @@ from querylean.ui.results.value_formatter import ValueFormatter
 
 
 class ResultsTable(QTableView):
-    """Read-only table with extended selection and TSV copy (cells, rows, headers)."""
+    """Read-only table with extended selection and TSV copy (cells, rows,
+    headers)."""
 
     __MAX_INITIAL_COLUMN_WIDTH = 400
 
@@ -23,12 +24,16 @@ class ResultsTable(QTableView):
         self.setModel(self.__model)
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
+        self.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectItems
+        )
         self.setAlternatingRowColors(True)
         self.setWordWrap(False)
         self.horizontalHeader().setStretchLastSection(False)
         self.horizontalHeader().setSectionsMovable(False)
-        self.verticalHeader().setDefaultSectionSize(self.fontMetrics().height() + 6)
+        self.verticalHeader().setDefaultSectionSize(
+            self.fontMetrics().height() + 6
+        )
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self.__show_menu)
 
@@ -48,21 +53,27 @@ class ResultsTable(QTableView):
         """Ctrl/Cmd+C action."""
         return self.__copy_action
 
-    def set_result(self, columns: list[str], rows: list[tuple[Any, ...]]) -> None:
+    def set_result(
+        self, columns: list[str], rows: list[tuple[Any, ...]]
+    ) -> None:
         """Show a new result and size the columns to their content."""
         self.__model.set_result(columns, rows)
         self.resizeColumnsToContents()
         for col in range(len(columns)):
             if self.columnWidth(col) > ResultsTable.__MAX_INITIAL_COLUMN_WIDTH:
-                self.setColumnWidth(col, ResultsTable.__MAX_INITIAL_COLUMN_WIDTH)
+                self.setColumnWidth(
+                    col, ResultsTable.__MAX_INITIAL_COLUMN_WIDTH
+                )
 
     def clear(self) -> None:
         """Remove the displayed result."""
         self.__model.clear()
 
-    def selection_as_tsv(self, *, whole_rows: bool = False, headers: bool = False) -> str:
-        """Selected cells as TSV. The selection is copied as its bounding rectangle;
-        unselected cells inside it are left empty."""
+    def selection_as_tsv(
+        self, *, whole_rows: bool = False, headers: bool = False
+    ) -> str:
+        """Selected cells as TSV. The selection is copied as its bounding
+        rectangle; unselected cells inside it are left empty."""
         indexes = self.selectionModel().selectedIndexes()
         if not indexes:
             return ""
@@ -78,7 +89,9 @@ class ResultsTable(QTableView):
         names = model.columns
         lines = []
         if headers:
-            lines.append("\t".join(ValueFormatter.copy_text(names[c]) for c in columns))
+            lines.append(
+                "\t".join(ValueFormatter.copy_text(names[c]) for c in columns)
+            )
         for row in rows:
             cells = [
                 ValueFormatter.copy_text(model.raw_value(row, col))
@@ -89,7 +102,9 @@ class ResultsTable(QTableView):
             lines.append("\t".join(cells))
         return "\n".join(lines)
 
-    def copy_selection(self, *, whole_rows: bool = False, headers: bool = False) -> str:
+    def copy_selection(
+        self, *, whole_rows: bool = False, headers: bool = False
+    ) -> str:
         """Copy the selection to the clipboard and return the copied text."""
         text = self.selection_as_tsv(whole_rows=whole_rows, headers=headers)
         if text:
@@ -101,9 +116,14 @@ class ResultsTable(QTableView):
             return
         menu = QMenu(self)
         menu.addAction("Copia celle", lambda: self.copy_selection())
-        menu.addAction("Copia celle con intestazioni", lambda: self.copy_selection(headers=True))
+        menu.addAction(
+            "Copia celle con intestazioni",
+            lambda: self.copy_selection(headers=True),
+        )
         menu.addSeparator()
-        menu.addAction("Copia righe", lambda: self.copy_selection(whole_rows=True))
+        menu.addAction(
+            "Copia righe", lambda: self.copy_selection(whole_rows=True)
+        )
         menu.addAction(
             "Copia righe con intestazioni",
             lambda: self.copy_selection(whole_rows=True, headers=True),

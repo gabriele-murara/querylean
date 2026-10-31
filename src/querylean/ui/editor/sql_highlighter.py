@@ -4,24 +4,35 @@ from __future__ import annotations
 
 import re
 
-from PySide6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat, QTextDocument
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QSyntaxHighlighter,
+    QTextCharFormat,
+    QTextDocument,
+)
 
 
 class SqlHighlighter(QSyntaxHighlighter):
-    """Highlights keywords, strings, numbers and comments (including multi-line)."""
+    """Highlights keywords, strings, numbers and comments (including
+    multi-line)."""
 
     KEYWORDS = (
-        "ADD ALL AND ANY AS ASC BETWEEN BINARY BY CASE CAST COLLATE CREATE CROSS CURRENT_DATE "
-        "CURRENT_TIME CURRENT_TIMESTAMP DATABASE DATABASES DEFAULT DELETE DESC DESCRIBE "
-        "DISTINCT DIV DROP ELSE END ESCAPE EXCEPT EXISTS EXPLAIN FALSE FOR FROM FULL GROUP "
-        "HAVING IF IN INDEX INNER INSERT INTERSECT INTERVAL INTO IS JOIN KEY LATERAL LEFT "
-        "LIKE LIMIT MOD NATURAL NOT NULL OFFSET ON OR ORDER OUTER OVER PARTITION RECURSIVE "
-        "REGEXP RIGHT ROLLUP ROW ROWS SELECT SET SHOW STATUS STRAIGHT_JOIN TABLE TABLES THEN "
-        "TRUE UNION UNIQUE UPDATE USING VALUES VARIABLES VIEW WHEN WHERE WINDOW WITH XOR"
+        "ADD ALL AND ANY AS ASC BETWEEN BINARY BY CASE CAST COLLATE CREATE "
+        "CROSS CURRENT_DATE CURRENT_TIME CURRENT_TIMESTAMP DATABASE DATABASES "
+        "DEFAULT DELETE DESC DESCRIBE DISTINCT DIV DROP ELSE END ESCAPE EXCEPT "
+        "EXISTS EXPLAIN FALSE FOR FROM FULL GROUP HAVING IF IN INDEX INNER "
+        "INSERT INTERSECT INTERVAL INTO IS JOIN KEY LATERAL LEFT LIKE LIMIT "
+        "MOD NATURAL NOT NULL OFFSET ON OR ORDER OUTER OVER PARTITION "
+        "RECURSIVE REGEXP RIGHT ROLLUP ROW ROWS SELECT SET SHOW STATUS "
+        "STRAIGHT_JOIN TABLE TABLES THEN TRUE UNION UNIQUE UPDATE USING VALUES "
+        "VARIABLES VIEW WHEN WHERE WINDOW WITH XOR"
     ).split()
 
     __IN_COMMENT = 1
-    __KEYWORD_RE = re.compile(r"\b(?:" + "|".join(KEYWORDS) + r")\b", re.IGNORECASE)
+    __KEYWORD_RE = re.compile(
+        r"\b(?:" + "|".join(KEYWORDS) + r")\b", re.IGNORECASE
+    )
     __NUMBER_RE = re.compile(r"\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b")
     # Strings, quoted identifiers and line comments, in order of appearance.
     __SPAN_RE = re.compile(
@@ -39,9 +50,13 @@ class SqlHighlighter(QSyntaxHighlighter):
 
     def highlightBlock(self, text: str) -> None:  # noqa: N802 (Qt API)
         for match in SqlHighlighter.__KEYWORD_RE.finditer(text):
-            self.setFormat(match.start(), match.end() - match.start(), self.__keyword)
+            self.setFormat(
+                match.start(), match.end() - match.start(), self.__keyword
+            )
         for match in SqlHighlighter.__NUMBER_RE.finditer(text):
-            self.setFormat(match.start(), match.end() - match.start(), self.__number)
+            self.setFormat(
+                match.start(), match.end() - match.start(), self.__number
+            )
 
         self.setCurrentBlockState(0)
         pos = 0
@@ -53,7 +68,9 @@ class SqlHighlighter(QSyntaxHighlighter):
                 break
             token = match.group()
             if token == "/*":
-                pos = self.__comment_to_end(text, match.start(), continuing=False)
+                pos = self.__comment_to_end(
+                    text, match.start(), continuing=False
+                )
                 continue
             if token[0] == "`":
                 fmt = self.__plain  # quoted identifiers are not highlighted
@@ -64,8 +81,10 @@ class SqlHighlighter(QSyntaxHighlighter):
             self.setFormat(match.start(), len(token), fmt)
             pos = match.end()
 
-    def __comment_to_end(self, text: str, start: int, *, continuing: bool) -> int:
-        """Format a /* */ comment from ``start``; return the position after it."""
+    def __comment_to_end(
+        self, text: str, start: int, *, continuing: bool
+    ) -> int:
+        """Format a /* */ comment from ``start``; return the end position."""
         end = text.find("*/", start if continuing else start + 2)
         if end < 0:
             self.setCurrentBlockState(SqlHighlighter.__IN_COMMENT)
@@ -75,7 +94,9 @@ class SqlHighlighter(QSyntaxHighlighter):
         return end + 2
 
     @staticmethod
-    def __make_format(color: str, *, bold: bool = False, italic: bool = False) -> QTextCharFormat:
+    def __make_format(
+        color: str, *, bold: bool = False, italic: bool = False
+    ) -> QTextCharFormat:
         fmt = QTextCharFormat()
         fmt.setForeground(QColor(color))
         if bold:

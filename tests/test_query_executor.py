@@ -40,7 +40,10 @@ class TestQueryExecutor:
         assert result.rows == [(0,), (1,), (2,)]
         assert not result.truncated
         assert result.elapsed >= 0
-        assert "SET SESSION MAX_EXECUTION_TIME = 30000" in connector.connections[0].executed
+        assert (
+            "SET SESSION MAX_EXECUTION_TIME = 30000"
+            in connector.connections[0].executed
+        )
 
     def test_rejected_query_never_reaches_server(self, connector, executor):
         with pytest.raises(DatabaseError) as info:
@@ -55,7 +58,9 @@ class TestQueryExecutor:
         assert len(result.rows) == 1000
         assert result.truncated
         assert conn.fetched == 1001  # never the whole result set
-        assert conn.closed_by == "shutdown"  # the rest of the result set is discarded
+        assert (
+            conn.closed_by == "shutdown"
+        )  # the rest of the result set is discarded
         executor.execute("SELECT 1", row_limit=10, timeout=30)
         assert len(connector.connections) == 2  # session reopened transparently
 
@@ -65,23 +70,27 @@ class TestQueryExecutor:
         assert len(result.rows) == 10 and not result.truncated
 
     def test_server_timeout_error(self, connector, executor):
-        connector.connections[0].handler = lambda sql: mysql_errors.DatabaseError(
-            msg="maximum statement execution time exceeded", errno=3024
+        connector.connections[0].handler = lambda sql: (
+            mysql_errors.DatabaseError(
+                msg="maximum statement execution time exceeded", errno=3024
+            )
         )
         with pytest.raises(QueryTimeout):
             executor.execute("SELECT SLEEP(100)", row_limit=10, timeout=1)
 
     def test_server_error_is_translated(self, connector, executor):
-        connector.connections[0].handler = lambda sql: mysql_errors.ProgrammingError(
-            msg="You have an error in your SQL syntax", errno=1064
+        connector.connections[0].handler = lambda sql: (
+            mysql_errors.ProgrammingError(
+                msg="You have an error in your SQL syntax", errno=1064
+            )
         )
         with pytest.raises(DatabaseError) as info:
             executor.execute("SELECT a FROM t", row_limit=10, timeout=30)
         assert info.value.kind == "syntax"
 
     def test_socket_read_timeout_drops_session(self, connector, executor):
-        connector.connections[0].handler = lambda sql: mysql_errors.ReadTimeoutError(
-            msg="read timed out"
+        connector.connections[0].handler = lambda sql: (
+            mysql_errors.ReadTimeoutError(msg="read timed out")
         )
         with pytest.raises(DatabaseError) as info:
             executor.execute("SELECT 1", row_limit=10, timeout=1)
@@ -95,7 +104,9 @@ class TestQueryExecutor:
             (QueryExecutor.CANCEL_BY_TIMEOUT, QueryTimeout),
         ],
     )
-    def test_cancel_interrupts_running_query(self, connector, executor, reason, expected):
+    def test_cancel_interrupts_running_query(
+        self, connector, executor, reason, expected
+    ):
         conn = connector.connections[0]
         gate = threading.Event()
         conn.block_fetch = gate
@@ -120,7 +131,9 @@ class TestQueryExecutor:
                 break
             time.sleep(0.01)
         assert executor.cancel(reason)
-        assert connector.connections[-1].executed == [f"KILL QUERY {conn.connection_id}"]
+        assert connector.connections[-1].executed == [
+            f"KILL QUERY {conn.connection_id}"
+        ]
         thread.join(5)
         assert len(errors) == 1 and isinstance(errors[0], expected)
         assert not executor.running

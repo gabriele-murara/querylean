@@ -9,7 +9,8 @@ from querylean.database.validation.validation_stage import ValidationStage
 
 
 class LexicalStage(ValidationStage):
-    """Splits the text into significant tokens and isolates the single statement."""
+    """Splits the text into significant tokens and isolates the single
+    statement."""
 
     def apply(self, context: ValidationContext) -> None:
         if not context.sql.strip():

@@ -10,8 +10,8 @@ from querylean.database.validation.validation_context import ValidationContext
 class ValidationStage(ABC):
     """One independent check of the read-only validator pipeline.
 
-    Stages run in order on a shared ``ValidationContext``; a stage rejects the query by
-    raising ``ValidationRejected`` with a user-facing message.
+    Stages run in order on a shared ``ValidationContext``; a stage rejects the
+    query by raising ``ValidationRejected`` with a user-facing message.
     """
 
     @property

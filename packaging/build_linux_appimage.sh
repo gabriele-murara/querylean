@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Genera dist/querylean-<versione>-x86_64.AppImage.
-# Requisiti: Python con le dipendenze di build (`pip install -e .[build]`), curl, file,
-# FUSE oppure APPIMAGE_EXTRACT_AND_RUN=1 per eseguire appimagetool.
+# Requisiti: Python con le dipendenze di build (`pip install -e .[build]`),
+# curl, file, FUSE oppure APPIMAGE_EXTRACT_AND_RUN=1 per eseguire
+# appimagetool.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -11,8 +12,11 @@ ARCH="$(uname -m)"
 VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)"
 APPIMAGETOOL_VERSION="1.9.0"
 APPIMAGETOOL="build/appimagetool-${ARCH}.AppImage"
+APPIMAGETOOL_URL="https://github.com/AppImage/appimagetool/releases/download"
+APPIMAGETOOL_URL+="/${APPIMAGETOOL_VERSION}/appimagetool-${ARCH}.AppImage"
 
-"$PYTHON" -m PyInstaller --noconfirm --clean --distpath dist --workpath build/pyinstaller \
+"$PYTHON" -m PyInstaller --noconfirm --clean \
+    --distpath dist --workpath build/pyinstaller \
     packaging/querylean.spec
 
 APPDIR="build/AppDir"
@@ -28,8 +32,7 @@ cp packaging/querylean.svg "$APPDIR/usr/share/icons/hicolor/scalable/apps/"
 
 if [ ! -x "$APPIMAGETOOL" ]; then
     mkdir -p build
-    curl -fsSL -o "$APPIMAGETOOL" \
-        "https://github.com/AppImage/appimagetool/releases/download/${APPIMAGETOOL_VERSION}/appimagetool-${ARCH}.AppImage"
+    curl -fsSL -o "$APPIMAGETOOL" "$APPIMAGETOOL_URL"
     chmod +x "$APPIMAGETOOL"
 fi
 

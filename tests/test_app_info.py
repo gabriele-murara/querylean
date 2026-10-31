@@ -14,3 +14,8 @@ class TestAppInfo:
         data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
         assert data["project"]["version"] == AppInfo.VERSION
         assert data["project"]["name"] == AppInfo.NAME
+
+    def test_author_matches_pyproject(self):
+        pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+        assert data["project"]["authors"][0]["name"] == AppInfo.AUTHOR

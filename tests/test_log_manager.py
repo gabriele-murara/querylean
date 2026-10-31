@@ -20,7 +20,13 @@ class TestLogManager:
         redactor = SecretRedactor()
         redactor.register_secret("Sup3r!")
         record = logging.LogRecord(
-            "x", logging.INFO, __file__, 1, "connect pwd=%s password: other", ("Sup3r!",), None
+            "x",
+            logging.INFO,
+            __file__,
+            1,
+            "connect pwd=%s password: other",
+            ("Sup3r!",),
+            None,
         )
         redactor.filter(record)
         assert "Sup3r!" not in record.getMessage()
@@ -31,7 +37,10 @@ class TestLogManager:
         log_file = LogManager.configure(tmp_path)
         LogManager.get_logger("test").warning("attempt with TopSecret42")
         handlers = logging.getLogger("querylean").handlers
-        assert any(isinstance(h, logging.handlers.RotatingFileHandler) for h in handlers)
+        assert any(
+            isinstance(h, logging.handlers.RotatingFileHandler)
+            for h in handlers
+        )
         for handler in handlers:
             handler.flush()
         content = log_file.read_text()

@@ -14,11 +14,16 @@ from querylean.security.secret_store import SecretStore
 class KeyringSecretStore(SecretStore):
     """Uses ``keyring``: Secret Service on Linux, Keychain on macOS.
 
-    Plaintext or "fail" backends (``keyrings.alt``, ``keyring.backends.fail``) are
-    treated as unavailable so that the password is never stored in clear text.
+    Plaintext or "fail" backends (``keyrings.alt``, ``keyring.backends.fail``)
+    are treated as unavailable so that the password is never stored in clear
+    text.
     """
 
-    __INSECURE_MODULES = ("keyring.backends.fail", "keyring.backends.null", "keyrings.alt")
+    __INSECURE_MODULES = (
+        "keyring.backends.fail",
+        "keyring.backends.null",
+        "keyrings.alt",
+    )
     __INSECURE_NAMES = ("PlaintextKeyring", "EncryptedKeyring", "Keyring")
     __log = LogManager.get_logger(__name__)
 
@@ -47,8 +52,8 @@ class KeyringSecretStore(SecretStore):
         except keyring.errors.KeyringError as exc:
             self.__log.warning("Keychain read failed: %s", type(exc).__name__)
             raise SecretStorageError(
-                "Impossibile leggere la password dal portachiavi (bloccato o accesso negato). "
-                "Reinserisci la password."
+                "Impossibile leggere la password dal portachiavi (bloccato o "
+                "accesso negato). Reinserisci la password."
             ) from exc
 
     def set_password(self, key: str, password: str) -> None:
@@ -58,8 +63,9 @@ class KeyringSecretStore(SecretStore):
         except keyring.errors.KeyringError as exc:
             self.__log.warning("Keychain write failed: %s", type(exc).__name__)
             raise SecretStorageError(
-                "Impossibile salvare la password nel portachiavi (bloccato o accesso negato). "
-                "La password resterà valida solo per questa sessione."
+                "Impossibile salvare la password nel portachiavi (bloccato o "
+                "accesso negato). La password resterà valida solo per questa "
+                "sessione."
             ) from exc
 
     def delete_password(self, key: str) -> None:
@@ -70,15 +76,17 @@ class KeyringSecretStore(SecretStore):
             pass
         except keyring.errors.KeyringError as exc:
             self.__log.warning("Keychain delete failed: %s", type(exc).__name__)
-            raise SecretStorageError("Impossibile rimuovere la password dal portachiavi.") from exc
+            raise SecretStorageError(
+                "Impossibile rimuovere la password dal portachiavi."
+            ) from exc
 
     def __require_backend(self) -> KeyringBackend:
         backend = self.backend
         if not KeyringSecretStore.__is_secure(backend):
             raise SecretStorageError(
-                "Nessun portachiavi sicuro disponibile. Su Linux è necessario un servizio "
-                "compatibile con Secret Service (es. GNOME Keyring o KWallet). "
-                "La password non verrà salvata e andrà reinserita."
+                "Nessun portachiavi sicuro disponibile. Su Linux è necessario "
+                "un servizio compatibile con Secret Service (es. GNOME Keyring "
+                "o KWallet). La password non verrà salvata e andrà reinserita."
             )
         return backend
 
@@ -86,8 +94,11 @@ class KeyringSecretStore(SecretStore):
     def __is_secure(backend: KeyringBackend) -> bool:
         backends = getattr(backend, "backends", None)  # ChainerBackend
         if backends is not None:
-            # The chainer may write to any of its backends: all of them must be secure.
-            return bool(backends) and all(KeyringSecretStore.__is_secure(b) for b in backends)
+            # The chainer may write to any of its backends: all of them must be
+            # secure.
+            return bool(backends) and all(
+                KeyringSecretStore.__is_secure(b) for b in backends
+            )
         module = type(backend).__module__
         if module.startswith(KeyringSecretStore.__INSECURE_MODULES):
             return False

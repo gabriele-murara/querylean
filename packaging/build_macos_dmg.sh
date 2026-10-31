@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Genera dist/querylean-<versione>-<arch>.dmg (non firmato).
-# Da eseguire su macOS: l'architettura del pacchetto è quella dell'interprete Python
-# utilizzato (arm64 su Apple Silicon, x86_64 su Intel).
+# Da eseguire su macOS: l'architettura del pacchetto è quella dell'interprete
+# Python utilizzato (arm64 su Apple Silicon, x86_64 su Intel).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -11,7 +11,8 @@ ARCH="$(uname -m)"
 VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)"
 APP="dist/QueryLean.app"
 
-"$PYTHON" -m PyInstaller --noconfirm --clean --distpath dist --workpath build/pyinstaller \
+"$PYTHON" -m PyInstaller --noconfirm --clean \
+    --distpath dist --workpath build/pyinstaller \
     packaging/querylean.spec
 
 # Firma ad-hoc: necessaria su Apple Silicon per avviare binari non firmati.
@@ -26,5 +27,6 @@ ln -s /Applications "$STAGING/Applications"
 
 OUTPUT="dist/querylean-${VERSION}-${ARCH}.dmg"
 rm -f "$OUTPUT"
-hdiutil create -volname "QueryLean" -srcfolder "$STAGING" -ov -format UDZO "$OUTPUT"
+hdiutil create -volname "QueryLean" -srcfolder "$STAGING" -ov -format UDZO \
+    "$OUTPUT"
 echo "Creato $OUTPUT"

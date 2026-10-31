@@ -33,28 +33,52 @@ class TestConnectionManager:
         assert kwargs["host"] == "db" and kwargs["port"] == 3307
         assert kwargs["database"] == "app" and kwargs["user"] == "ro"
         assert kwargs["connection_timeout"] == 5
-        assert kwargs["read_timeout"] == 30 + ConnectionParams.SOCKET_TIMEOUT_GRACE
+        assert (
+            kwargs["read_timeout"] == 30 + ConnectionParams.SOCKET_TIMEOUT_GRACE
+        )
         assert -ClientFlag.MULTI_STATEMENTS in kwargs["client_flags"]
         assert kwargs["allow_local_infile"] is False
 
     def test_session_is_set_read_only(self, manager, connector):
         manager.connect(self.CFG, "pw")
-        assert "SET SESSION TRANSACTION READ ONLY" in connector.connections[0].executed
+        assert (
+            "SET SESSION TRANSACTION READ ONLY"
+            in connector.connections[0].executed
+        )
         assert manager.is_connected
 
     @pytest.mark.parametrize(
         ("error", "kind"),
         [
             (mysql_errors.ProgrammingError(msg="denied", errno=1045), "auth"),
-            (mysql_errors.ProgrammingError(msg="unknown db", errno=1049), "database"),
-            (mysql_errors.DatabaseError(msg="no access", errno=1044), "database"),
-            (mysql_errors.InterfaceError(msg="Can't connect", errno=2003), "unreachable"),
-            (mysql_errors.InterfaceError(msg="Unknown host", errno=2005), "unreachable"),
+            (
+                mysql_errors.ProgrammingError(msg="unknown db", errno=1049),
+                "database",
+            ),
+            (
+                mysql_errors.DatabaseError(msg="no access", errno=1044),
+                "database",
+            ),
+            (
+                mysql_errors.InterfaceError(msg="Can't connect", errno=2003),
+                "unreachable",
+            ),
+            (
+                mysql_errors.InterfaceError(msg="Unknown host", errno=2005),
+                "unreachable",
+            ),
             (TimeoutError("timed out"), "timeout"),
-            (mysql_errors.InterfaceError(msg="Connection timed out", errno=2003), "timeout"),
+            (
+                mysql_errors.InterfaceError(
+                    msg="Connection timed out", errno=2003
+                ),
+                "timeout",
+            ),
         ],
     )
-    def test_connect_errors_are_translated(self, manager, connector, error, kind):
+    def test_connect_errors_are_translated(
+        self, manager, connector, error, kind
+    ):
         connector.error = error
         with pytest.raises(DatabaseError) as info:
             manager.connect(self.CFG, "pw")
@@ -100,7 +124,9 @@ class TestConnectionManager:
     def test_password_never_logged(self, manager, connector, caplog):
         caplog.handler.addFilter(LogManager.redactor())
         caplog.set_level(logging.DEBUG)
-        connector.error = mysql_errors.ProgrammingError(msg="denied for pw-XYZ", errno=1045)
+        connector.error = mysql_errors.ProgrammingError(
+            msg="denied for pw-XYZ", errno=1045
+        )
         with pytest.raises(DatabaseError):
             manager.connect(self.CFG, "pw-XYZ")
         assert "pw-XYZ" not in caplog.text

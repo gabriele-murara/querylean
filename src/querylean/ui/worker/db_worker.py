@@ -14,10 +14,12 @@ from querylean.log.log_manager import LogManager
 
 
 class DbWorker(QObject):
-    """Lives in a dedicated ``QThread``. Requests arrive as signals and are therefore
-    processed one at a time, in order."""
+    """Lives in a dedicated ``QThread``. Requests arrive as signals and are
+    therefore processed one at a time, in order."""
 
-    UNEXPECTED_ERROR = "Errore imprevisto. I dettagli tecnici sono stati registrati nel log."
+    UNEXPECTED_ERROR = (
+        "Errore imprevisto. I dettagli tecnici sono stati registrati nel log."
+    )
 
     # Requests (GUI -> worker)
     connect_requested = Signal(object, str)
@@ -58,7 +60,10 @@ class DbWorker(QObject):
         """Send KILL QUERY from a separate thread without blocking the GUI.
         Callable from any thread."""
         threading.Thread(
-            target=self.__executor.cancel, args=(reason,), name="querylean-cancel", daemon=True
+            target=self.__executor.cancel,
+            args=(reason,),
+            name="querylean-cancel",
+            daemon=True,
         ).start()
 
     @Slot(object, str)
@@ -87,7 +92,9 @@ class DbWorker(QObject):
         except DatabaseError as exc:
             self.test_finished.emit(False, exc.message)
         except Exception:
-            self.__log.exception("Unexpected error while testing the connection")
+            self.__log.exception(
+                "Unexpected error while testing the connection"
+            )
             self.test_finished.emit(False, DbWorker.UNEXPECTED_ERROR)
         else:
             suffix = f" (server MySQL {version})" if version else ""

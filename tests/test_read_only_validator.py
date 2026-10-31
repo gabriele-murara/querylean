@@ -1,4 +1,5 @@
-"""Tests of the read-only validator: behaviour of the parser, not keyword search."""
+"""Tests of the read-only validator: behaviour of the parser, not keyword
+search."""
 
 import pytest
 
@@ -7,20 +8,21 @@ from querylean.database.validation.validation_stage import ValidationStage
 
 
 class TestReadOnlyValidator:
-    """Accepted and rejected statements, bypass attempts and pipeline structure."""
+    """Accepted and rejected statements, bypass attempts, pipeline structure."""
 
     ALLOWED = [
         "SELECT * FROM users",
         "SELECT id, name FROM users WHERE active = 1",
         "SELECT COUNT(*) FROM orders",
-        "select * from users u join orders o on o.user_id = u.id where o.total > 10",
-        "SELECT u.name, (SELECT COUNT(*) FROM orders o WHERE o.user_id = u.id) AS n "
-        "FROM users u",
+        "select * from users u join orders o on o.user_id = u.id where o.total "
+        "> 10",
+        "SELECT u.name, (SELECT COUNT(*) FROM orders o WHERE o.user_id = u.id) "
+        "AS n FROM users u",
         "SELECT * FROM users WHERE id IN (SELECT user_id FROM orders)",
-        "WITH recent AS (SELECT * FROM orders WHERE created > NOW() - INTERVAL 1 DAY) "
-        "SELECT * FROM recent",
-        "WITH RECURSIVE n AS (SELECT 1 AS x UNION ALL SELECT x + 1 FROM n WHERE x < 5) "
-        "SELECT * FROM n",
+        "WITH recent AS (SELECT * FROM orders WHERE created > NOW() - INTERVAL "
+        "1 DAY) SELECT * FROM recent",
+        "WITH RECURSIVE n AS (SELECT 1 AS x UNION ALL SELECT x + 1 FROM n "
+        "WHERE x < 5) SELECT * FROM n",
         "SELECT a FROM t1 UNION SELECT a FROM t2",
         "(SELECT 1)",
         "-- commento iniziale\nSELECT 1",
@@ -28,7 +30,7 @@ class TestReadOnlyValidator:
         "/* blocco */ SELECT /* in mezzo */ 1",
         "SELECT 'UPDATE users SET admin = 1' AS testo",
         "SELECT * FROM logs WHERE message LIKE '%DELETE FROM%'",
-        "SELECT \"drop table x; --\" AS s",
+        'SELECT "drop table x; --" AS s',
         "SELECT 'it''s', 'a\\'b; DROP TABLE x'",
         "SELECT `select`, `update` FROM `table`",
         "SELECT t.update FROM t",
@@ -134,19 +136,32 @@ class TestReadOnlyValidator:
         assert not result.ok, f"{sql!r} accepted"
         assert result.reason
 
-    def test_trailing_semicolon_is_stripped_and_original_text_kept(self, validator):
+    def test_trailing_semicolon_is_stripped_and_original_text_kept(
+        self, validator
+    ):
         result = validator.validate("  SELECT  *   FROM users ; ")
         assert result.ok
         assert result.statement == "SELECT  *   FROM users"
 
-    def test_comments_are_preserved_in_statement_sent_to_server(self, validator):
-        assert validator.validate("SELECT 1 -- nota").statement == "SELECT 1 -- nota"
+    def test_comments_are_preserved_in_statement_sent_to_server(
+        self, validator
+    ):
+        assert (
+            validator.validate("SELECT 1 -- nota").statement
+            == "SELECT 1 -- nota"
+        )
 
     def test_keyword_inside_string_does_not_trigger_rejection(self, validator):
-        assert validator.validate("SELECT 'DROP TABLE users; DELETE FROM x' AS s").ok
-        assert not validator.validate("SELECT 1 FROM t WHERE 1 = 1 AND 0 ; DROP TABLE users").ok
+        assert validator.validate(
+            "SELECT 'DROP TABLE users; DELETE FROM x' AS s"
+        ).ok
+        assert not validator.validate(
+            "SELECT 1 FROM t WHERE 1 = 1 AND 0 ; DROP TABLE users"
+        ).ok
 
-    def test_semicolon_inside_string_is_not_a_statement_separator(self, validator):
+    def test_semicolon_inside_string_is_not_a_statement_separator(
+        self, validator
+    ):
         assert validator.validate("SELECT ';' AS sep").ok
         assert validator.validate("SELECT `a;b` FROM t").ok
 
@@ -156,7 +171,9 @@ class TestReadOnlyValidator:
     def test_pipeline_has_three_independent_stages(self, validator):
         names = [stage.name for stage in validator.stages]
         assert names == ["LexicalStage", "KeywordStage", "SyntaxTreeStage"]
-        assert all(isinstance(stage, ValidationStage) for stage in validator.stages)
+        assert all(
+            isinstance(stage, ValidationStage) for stage in validator.stages
+        )
 
     def test_validation_stage_is_abstract(self):
         with pytest.raises(TypeError):

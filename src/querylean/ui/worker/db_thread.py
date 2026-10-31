@@ -11,7 +11,8 @@ from querylean.ui.worker.db_worker import DbWorker
 
 
 class DbThread:
-    """Creates the ``QThread``, moves a ``DbWorker`` into it and stops it cleanly."""
+    """Creates the ``QThread``, moves a ``DbWorker`` into it and stops it
+    cleanly."""
 
     __DEFAULT_SHUTDOWN_MS = 5000
     __LAST_RESORT_WAIT_MS = 1000
@@ -35,15 +36,19 @@ class DbThread:
         return self.__worker
 
     def shutdown(self, timeout_ms: int = __DEFAULT_SHUTDOWN_MS) -> bool:
-        """Interrupt any running query, stop the thread and close the connection."""
+        """Interrupt any running query, stop the thread and close the
+        connection."""
         if self.__worker.executor.running:
             self.__worker.executor.cancel(QueryExecutor.CANCEL_BY_USER)
         self.__thread.quit()
         finished = bool(self.__thread.wait(timeout_ms))
         if finished:
-            self.__worker.manager.disconnect()  # the thread is stopped: safe access
+            # the thread is stopped: safe access
+            self.__worker.manager.disconnect()
         else:
-            self.__log.warning("Database thread did not stop within %d ms", timeout_ms)
+            self.__log.warning(
+                "Database thread did not stop within %d ms", timeout_ms
+            )
             self.__worker.manager.abort_session()
             finished = bool(self.__thread.wait(DbThread.__LAST_RESORT_WAIT_MS))
         return finished

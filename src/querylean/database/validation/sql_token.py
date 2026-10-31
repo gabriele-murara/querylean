@@ -4,7 +4,8 @@ from __future__ import annotations
 
 
 class SqlToken:
-    """A token outside comments: a word, string, quoted identifier, number or symbol."""
+    """A token outside comments: a word, string, quoted identifier, number or
+    symbol."""
 
     WORD = "word"
     STRING = "string"

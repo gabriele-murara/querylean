@@ -10,8 +10,8 @@ from querylean.app.app_info import AppInfo
 class SecretStore(ABC):
     """Stores the connection password outside of the configuration file.
 
-    Implementations must never fall back to plaintext storage: when no secure backend
-    is available they raise ``SecretStorageError``.
+    Implementations must never fall back to plaintext storage: when no secure
+    backend is available they raise ``SecretStorageError``.
     """
 
     SERVICE_NAME = AppInfo.NAME

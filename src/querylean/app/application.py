@@ -14,7 +14,7 @@ from querylean.ui.main.main_window import MainWindow
 
 
 class Application:
-    """Configures logging and Qt, then runs the main window (or the smoke test)."""
+    """Configures logging and Qt, then runs the main window or smoke test."""
 
     SMOKE_TEST_FLAG = "--smoke-test"
     __log = LogManager.get_logger(__name__)
@@ -46,7 +46,11 @@ class Application:
 
     @staticmethod
     def handle_uncaught_exception(
-        exc_type: type[BaseException], exc: BaseException, tb: TracebackType | None
+        exc_type: type[BaseException],
+        exc: BaseException,
+        tb: TracebackType | None,
     ) -> None:
         """Log uncaught exceptions; stack traces are never shown to the user."""
-        Application.__log.critical("Uncaught exception", exc_info=(exc_type, exc, tb))
+        Application.__log.critical(
+            "Uncaught exception", exc_info=(exc_type, exc, tb)
+        )

@@ -6,8 +6,8 @@ from __future__ import annotations
 class DatabaseError(Exception):
     """Error that can be shown to the user.
 
-    ``message`` never contains sensitive data; ``kind`` classifies the error for the UI
-    (e.g. ``auth``, ``timeout``, ``rejected``, ``connection_lost``).
+    ``message`` never contains sensitive data; ``kind`` classifies the error for
+    the UI (e.g. ``auth``, ``timeout``, ``rejected``, ``connection_lost``).
     """
 
     def __init__(self, message: str, *, kind: str = "generic") -> None:

@@ -26,8 +26,10 @@ class ConnectionManager:
     __SESSION_SETUP = (
         # Server-side barrier on top of the account privileges.
         "SET SESSION TRANSACTION READ ONLY",
-        # Align the server lexer with the validator (backslash escapes in strings).
-        "SET SESSION sql_mode = REPLACE(@@SESSION.sql_mode, 'NO_BACKSLASH_ESCAPES', '')",
+        # Align the server lexer with the validator (backslash escapes in
+        # strings).
+        "SET SESSION sql_mode = REPLACE(@@SESSION.sql_mode, "
+        "'NO_BACKSLASH_ESCAPES', '')",
     )
     __log = LogManager.get_logger(__name__)
 
@@ -38,7 +40,7 @@ class ConnectionManager:
         self.__connection_id: int | None = None
         self.__lock = threading.Lock()  # guards __params and __connection_id
 
-    # ------------------------------------------------------------------ properties
+    # --------------------------------------------------------------- properties
     @property
     def connection_id(self) -> int | None:
         """Server id of the current session, if any."""
@@ -50,9 +52,10 @@ class ConnectionManager:
         """True after a successful ``connect`` and until ``disconnect``."""
         return self.__params is not None
 
-    # ------------------------------------------------------------------ lifecycle
+    # ---------------------------------------------------------------- lifecycle
     def connect(self, config: ConnectionConfig, password: str) -> None:
-        """Open a new session, closing any previous one. Raises ``DatabaseError``."""
+        """Open a new session, closing any previous one. Raises
+        ``DatabaseError``."""
         self.disconnect()
         params = ConnectionParams(config, password)
         conn = self.__open(params)
@@ -66,7 +69,11 @@ class ConnectionManager:
         """Check reachability and credentials. Returns the server version."""
         conn = self.__open(ConnectionParams(config, password))
         try:
-            version = conn.get_server_info() if hasattr(conn, "get_server_info") else ""
+            version = (
+                conn.get_server_info()
+                if hasattr(conn, "get_server_info")
+                else ""
+            )
             return str(version or "")
         finally:
             ConnectionManager.__close_quietly(conn)
@@ -82,8 +89,9 @@ class ConnectionManager:
             self.__log.info("Disconnected")
 
     def abort_session(self) -> None:
-        """Drop the current session abruptly (e.g. with unread results) while keeping the
-        parameters: the next ``ensure_connected`` opens a fresh session."""
+        """Drop the current session abruptly (e.g. with unread results) while
+        keeping the parameters: the next ``ensure_connected`` opens a fresh
+        session."""
         with self.__lock:
             conn, self.__conn = self.__conn, None
             self.__connection_id = None
@@ -113,8 +121,9 @@ class ConnectionManager:
         return conn
 
     def kill_running_query(self) -> bool:
-        """Send ``KILL QUERY`` for the current session from a separate connection.
-        Safe to call from a thread other than the one running the query."""
+        """Send ``KILL QUERY`` for the current session from a separate
+        connection. Safe to call from a thread other than the one running the
+        query."""
         with self.__lock:
             params, target = self.__params, self.__connection_id
         if params is None or target is None:
@@ -136,18 +145,24 @@ class ConnectionManager:
         finally:
             ConnectionManager.__close_quietly(conn)
 
-    # ------------------------------------------------------------------ internals
+    # ---------------------------------------------------------------- internals
     def __open(self, params: ConnectionParams) -> Any:
         LogManager.register_secret(params.password)
         cfg = params.config
         self.__log.info(
-            "Connecting to %s:%s/%s as %s", cfg.host, cfg.port, cfg.database, cfg.username
+            "Connecting to %s:%s/%s as %s",
+            cfg.host,
+            cfg.port,
+            cfg.database,
+            cfg.username,
         )
         try:
             conn = self.__connector(**params.to_connect_kwargs())
         except Exception as exc:
             self.__log.warning("Connection failed: %r", exc)
-            raise ErrorTranslator.translate_connect_error(exc, cfg.connect_timeout) from None
+            raise ErrorTranslator.translate_connect_error(
+                exc, cfg.connect_timeout
+            ) from None
         try:
             cursor = conn.cursor()
             try:
@@ -159,8 +174,8 @@ class ConnectionManager:
             self.__log.warning("Session initialisation failed: %r", exc)
             ConnectionManager.__close_quietly(conn)
             raise DatabaseError(
-                "Connessione aperta ma impossibile impostare la sessione in sola lettura. "
-                "Vedi il log per i dettagli."
+                "Connessione aperta ma impossibile impostare la sessione in "
+                "sola lettura. Vedi il log per i dettagli."
             ) from None
         return conn
 
@@ -176,4 +191,6 @@ class ConnectionManager:
         try:
             conn.shutdown()
         except Exception as exc:
-            ConnectionManager.__log.debug("Ignoring error while closing the connection: %r", exc)
+            ConnectionManager.__log.debug(
+                "Ignoring error while closing the connection: %r", exc
+            )

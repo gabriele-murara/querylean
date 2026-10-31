@@ -10,7 +10,9 @@ class AppConfig:
     """Connection settings plus UI preferences."""
 
     def __init__(
-        self, connection: ConnectionConfig | None = None, ui: UiPreferences | None = None
+        self,
+        connection: ConnectionConfig | None = None,
+        ui: UiPreferences | None = None,
     ) -> None:
         self.__connection = connection or ConnectionConfig()
         self.__ui = ui or UiPreferences()

@@ -10,14 +10,15 @@ from querylean.database.validation.validation_rejected import ValidationRejected
 class MySqlLexer:
     """Scans SQL text the way the MySQL server does.
 
-    It rejects constructs that the server would execute but a generic parser would
-    ignore (executable comments ``/*! */``, optimizer hints ``/*+ */``, ``--`` not
-    followed by whitespace), multiple statements, ``:=`` assignments and unterminated
-    strings or comments.
+    It rejects constructs that the server would execute but a generic parser
+    would ignore (executable comments ``/*! */``, optimizer hints ``/*+ */``,
+    ``--`` not followed by whitespace), multiple statements, ``:=`` assignments
+    and unterminated strings or comments.
     """
 
     __MULTIPLE_STATEMENTS = (
-        "Sono presenti più istruzioni SQL: questa versione ne esegue una sola per volta."
+        "Sono presenti più istruzioni SQL: questa versione ne esegue una "
+        "sola per volta."
     )
 
     @staticmethod
@@ -51,15 +52,16 @@ class MySqlLexer:
                     i = MySqlLexer.__skip_line(sql, i)
                 else:
                     raise ValidationRejected(
-                        "Sequenza «--» ambigua: in MySQL è un commento solo se seguita da uno "
-                        "spazio. Aggiungi uno spazio o riformula l'espressione."
+                        "Sequenza «--» ambigua: in MySQL è un commento solo se "
+                        "seguita da uno spazio. Aggiungi uno spazio o "
+                        "riformula l'espressione."
                     )
             elif ch == "/" and nxt == "*":
                 marker = sql[i + 2] if i + 2 < n else ""
                 if marker in ("!", "+"):
                     raise ValidationRejected(
-                        "I commenti eseguibili MySQL (/*! … */) e gli hint dell'ottimizzatore "
-                        "(/*+ … */) non sono consentiti."
+                        "I commenti eseguibili MySQL (/*! … */) e gli hint "
+                        "dell'ottimizzatore (/*+ … */) non sono consentiti."
                     )
                 end = sql.find("*/", i + 2)
                 if end < 0:
@@ -71,13 +73,17 @@ class MySqlLexer:
                 i = end
             elif ch == "`":
                 end = MySqlLexer.__scan_quoted(sql, i, ch, backslash=False)
-                tokens.append(SqlToken(SqlToken.QUOTED_IDENTIFIER, sql[i:end], i))
+                tokens.append(
+                    SqlToken(SqlToken.QUOTED_IDENTIFIER, sql[i:end], i)
+                )
                 i = end
             elif ch == ";":
                 statement_end = i
                 i += 1
             elif ch == ":" and nxt == "=":
-                raise ValidationRejected("L'assegnazione di variabili (:=) non è consentita.")
+                raise ValidationRejected(
+                    "L'assegnazione di variabili (:=) non è consentita."
+                )
             elif MySqlLexer.__is_word_char(ch) and not ch.isdigit():
                 j = i + 1
                 while j < n and MySqlLexer.__is_word_char(sql[j]):
@@ -119,7 +125,9 @@ class MySqlLexer:
         return len(sql) if end < 0 else end + 1
 
     @staticmethod
-    def __scan_quoted(sql: str, start: int, quote: str, *, backslash: bool) -> int:
+    def __scan_quoted(
+        sql: str, start: int, quote: str, *, backslash: bool
+    ) -> int:
         """Index just after the closing quote."""
         i, n = start + 1, len(sql)
         while i < n:
@@ -133,4 +141,6 @@ class MySqlLexer:
                     continue
                 return i + 1
             i += 1
-        raise ValidationRejected("Stringa o identificatore tra virgolette non chiuso.")
+        raise ValidationRejected(
+            "Stringa o identificatore tra virgolette non chiuso."
+        )

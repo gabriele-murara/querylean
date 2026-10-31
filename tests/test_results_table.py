@@ -18,8 +18,10 @@ class TestResultsTable:
         qtbot.addWidget(table)
         table.set_result(
             ["id", "name", "note", "when", "amount"],
-            [(1, None, "", dt.date(2024, 1, 2), Decimal("1.50")),
-             (2, "a\tb", "x\ny", None, None)],
+            [
+                (1, None, "", dt.date(2024, 1, 2), Decimal("1.50")),
+                (2, "a\tb", "x\ny", None, None),
+            ],
         )
         model = table.results_model
         assert model.data(model.index(0, 1)) == ValueFormatter.NULL_TEXT
@@ -30,20 +32,26 @@ class TestResultsTable:
         table.selectAll()
         text = table.copy_selection(headers=True)
         assert text == (
-            "id\tname\tnote\twhen\tamount\n1\t\t\t2024-01-02\t1.50\n2\ta b\tx y\t\t"
+            "id\tname\tnote\twhen\tamount\n1\t\t\t2024-01-02\t1.50\n2\ta "
+            "b\tx y\t\t"
         )
         assert QGuiApplication.clipboard().text() == text
 
         table.clearSelection()
-        table.selectionModel().select(model.index(1, 0), QItemSelectionModel.SelectionFlag.Select)
+        table.selectionModel().select(
+            model.index(1, 0), QItemSelectionModel.SelectionFlag.Select
+        )
         assert table.copy_selection() == "2"
         assert table.copy_selection(whole_rows=True) == "2\ta b\tx y\t\t"
 
     def test_value_formatting(self):
         assert ValueFormatter.format_value(True) == "true"
         assert ValueFormatter.format_value(b"\xff\x00") == "0xff00"
-        assert ValueFormatter.format_value(dt.timedelta(hours=26, seconds=5)) == "26:00:05"
-        assert ValueFormatter.format_value(dt.datetime(2024, 1, 2, 3, 4, 5)) == (
-            "2024-01-02 03:04:05"
+        assert (
+            ValueFormatter.format_value(dt.timedelta(hours=26, seconds=5))
+            == "26:00:05"
         )
+        assert ValueFormatter.format_value(
+            dt.datetime(2024, 1, 2, 3, 4, 5)
+        ) == ("2024-01-02 03:04:05")
         assert ValueFormatter.copy_text(None) == ""

@@ -6,8 +6,9 @@ from __future__ import annotations
 class ValidationResult:
     """Immutable validation outcome.
 
-    When ``ok`` is true, ``statement`` is the original text to send to the server
-    (without the trailing semicolon); otherwise ``reason`` is a user-facing message.
+    When ``ok`` is true, ``statement`` is the original text to send to the
+    server (without the trailing semicolon); otherwise ``reason`` is a
+    user-facing message.
     """
 
     def __init__(self, ok: bool, statement: str = "", reason: str = "") -> None:

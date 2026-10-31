@@ -5,7 +5,12 @@ from __future__ import annotations
 import decimal
 from typing import Any
 
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, QPersistentModelIndex, Qt
+from PySide6.QtCore import (
+    QAbstractTableModel,
+    QModelIndex,
+    QPersistentModelIndex,
+    Qt,
+)
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import QWidget
 
@@ -13,7 +18,7 @@ from querylean.ui.results.value_formatter import ValueFormatter
 
 
 class ResultsModel(QAbstractTableModel):
-    """Table model that is never editable and renders NULL distinctly from ''."""
+    """Never editable table model that renders NULL distinctly from ''."""
 
     MAX_CELL_CHARS = 2000
     __NULL_COLOR = "#999999"
@@ -31,7 +36,9 @@ class ResultsModel(QAbstractTableModel):
         """Column names."""
         return list(self.__columns)
 
-    def set_result(self, columns: list[str], rows: list[tuple[Any, ...]]) -> None:
+    def set_result(
+        self, columns: list[str], rows: list[tuple[Any, ...]]
+    ) -> None:
         """Replace the displayed result."""
         self.beginResetModel()
         self.__columns = list(columns)
@@ -46,16 +53,24 @@ class ResultsModel(QAbstractTableModel):
         """Value as returned by the driver."""
         return self.__rows[row][column]
 
-    def rowCount(self, parent: QModelIndex | QPersistentModelIndex = QModelIndex()) -> int:  # noqa: N802, B008
+    def rowCount(  # noqa: N802
+        self,
+        parent: QModelIndex | QPersistentModelIndex = QModelIndex(),  # noqa: B008
+    ) -> int:
         return 0 if parent.isValid() else len(self.__rows)
 
-    def columnCount(self, parent: QModelIndex | QPersistentModelIndex = QModelIndex()) -> int:  # noqa: N802, B008
+    def columnCount(  # noqa: N802
+        self,
+        parent: QModelIndex | QPersistentModelIndex = QModelIndex(),  # noqa: B008
+    ) -> int:
         return 0 if parent.isValid() else len(self.__columns)
 
     def flags(self, index: QModelIndex | QPersistentModelIndex) -> Qt.ItemFlag:
         if not index.isValid():
             return Qt.ItemFlag.NoItemFlags
-        return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable  # never editable
+        return (
+            Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+        )  # never editable
 
     def data(
         self,
@@ -86,14 +101,23 @@ class ResultsModel(QAbstractTableModel):
             and isinstance(value, int | float | decimal.Decimal)
             and not isinstance(value, bool)
         ):
-            return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            return int(
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+            )
         return None
 
     def headerData(  # noqa: N802
-        self, section: int, orientation: Qt.Orientation, role: int = Qt.ItemDataRole.DisplayRole
+        self,
+        section: int,
+        orientation: Qt.Orientation,
+        role: int = Qt.ItemDataRole.DisplayRole,
     ) -> Any:
         if role != Qt.ItemDataRole.DisplayRole:
             return None
         if orientation == Qt.Orientation.Horizontal:
-            return self.__columns[section] if section < len(self.__columns) else None
+            return (
+                self.__columns[section]
+                if section < len(self.__columns)
+                else None
+            )
         return str(section + 1)

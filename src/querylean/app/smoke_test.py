@@ -17,7 +17,7 @@ from querylean.ui.main.main_window import MainWindow
 
 
 class SmokeTest:
-    """Checks that a packaged build contains every runtime module (used by CI)."""
+    """Checks that a packaged build contains every runtime module (CI)."""
 
     __DRIVER_PLUGINS = (
         "mysql.connector.plugins.caching_sha2_password",
@@ -35,16 +35,24 @@ class SmokeTest:
         return self.__app
 
     def run(self) -> int:
-        """Run the checks and briefly show the main window. Returns the exit code."""
+        """Run the checks and briefly show the main window. Returns the exit
+        code."""
         try:
             for module in SmokeTest.__DRIVER_PLUGINS:
                 importlib.import_module(module)
             validator = ReadOnlyValidator()
-            if not validator.validate("SELECT 1").ok or validator.validate("DROP TABLE x").ok:
-                self.__log.error("Smoke test: the validator is not behaving as expected")
+            if (
+                not validator.validate("SELECT 1").ok
+                or validator.validate("DROP TABLE x").ok
+            ):
+                self.__log.error(
+                    "Smoke test: the validator is not behaving as expected"
+                )
                 return 1
-            self.__log.info("Smoke test: keychain available = %s",
-                            KeyringSecretStore().is_available())
+            self.__log.info(
+                "Smoke test: keychain available = %s",
+                KeyringSecretStore().is_available(),
+            )
             with tempfile.TemporaryDirectory() as tmp:
                 window = MainWindow(ConfigManager(Path(tmp) / "config.json"))
                 window.show()

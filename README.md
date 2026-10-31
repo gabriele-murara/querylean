@@ -56,6 +56,8 @@ La compatibilità macOS va considerata confermata solo quando la pipeline CI cor
 
 ## Uso
 
+La barra in alto contiene, nell'ordine: **Esegui** (▶), **Interrompi** (attivo solo durante l'esecuzione), **Connetti**/**Disconnetti**, **Configurazione** e **Informazioni** (versione, autore, licenza). Lo stato della connessione è in basso a destra.
+
 1. **Configurazione**: compila host, porta, database, username, password e i timeout, poi usa **Test connessione** e **Salva configurazione**. Salvare non apre la connessione.
 2. **Connetti**: lo stato passa da *Disconnesso* a *Connessione in corso* e poi a *Connesso* o *Errore di connessione*. Se la password non è nel portachiavi, viene richiesta.
 3. Scrivi la query e premi **Esegui** oppure `Ctrl/Cmd+Invio`.
@@ -159,7 +161,8 @@ python3 -m venv .venv
 . .venv/bin/activate
 pip install -e ".[dev]"         # runtime + pytest, pytest-qt, ruff
 python -m querylean      # avvio dai sorgenti
-ruff check src tests
+ruff check src tests packaging   # lint, righe di massimo 80 colonne
+ruff format src tests packaging  # formattazione
 pytest                           # unit + GUI (offscreen); integrazione se configurata
 ```
 
@@ -176,7 +179,7 @@ src/querylean/
   config/       modello della configurazione e persistenza JSON
   security/     password nel portachiavi (SecretStore astratta, KeyringSecretStore)
   database/     errors/, connection/, execution/, validation/ (validatore a stadi)
-  ui/           main/, dialogs/, editor/, results/, worker/ (thread QThread)
+  ui/           main/, dialogs/, editor/, icons/, results/, worker/ (thread QThread)
 tests/          una classe Test… per file; fakes/ (doppioni), support/ (basi), integration/
 packaging/      spec PyInstaller, script AppImage/DMG, desktop file, icona
 .github/workflows/ci.yml     lint, test, build degli artefatti

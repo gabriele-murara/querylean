@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QRect, Qt, Signal
-from PySide6.QtGui import QFontDatabase, QKeyEvent, QPainter, QPaintEvent, QResizeEvent
+from PySide6.QtGui import (
+    QFontDatabase,
+    QKeyEvent,
+    QPainter,
+    QPaintEvent,
+    QResizeEvent,
+)
 from PySide6.QtWidgets import QPlainTextEdit, QWidget
 
 from querylean.ui.editor.line_number_area import LineNumberArea
@@ -46,7 +52,11 @@ class SqlEditor(QPlainTextEdit):
         cursor = self.textCursor()
         if cursor.hasSelection():
             # Qt uses U+2029 (and U+2028) as paragraph separators in selections.
-            return cursor.selectedText().replace("\u2029", "\n").replace("\u2028", "\n")
+            return (
+                cursor.selectedText()
+                .replace("\u2029", "\n")
+                .replace("\u2028", "\n")
+            )
         return self.toPlainText()
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
@@ -78,14 +88,23 @@ class SqlEditor(QPlainTextEdit):
         painter.setPen(palette.placeholderText().color())
         block = self.firstVisibleBlock()
         number = block.blockNumber()
-        top = round(self.blockBoundingGeometry(block).translated(self.contentOffset()).top())
+        top = round(
+            self.blockBoundingGeometry(block)
+            .translated(self.contentOffset())
+            .top()
+        )
         bottom = top + round(self.blockBoundingRect(block).height())
         height = self.fontMetrics().height()
         width = self.__line_area.width() - 6
         while block.isValid() and top <= event.rect().bottom():
             if block.isVisible() and bottom >= event.rect().top():
                 painter.drawText(
-                    0, top, width, height, Qt.AlignmentFlag.AlignRight, str(number + 1)
+                    0,
+                    top,
+                    width,
+                    height,
+                    Qt.AlignmentFlag.AlignRight,
+                    str(number + 1),
                 )
             block = block.next()
             top = bottom
@@ -100,6 +119,8 @@ class SqlEditor(QPlainTextEdit):
         if dy:
             self.__line_area.scroll(0, dy)
         else:
-            self.__line_area.update(0, rect.y(), self.__line_area.width(), rect.height())
+            self.__line_area.update(
+                0, rect.y(), self.__line_area.width(), rect.height()
+            )
         if rect.contains(self.viewport().rect()):
             self.__update_margin()

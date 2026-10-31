@@ -35,7 +35,11 @@ class TestKeyringSecretStore:
             store.set_password("k", "pw")
 
     def test_plaintext_backend_is_rejected(self):
-        plaintext = type("PlaintextKeyring", (MemoryKeyring,), {"__module__": "keyrings.alt.file"})
+        plaintext = type(
+            "PlaintextKeyring",
+            (MemoryKeyring,),
+            {"__module__": "keyrings.alt.file"},
+        )
         store = KeyringSecretStore(plaintext())
         assert not store.is_available()
         with pytest.raises(SecretStorageError):

@@ -6,7 +6,7 @@ from enum import Enum
 
 
 class ConnectionState(Enum):
-    """State of the connection with its user-facing label and indicator color."""
+    """Connection state with its user-facing label and indicator color."""
 
     DISCONNECTED = ("Disconnesso", "#757575")
     CONNECTING = ("Connessione in corso…", "#ef6c00")

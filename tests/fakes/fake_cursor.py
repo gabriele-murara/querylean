@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 
 class FakeCursor:
-    """Records executed statements and serves rows from its ``FakeConnection``."""
+    """Records executed statements; serves rows from its ``FakeConnection``."""
 
     def __init__(self, conn: FakeConnection) -> None:
         self.__conn = conn
@@ -25,7 +25,7 @@ class FakeCursor:
         return self.__description
 
     def execute(self, sql: str) -> None:
-        """Run ``sql`` through the connection handler (or the default result)."""
+        """Run ``sql`` through the connection handler or the default result."""
         conn = self.__conn
         conn.executed.append(sql)
         if sql.startswith(("SET ", "KILL ")):

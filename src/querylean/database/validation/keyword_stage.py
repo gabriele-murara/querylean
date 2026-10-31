@@ -15,7 +15,9 @@ class KeywordStage(ValidationStage):
     def apply(self, context: ValidationContext) -> None:
         tokens = context.tokens
         words = [t for t in tokens if t.is_word()]
-        if not words or (not tokens[0].is_word() and not tokens[0].is_symbol("(")):
+        if not words or (
+            not tokens[0].is_word() and not tokens[0].is_symbol("(")
+        ):
             raise ValidationRejected(ReadOnlyRules.NOT_ALLOWED)
 
         first = words[0].text.upper()
@@ -33,11 +35,14 @@ class KeywordStage(ValidationStage):
 
             if upper in ReadOnlyRules.FORBIDDEN_WORDS and not qualified:
                 show_create = (
-                    is_show and upper == ReadOnlyRules.SHOW_CREATE_EXCEPTION and index == 1
+                    is_show
+                    and upper == ReadOnlyRules.SHOW_CREATE_EXCEPTION
+                    and index == 1
                 )
                 if not show_create:
                     raise ValidationRejected(
-                        f"{ReadOnlyRules.NOT_ALLOWED} Parola chiave non ammessa: {upper}."
+                        f"{ReadOnlyRules.NOT_ALLOWED} Parola chiave non "
+                        f"ammessa: {upper}."
                     )
             if (
                 upper in ReadOnlyRules.FORBIDDEN_FUNCTIONS
@@ -45,6 +50,7 @@ class KeywordStage(ValidationStage):
                 and following.is_symbol("(")
             ):
                 raise ValidationRejected(
-                    f"La funzione {upper}() non è consentita in modalità sola lettura."
+                    f"La funzione {upper}() non è consentita in modalità sola "
+                    "lettura."
                 )
         context.first_word = first

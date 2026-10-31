@@ -14,16 +14,25 @@ from querylean.config.ui_preferences import UiPreferences
 
 
 class TestConfigManager:
-    """Round trip, permissions, no password, corrupted files and write errors."""
+    """Round trip, permissions, no password, corrupted files, write errors."""
 
     def test_defaults_when_missing(self, tmp_path):
-        assert ConfigManager(tmp_path / "config.json").load().connection == ConnectionConfig()
+        assert (
+            ConfigManager(tmp_path / "config.json").load().connection
+            == ConnectionConfig()
+        )
 
     def test_roundtrip_and_permissions(self, tmp_path):
         path = tmp_path / "sub" / "config.json"
         manager = ConfigManager(path)
         cfg = AppConfig(
-            ConnectionConfig(host="db", port=3307, database="app", username="ro", row_limit=500),
+            ConnectionConfig(
+                host="db",
+                port=3307,
+                database="app",
+                username="ro",
+                row_limit=500,
+            ),
             UiPreferences(window_geometry="abc"),
         )
         manager.save(cfg)
@@ -44,7 +53,9 @@ class TestConfigManager:
 
     def test_invalid_values_are_clamped_or_ignored(self, tmp_path):
         path = tmp_path / "config.json"
-        path.write_text(json.dumps({"connection": {"query_timeout": 0, "row_limit": 99999}}))
+        path.write_text(
+            json.dumps({"connection": {"query_timeout": 0, "row_limit": 99999}})
+        )
         cfg = ConfigManager(path).load().connection
         assert cfg.query_timeout == 1 and cfg.row_limit == 10_000
 

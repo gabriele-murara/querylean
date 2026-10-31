@@ -15,20 +15,24 @@ from querylean.log.log_manager import LogManager
 class ReadOnlyValidator:
     """Runs independent stages (lexical, keyword, syntax tree) over a statement.
 
-    Any rejection or unexpected error rejects the query. The accepted ``statement`` is
-    the original text without the trailing ``;`` (never regenerated SQL). The validator
-    is an additional barrier: the primary guarantee is a MySQL account with SELECT-only
-    privileges.
+    Any rejection or unexpected error rejects the query. The accepted
+    ``statement`` is the original text without the trailing ``;`` (never
+    regenerated SQL). The validator is an additional barrier: the primary
+    guarantee is a MySQL account with SELECT-only privileges.
     """
 
     __log = LogManager.get_logger(__name__)
 
     def __init__(self, stages: list[ValidationStage] | None = None) -> None:
-        self.__stages = list(stages) if stages else [
-            LexicalStage(),
-            KeywordStage(),
-            SyntaxTreeStage(),
-        ]
+        self.__stages = (
+            list(stages)
+            if stages
+            else [
+                LexicalStage(),
+                KeywordStage(),
+                SyntaxTreeStage(),
+            ]
+        )
 
     @property
     def stages(self) -> list[ValidationStage]:
@@ -46,6 +50,7 @@ class ReadOnlyValidator:
         except Exception:
             self.__log.exception("Unexpected error in the validator")
             return ValidationResult.reject(
-                "Impossibile verificare la query in modo sicuro: la query è stata rifiutata."
+                "Impossibile verificare la query in modo sicuro: la query è "
+                "stata rifiutata."
             )
         return ValidationResult.accept(context.statement)

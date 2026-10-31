@@ -34,8 +34,8 @@ class ValueFormatter:
 
     @staticmethod
     def copy_text(value: Any) -> str:
-        """Value for TSV copy: NULL becomes an empty cell, tabs and newlines become spaces
-        so that rows and columns stay aligned."""
+        """Value for TSV copy: NULL becomes an empty cell, tabs and newlines
+        become spaces so that rows and columns stay aligned."""
         if value is None:
             return ""
         text = ValueFormatter.format_value(value)
@@ -49,7 +49,9 @@ class ValueFormatter:
             return data.decode("utf-8")
         except UnicodeDecodeError:
             preview = data[: ValueFormatter.MAX_BINARY_PREVIEW].hex()
-            suffix = "…" if len(data) > ValueFormatter.MAX_BINARY_PREVIEW else ""
+            suffix = (
+                "…" if len(data) > ValueFormatter.MAX_BINARY_PREVIEW else ""
+            )
             return f"0x{preview}{suffix}"
 
     @staticmethod
@@ -57,4 +59,6 @@ class ValueFormatter:
         total = int(value.total_seconds())
         sign = "-" if total < 0 else ""
         total = abs(total)
-        return f"{sign}{total // 3600:02d}:{total % 3600 // 60:02d}:{total % 60:02d}"
+        hours, rest = divmod(total, 3600)
+        minutes, seconds = divmod(rest, 60)
+        return f"{sign}{hours:02d}:{minutes:02d}:{seconds:02d}"

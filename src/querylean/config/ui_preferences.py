@@ -8,7 +8,9 @@ from typing import Any
 class UiPreferences:
     """Window geometry and splitter state, stored as base64 strings."""
 
-    def __init__(self, window_geometry: str = "", splitter_state: str = "") -> None:
+    def __init__(
+        self, window_geometry: str = "", splitter_state: str = ""
+    ) -> None:
         self.__window_geometry = window_geometry
         self.__splitter_state = splitter_state
 
@@ -32,7 +34,10 @@ class UiPreferences:
 
     def to_dict(self) -> dict[str, Any]:
         """Serializable representation."""
-        return {"window_geometry": self.__window_geometry, "splitter_state": self.__splitter_state}
+        return {
+            "window_geometry": self.__window_geometry,
+            "splitter_state": self.__splitter_state,
+        }
 
     @staticmethod
     def from_dict(data: object) -> UiPreferences:
@@ -45,7 +50,10 @@ class UiPreferences:
         return prefs
 
     def __eq__(self, other: object) -> bool:
-        return isinstance(other, UiPreferences) and self.to_dict() == other.to_dict()
+        return (
+            isinstance(other, UiPreferences)
+            and self.to_dict() == other.to_dict()
+        )
 
     def __hash__(self) -> int:
         return hash(tuple(self.to_dict().items()))

@@ -6,8 +6,9 @@ from typing import Any
 
 
 class ConnectionConfig:
-    """Connection settings. Setters normalise values: strings are stripped and numbers
-    are clamped to their allowed range, so an instance is always valid to use."""
+    """Connection settings. Setters normalise values: strings are stripped and
+    numbers are clamped to their allowed range, so an instance is always valid
+    to use."""
 
     DEFAULT_HOST = "localhost"
     DEFAULT_PORT = 3306
@@ -43,7 +44,7 @@ class ConnectionConfig:
         self.query_timeout = query_timeout
         self.row_limit = row_limit
 
-    # ------------------------------------------------------------------ properties
+    # --------------------------------------------------------------- properties
     @property
     def host(self) -> str:
         """Server host name or address."""
@@ -90,7 +91,10 @@ class ConnectionConfig:
     @connect_timeout.setter
     def connect_timeout(self, value: int) -> None:
         self.__connect_timeout = ConnectionConfig.__clamp(
-            value, 1, ConnectionConfig.MAX_TIMEOUT_SECONDS, ConnectionConfig.DEFAULT_CONNECT_TIMEOUT
+            value,
+            1,
+            ConnectionConfig.MAX_TIMEOUT_SECONDS,
+            ConnectionConfig.DEFAULT_CONNECT_TIMEOUT,
         )
 
     @property
@@ -101,7 +105,10 @@ class ConnectionConfig:
     @query_timeout.setter
     def query_timeout(self, value: int) -> None:
         self.__query_timeout = ConnectionConfig.__clamp(
-            value, 1, ConnectionConfig.MAX_TIMEOUT_SECONDS, ConnectionConfig.DEFAULT_QUERY_TIMEOUT
+            value,
+            1,
+            ConnectionConfig.MAX_TIMEOUT_SECONDS,
+            ConnectionConfig.DEFAULT_QUERY_TIMEOUT,
         )
 
     @property
@@ -112,10 +119,13 @@ class ConnectionConfig:
     @row_limit.setter
     def row_limit(self, value: int) -> None:
         self.__row_limit = ConnectionConfig.__clamp(
-            value, 1, ConnectionConfig.MAX_ROW_LIMIT, ConnectionConfig.DEFAULT_ROW_LIMIT
+            value,
+            1,
+            ConnectionConfig.MAX_ROW_LIMIT,
+            ConnectionConfig.DEFAULT_ROW_LIMIT,
         )
 
-    # ------------------------------------------------------------------ behaviour
+    # ---------------------------------------------------------------- behaviour
     def missing_fields(self) -> list[str]:
         """Labels (shown to the user) of required fields that are empty."""
         missing = []
@@ -149,7 +159,8 @@ class ConnectionConfig:
 
     @staticmethod
     def from_dict(data: object) -> ConnectionConfig:
-        """Build a configuration from untrusted data, ignoring values of the wrong type."""
+        """Build a configuration from untrusted data, ignoring values of the
+        wrong type."""
         config = ConnectionConfig()
         if not isinstance(data, dict):
             return config
@@ -160,13 +171,18 @@ class ConnectionConfig:
         return config
 
     def __eq__(self, other: object) -> bool:
-        return isinstance(other, ConnectionConfig) and self.to_dict() == other.to_dict()
+        return (
+            isinstance(other, ConnectionConfig)
+            and self.to_dict() == other.to_dict()
+        )
 
     def __hash__(self) -> int:
         return hash(tuple(self.to_dict().items()))
 
     def __repr__(self) -> str:
-        fields = ", ".join(f"{key}={value!r}" for key, value in self.to_dict().items())
+        fields = ", ".join(
+            f"{key}={value!r}" for key, value in self.to_dict().items()
+        )
         return f"ConnectionConfig({fields})"
 
     @staticmethod

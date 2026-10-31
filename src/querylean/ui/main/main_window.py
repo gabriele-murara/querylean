@@ -1,10 +1,10 @@
-"""Main window: toolbar, SQL editor and result panel."""
+"""Main window: toolbar, SQL editor, result panel and status bar."""
 
 from __future__ import annotations
 
 import base64
 
-from PySide6.QtCore import QByteArray, Qt, QTimer
+from PySide6.QtCore import QByteArray, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QSplitter,
+    QStatusBar,
     QToolBar,
     QVBoxLayout,
     QWidget,
@@ -30,8 +31,10 @@ from querylean.log.log_manager import LogManager
 from querylean.security.keyring_secret_store import KeyringSecretStore
 from querylean.security.secret_storage_error import SecretStorageError
 from querylean.security.secret_store import SecretStore
+from querylean.ui.dialogs.about_dialog import AboutDialog
 from querylean.ui.dialogs.connection_dialog import ConnectionDialog
 from querylean.ui.editor.sql_editor import SqlEditor
+from querylean.ui.icons.toolbar_icons import ToolbarIcons
 from querylean.ui.main.connection_state import ConnectionState
 from querylean.ui.results.results_table import ResultsTable
 from querylean.ui.worker.db_thread import DbThread
@@ -39,11 +42,12 @@ from querylean.ui.worker.db_worker import DbWorker
 
 
 class MainWindow(QMainWindow):
-    """Toolbar (state, configuration, connect, run, stop), editor and result panel
-    separated by a resizable splitter."""
+    """Toolbar (run, stop, connect, configuration, about), editor and result
+    panel separated by a resizable splitter; connection state at the bottom
+    right."""
 
-    # Delay after the query timeout before the watchdog sends KILL QUERY: lets the
-    # server-side MAX_EXECUTION_TIME act first.
+    # Delay after the query timeout before the watchdog sends KILL QUERY: lets
+    # the server-side MAX_EXECUTION_TIME act first.
     WATCHDOG_GRACE_MS = 2000
     __MAX_RUNNING_PREVIEW = 160
     __ERROR_STYLE = "color: #c62828;"
@@ -78,7 +82,7 @@ class MainWindow(QMainWindow):
         self.__load_password()
         self.__set_state(ConnectionState.DISCONNECTED)
 
-    # ------------------------------------------------------------------ properties
+    # --------------------------------------------------------------- properties
     @property
     def config_manager(self) -> ConfigManager:
         """Configuration persistence."""
@@ -185,28 +189,49 @@ class MainWindow(QMainWindow):
 
     @property
     def config_action(self) -> QAction:
-        """"Configurazione" action."""
+        """ "Configurazione" action."""
         return self.__config_action
 
     @property
     def connect_action(self) -> QAction:
-        """"Connetti"/"Disconnetti" action."""
+        """ "Connetti"/"Disconnetti" action."""
         return self.__connect_action
 
     @property
     def execute_action(self) -> QAction:
-        """"Esegui" action."""
+        """ "Esegui" action."""
         return self.__execute_action
 
     @property
     def stop_action(self) -> QAction:
-        """"Interrompi" action."""
+        """ "Interrompi" action."""
         return self.__stop_action
 
+    @property
+    def about_action(self) -> QAction:
+        """ "Informazioni" action."""
+        return self.__about_action
+
+    def toolbar_actions(self) -> tuple[QAction, ...]:
+        """Toolbar actions in display order."""
+        return (
+            self.__execute_action,
+            self.__stop_action,
+            self.__connect_action,
+            self.__config_action,
+            self.__about_action,
+        )
+
     # ------------------------------------------------------------------ actions
+    def show_about(self) -> None:
+        """Open the "Informazioni su QueryLean" dialog."""
+        AboutDialog(self).exec()
+
     def show_message(self, text: str, *, error: bool = False) -> None:
         """Show a status (or error) message in the result panel."""
-        self.__message_label.setStyleSheet(MainWindow.__ERROR_STYLE if error else "")
+        self.__message_label.setStyleSheet(
+            MainWindow.__ERROR_STYLE if error else ""
+        )
         self.__message_label.setText(text)
 
     def open_configuration(self) -> None:
@@ -220,7 +245,11 @@ class MainWindow(QMainWindow):
         )
         if dialog.exec() != ConnectionDialog.DialogCode.Accepted:
             return
-        old_key = self.__secret_key() if self.__app_config.connection.username else None
+        old_key = (
+            self.__secret_key()
+            if self.__app_config.connection.username
+            else None
+        )
         self.__app_config.connection = dialog.config()
         self.password = dialog.password_value()
         self.__save_config()
@@ -231,16 +260,20 @@ class MainWindow(QMainWindow):
                 if old_key is not None and old_key != new_key:
                     self.__secrets.delete_password(old_key)
                 self.__secrets.set_password(new_key, self.__password)
-                self.show_message("Configurazione salvata. Password salvata nel portachiavi.")
+                self.show_message(
+                    "Configurazione salvata. Password salvata nel portachiavi."
+                )
             except SecretStorageError as exc:
                 self.show_message(f"Configurazione salvata. {exc}", error=True)
         else:
             self.show_message(
-                "Configurazione salvata. La password resterà in memoria solo per questa sessione."
+                "Configurazione salvata. La password resterà in memoria solo "
+                "per questa sessione."
             )
         if self.__state == ConnectionState.CONNECTED:
             self.show_message(
-                self.__message_label.text() + " Riconnettiti per applicare le modifiche."
+                self.__message_label.text()
+                + " Riconnettiti per applicare le modifiche."
             )
 
     def toggle_connection(self) -> None:
@@ -251,21 +284,27 @@ class MainWindow(QMainWindow):
         cfg = self.__app_config.connection
         if not cfg.is_complete():
             self.show_message(
-                "Configurazione incompleta: compila i campi obbligatori.", error=True
+                "Configurazione incompleta: compila i campi obbligatori.",
+                error=True,
             )
             self.open_configuration()
             cfg = self.__app_config.connection
             if not cfg.is_complete():
                 return
         if not self.__password and not self.__ask_password():
-            self.show_message("Connessione annullata: password non inserita.", error=True)
+            self.show_message(
+                "Connessione annullata: password non inserita.", error=True
+            )
             return
         self.__set_state(ConnectionState.CONNECTING)
-        self.show_message(f"Connessione a {cfg.host}:{cfg.port}/{cfg.database}…")
+        self.show_message(
+            f"Connessione a {cfg.host}:{cfg.port}/{cfg.database}…"
+        )
         self.worker.connect_requested.emit(cfg.copy(), self.__password)
 
     def execute_query(self) -> None:
-        """Run the selection, or the whole editor content when nothing is selected."""
+        """Run the selection, or the whole editor content when nothing is
+        selected."""
         if self.__running:
             return
         sql = self.__editor.query_text()
@@ -273,7 +312,8 @@ class MainWindow(QMainWindow):
             return
         if self.__state != ConnectionState.CONNECTED:
             self.show_message(
-                "Non connesso: premi «Connetti» prima di eseguire una query.", error=True
+                "Non connesso: premi «Connetti» prima di eseguire una query.",
+                error=True,
             )
             return
         cfg = self.__app_config.connection
@@ -285,11 +325,17 @@ class MainWindow(QMainWindow):
         self.__limit_label.clear()
         single_line = " ".join(sql.split())
         limit = MainWindow.__MAX_RUNNING_PREVIEW
-        preview = single_line if len(single_line) <= limit else single_line[: limit - 3] + "…"
+        preview = (
+            single_line
+            if len(single_line) <= limit
+            else single_line[: limit - 3] + "…"
+        )
         self.__running_label.setText(f"In esecuzione: {preview}")
         self.__running_label.show()
         self.show_message("Esecuzione in corso…")
-        self.__watchdog.start(cfg.query_timeout * 1000 + MainWindow.WATCHDOG_GRACE_MS)
+        self.__watchdog.start(
+            cfg.query_timeout * 1000 + MainWindow.WATCHDOG_GRACE_MS
+        )
         self.worker.query_requested.emit(sql, cfg.row_limit, cfg.query_timeout)
 
     def stop_query(self) -> None:
@@ -300,7 +346,8 @@ class MainWindow(QMainWindow):
             self.worker.cancel_query(QueryExecutor.CANCEL_BY_USER)
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
-        """Save window geometry and configuration, then release database resources."""
+        """Save window geometry and configuration, then release database
+        resources."""
         if self.__closed:
             event.accept()
             return
@@ -312,40 +359,58 @@ class MainWindow(QMainWindow):
         try:
             self.__config_manager.save(self.__app_config)
         except ConfigError as exc:
-            self.__log.warning("Saving the configuration on close failed: %s", exc)
+            self.__log.warning(
+                "Saving the configuration on close failed: %s", exc
+            )
         self.__db.shutdown()
         event.accept()
 
-    # ------------------------------------------------------------------ UI construction
+    # ---------------------------------------------------------- UI construction
     def __build_toolbar(self) -> None:
         toolbar = QToolBar("Principale", self)
         toolbar.setObjectName("main-toolbar")
         toolbar.setMovable(False)
-        toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        toolbar.setIconSize(QSize(20, 20))
         self.addToolBar(toolbar)
 
+        # Connection state shown at the bottom right, as a permanent status bar
+        # widget.
         self.__state_label = QLabel()
-        self.__state_label.setContentsMargins(6, 0, 12, 0)
-        toolbar.addWidget(self.__state_label)
-        toolbar.addSeparator()
+        self.__state_label.setContentsMargins(6, 0, 6, 0)
+        status_bar = QStatusBar(self)
+        status_bar.setSizeGripEnabled(True)
+        status_bar.addPermanentWidget(self.__state_label)
+        self.setStatusBar(status_bar)
 
-        self.__config_action = QAction("Configurazione", self)
-        self.__config_action.triggered.connect(self.open_configuration)
-        self.__connect_action = QAction("Connetti", self)
-        self.__connect_action.triggered.connect(self.toggle_connection)
-        self.__execute_action = QAction("Esegui", self)
+        # Order: Esegui, Interrompi, Connetti/Disconnetti, Configurazione,
+        # Informazioni.
+        self.__connect_icon = ToolbarIcons.connect()
+        self.__disconnect_icon = ToolbarIcons.disconnect()
+        self.__execute_action = QAction(ToolbarIcons.play(), "Esegui", self)
         self.__execute_action.setToolTip(
             "Esegui la selezione o l'intera query (Ctrl/Cmd+Invio)"
         )
         self.__execute_action.triggered.connect(self.execute_query)
-        self.__stop_action = QAction("Interrompi", self)
+        self.__stop_action = QAction(ToolbarIcons.stop(), "Interrompi", self)
+        self.__stop_action.setToolTip("Interrompi la query in esecuzione")
         self.__stop_action.triggered.connect(self.stop_query)
-        for action in (
-            self.__config_action,
-            self.__connect_action,
-            self.__execute_action,
-            self.__stop_action,
-        ):
+        self.__connect_action = QAction(self.__connect_icon, "Connetti", self)
+        self.__connect_action.triggered.connect(self.toggle_connection)
+        self.__config_action = QAction(
+            ToolbarIcons.settings(), "Configurazione", self
+        )
+        self.__config_action.setToolTip("Configura la connessione MySQL")
+        self.__config_action.triggered.connect(self.open_configuration)
+        self.__about_action = QAction(
+            ToolbarIcons.about(), "Informazioni", self
+        )
+        self.__about_action.setToolTip(
+            f"Informazioni su {AppInfo.DISPLAY_NAME}"
+        )
+        self.__about_action.setMenuRole(QAction.MenuRole.AboutRole)
+        self.__about_action.triggered.connect(self.show_about)
+        for action in self.toolbar_actions():
             toolbar.addAction(action)
 
         quit_action = QAction(self)
@@ -418,19 +483,26 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ state
     def __set_state(self, state: ConnectionState) -> None:
         self.__state = state
-        self.__state_label.setText(f"<b style='color:{state.color}'>●</b> {state.label}")
+        self.__state_label.setText(
+            f"<b style='color:{state.color}'>●</b> {state.label}"
+        )
         self.__update_actions()
 
     def __update_actions(self) -> None:
         connected = self.__state == ConnectionState.CONNECTED
         busy = self.__state == ConnectionState.CONNECTING
-        self.__connect_action.setText("Disconnetti" if connected else "Connetti")
+        self.__connect_action.setText(
+            "Disconnetti" if connected else "Connetti"
+        )
+        self.__connect_action.setIcon(
+            self.__disconnect_icon if connected else self.__connect_icon
+        )
         self.__connect_action.setEnabled(not busy and not self.__running)
         self.__config_action.setEnabled(not busy and not self.__running)
         self.__execute_action.setEnabled(connected and not self.__running)
         self.__stop_action.setEnabled(self.__running)
 
-    # ------------------------------------------------------------------ password
+    # ----------------------------------------------------------------- password
     def __secret_key(self) -> str:
         cfg = self.__app_config.connection
         return SecretStore.account_key(cfg.username, cfg.host, cfg.port)
@@ -439,7 +511,9 @@ class MainWindow(QMainWindow):
         if not self.__app_config.connection.username:
             return
         try:
-            self.password = self.__secrets.get_password(self.__secret_key()) or ""
+            self.password = (
+                self.__secrets.get_password(self.__secret_key()) or ""
+            )
         except SecretStorageError as exc:
             self.show_message(str(exc), error=True)
             self.password = ""
@@ -463,10 +537,12 @@ class MainWindow(QMainWindow):
         except ConfigError as exc:
             QMessageBox.warning(self, "Configurazione", str(exc))
 
-    # ------------------------------------------------------------------ worker responses
+    # --------------------------------------------------------- worker responses
     def __on_watchdog(self) -> None:
         if self.__running:
-            self.__log.info("Watchdog: query exceeded its timeout, sending KILL QUERY")
+            self.__log.info(
+                "Watchdog: query exceeded its timeout, sending KILL QUERY"
+            )
             self.worker.cancel_query(QueryExecutor.CANCEL_BY_TIMEOUT)
 
     def __on_connected(self) -> None:
@@ -517,14 +593,18 @@ class MainWindow(QMainWindow):
             self.__set_state(ConnectionState.ERROR)
             self.worker.disconnect_requested.emit()
 
-    # ------------------------------------------------------------------ geometry
+    # ----------------------------------------------------------------- geometry
     def __restore_geometry(self) -> None:
         ui = self.__app_config.ui
         try:
             if ui.window_geometry:
-                self.restoreGeometry(QByteArray(base64.b64decode(ui.window_geometry)))
+                self.restoreGeometry(
+                    QByteArray(base64.b64decode(ui.window_geometry))
+                )
             if ui.splitter_state:
-                self.__splitter.restoreState(QByteArray(base64.b64decode(ui.splitter_state)))
+                self.__splitter.restoreState(
+                    QByteArray(base64.b64decode(ui.splitter_state))
+                )
         except (ValueError, TypeError):
             self.__log.warning("Invalid window geometry: ignored")
 

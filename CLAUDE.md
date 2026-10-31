@@ -19,7 +19,8 @@ Client desktop minimale (Linux/macOS, **no Windows**) per eseguire **solo query 
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"   # setup (aggiungere [build] per PyInstaller)
 .venv/bin/python -m querylean                                # avvio dai sorgenti
 .venv/bin/python -m querylean --smoke-test                   # verifica import/pacchetto (usato in CI)
-.venv/bin/ruff check src tests                               # lint (deve essere pulito)
+.venv/bin/ruff check src tests packaging                     # lint (deve essere pulito)
+.venv/bin/ruff format src tests packaging                    # formattazione a 80 colonne
 .venv/bin/pytest -q                                          # unit + GUI; conftest imposta QT_QPA_PLATFORM=offscreen
 .venv/bin/pytest tests/test_read_only_validator.py -q        # solo validatore
 PYTHON=.venv/bin/python APPIMAGE_EXTRACT_AND_RUN=1 packaging/build_linux_appimage.sh   # → dist/*.AppImage
@@ -58,7 +59,13 @@ Test d'integrazione (`tests/integration/`): vengono saltati se mancano le variab
   - I doppioni stanno in `tests/fakes/`, una classe per file.
   - Le fixture condivise stanno in classi base sotto `tests/support/`; il nome non inizia con `Test`, così pytest non le raccoglie.
 - Override di Qt (`keyPressEvent`, `rowCount`, …) mantengono il nome Qt con `# noqa: N802`. Gli slot privati (`__on_...`) funzionano anche con connessioni tra thread.
-- Python ≥ 3.11, `ruff` con line-length 100 e regole `E F W I B UP`.
+- **Righe di massimo 80 colonne**:
+  - vale per codice, docstring e commenti Python, compresi `packaging/querylean.spec` e `packaging/launcher.py`, e per gli script shell;
+  - `ruff` lo verifica (`line-length = 80` in `pyproject.toml`) e `ruff format` lo applica al codice;
+  - docstring, commenti e stringhe lunghe vanno spezzati a mano: le stringhe si dividono per concatenazione implicita tra parentesi (`("prima parte "` / `"seconda parte")`);
+  - non usare `# noqa: E501`.
+- Il codice va formattato con `.venv/bin/ruff format src tests packaging`; `ruff format --check` deve risultare pulito.
+- Python ≥ 3.11, `ruff` con regole `E F W I B UP`.
 
 ## Logger
 
@@ -78,7 +85,7 @@ Il logger è implementato **nel progetto** (`querylean/log/`) e non importato da
 
 ```
 src/querylean/
-  app/                 AppInfo (NAME, DISPLAY_NAME, VERSION), Application.run() (entry point, excepthook), SmokeTest
+  app/                 AppInfo (NAME, DISPLAY_NAME, VERSION, AUTHOR, …), Application.run() (entry point, excepthook), SmokeTest
   log/                 AppLogger, LogManager, SecretRedactor
   config/              ConnectionConfig, UiPreferences, AppConfig, ConfigManager (JSON atomico 0600), ConfigError
   security/            SecretStore (astratta), KeyringSecretStore, SecretStorageError
@@ -90,14 +97,15 @@ src/querylean/
                        MySqlLexer, SqlToken, LexedStatement, ReadOnlyRules, ValidationResult
   ui/
     main/              MainWindow, ConnectionState
-    dialogs/           ConnectionDialog
+    dialogs/           ConnectionDialog, AboutDialog (versione/autore da AppInfo)
+    icons/             ToolbarIcons (icone disegnate con QPainter: nessun asset da impacchettare)
     editor/            SqlEditor, SqlHighlighter, LineNumberArea
     results/           ResultsTable, ResultsModel, ValueFormatter
     worker/            DbWorker (QObject nel thread DB), DbThread (avvio/arresto)
 tests/                 test_<classe>.py; fakes/; support/; integration/
 ```
 
-`AppInfo.VERSION` deve coincidere con `version` in `pyproject.toml`: lo verifica `tests/test_app_info.py`, e gli script di build leggono la versione da `pyproject.toml`.
+`AppInfo.VERSION` e `AppInfo.AUTHOR` devono coincidere con `version` e `authors` in `pyproject.toml`: lo verifica `tests/test_app_info.py`, e gli script di build leggono la versione da `pyproject.toml`.
 
 Flusso di una query:
 

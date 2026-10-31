@@ -1,1 +1,1 @@
-"""Logging infrastructure: logger wrapper, configuration and secret redaction."""
+"""Logging infrastructure: logger wrapper, configuration, secret redaction."""

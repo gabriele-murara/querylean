@@ -1,5 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
-# Spec PyInstaller (modalità onedir). Uso: pyinstaller --noconfirm packaging/querylean.spec
+# PyInstaller spec (onedir mode).
+# Usage: pyinstaller --noconfirm packaging/querylean.spec
 import sys
 from pathlib import Path
 
@@ -9,9 +10,11 @@ ROOT = Path(SPECPATH).parent
 APP_NAME = "querylean"
 
 hiddenimports = (
-    collect_submodules("mysql.connector.plugins")  # plugin di autenticazione caricati a runtime
+    # Authentication plugins are loaded at runtime.
+    collect_submodules("mysql.connector.plugins")
     + collect_submodules("mysql.connector.locales")
-    + collect_submodules("keyring.backends")  # SecretService (Linux), macOS Keychain
+    # SecretService (Linux), macOS Keychain.
+    + collect_submodules("keyring.backends")
     + ["sqlglot.dialects.mysql"]
 )
 datas = collect_data_files("mysql.connector")
@@ -22,8 +25,16 @@ a = Analysis(
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
-    excludes=["tkinter", "unittest", "pytest", "PySide6.QtNetwork", "PySide6.QtQml",
-              "PySide6.QtQuick", "PySide6.QtSql", "PySide6.QtTest"],
+    excludes=[
+        "tkinter",
+        "unittest",
+        "pytest",
+        "PySide6.QtNetwork",
+        "PySide6.QtQml",
+        "PySide6.QtQuick",
+        "PySide6.QtSql",
+        "PySide6.QtTest",
+    ],
     noarchive=False,
 )
 pyz = PYZ(a.pure)
@@ -37,7 +48,8 @@ exe = EXE(
     console=False,
     strip=False,
     upx=False,
-    target_arch=None,  # architettura dell'interprete che esegue la build
+    # Architecture of the interpreter running the build.
+    target_arch=None,
 )
 coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name=APP_NAME)
 

@@ -6,7 +6,8 @@ from querylean.database.validation.sql_token import SqlToken
 
 
 class LexedStatement:
-    """Significant tokens of a single statement plus its text without the final ``;``."""
+    """Significant tokens of a single statement plus its text without the final
+    ``;``."""
 
     def __init__(self, tokens: list[SqlToken], statement: str) -> None:
         self.__tokens = list(tokens)

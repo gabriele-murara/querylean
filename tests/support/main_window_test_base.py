@@ -18,8 +18,9 @@ from querylean.ui.worker.db_thread import DbThread
 
 
 class MainWindowTestBase(ABC):  # noqa: B024 (fixture holder, no abstract methods)
-    """Builds a ``MainWindow`` backed by a fake driver, an in-memory keychain and a
-    temporary configuration file. Not collected by pytest (no ``Test`` prefix)."""
+    """Builds a ``MainWindow`` backed by a fake driver, an in-memory keychain
+    and a temporary configuration file. Not collected by pytest (no ``Test``
+    prefix)."""
 
     WAIT_MS = 5000
 
@@ -54,7 +55,8 @@ class MainWindowTestBase(ABC):  # noqa: B024 (fixture holder, no abstract method
         MainWindowTestBase.configure(window)
         window.toggle_connection()
         qtbot.waitUntil(
-            lambda: window.state == ConnectionState.CONNECTED, timeout=MainWindowTestBase.WAIT_MS
+            lambda: window.state == ConnectionState.CONNECTED,
+            timeout=MainWindowTestBase.WAIT_MS,
         )
 
     @staticmethod
@@ -62,4 +64,6 @@ class MainWindowTestBase(ABC):  # noqa: B024 (fixture holder, no abstract method
         """Execute ``sql`` and wait for completion."""
         window.editor.setPlainText(sql)
         window.execute_query()
-        qtbot.waitUntil(lambda: not window.running, timeout=MainWindowTestBase.WAIT_MS)
+        qtbot.waitUntil(
+            lambda: not window.running, timeout=MainWindowTestBase.WAIT_MS
+        )

@@ -43,10 +43,13 @@ class AppLogger:
         """Log an ERROR message."""
         self.__logger.error(msg, *args, stacklevel=2)
 
-    def critical(self, msg: str, *args: object, exc_info: object = None) -> None:
+    def critical(
+        self, msg: str, *args: object, exc_info: object = None
+    ) -> None:
         """Log a CRITICAL message, optionally with exception information."""
         self.__logger.critical(msg, *args, exc_info=exc_info, stacklevel=2)
 
     def exception(self, msg: str, *args: object) -> None:
-        """Log an ERROR message with the traceback of the exception being handled."""
+        """Log an ERROR message with the traceback of the exception being
+        handled."""
         self.__logger.error(msg, *args, exc_info=True, stacklevel=2)

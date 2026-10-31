@@ -23,7 +23,8 @@ from querylean.ui.worker.db_worker import DbWorker
 
 class ConnectionDialog(QDialog):
     """Edits host, port, database, credentials, timeouts and row limit; offers
-    "Test connessione" (asynchronous, through the worker) and "Salva configurazione"."""
+    "Test connessione" (asynchronous, through the worker) and "Salva
+    configurazione"."""
 
     __OK_COLOR = "#1a7f37"
     __ERROR_COLOR = "#c62828"
@@ -44,7 +45,9 @@ class ConnectionDialog(QDialog):
         self.__worker = worker
 
         self.__host = QLineEdit(config.host)
-        self.__port = ConnectionDialog.__spin(1, ConnectionConfig.MAX_PORT, config.port)
+        self.__port = ConnectionDialog.__spin(
+            1, ConnectionConfig.MAX_PORT, config.port
+        )
         self.__database = QLineEdit(config.database)
         self.__username = QLineEdit(config.username)
         self.__password = QLineEdit(password)
@@ -52,20 +55,24 @@ class ConnectionDialog(QDialog):
         self.__show_password = QCheckBox("Mostra password")
         self.__show_password.toggled.connect(self.__on_toggle_password)
 
-        self.__remember_password = QCheckBox("Salva la password nel portachiavi di sistema")
+        self.__remember_password = QCheckBox(
+            "Salva la password nel portachiavi di sistema"
+        )
         self.__remember_password.setChecked(keyring_available)
         self.__remember_password.setEnabled(keyring_available)
         if not keyring_available:
             self.__remember_password.setToolTip(
-                "Portachiavi non disponibile: la password resterà in memoria solo per questa "
-                "sessione."
+                "Portachiavi non disponibile: la password resterà in memoria "
+                "solo per questa sessione."
             )
 
         max_timeout = ConnectionConfig.MAX_TIMEOUT_SECONDS
         self.__connect_timeout = ConnectionDialog.__spin(
             1, max_timeout, config.connect_timeout, " s"
         )
-        self.__query_timeout = ConnectionDialog.__spin(1, max_timeout, config.query_timeout, " s")
+        self.__query_timeout = ConnectionDialog.__spin(
+            1, max_timeout, config.query_timeout, " s"
+        )
         self.__row_limit = ConnectionDialog.__spin(
             1, ConnectionConfig.MAX_ROW_LIMIT, config.row_limit
         )
@@ -84,15 +91,18 @@ class ConnectionDialog(QDialog):
         form.addRow("Righe massime", self.__row_limit)
 
         hint = QLabel(
-            "Usa un account MySQL con soli privilegi SELECT: la modalità di sola lettura è "
-            "garantita principalmente dai privilegi dell'account."
+            "Usa un account MySQL con soli privilegi SELECT: la modalità di "
+            "sola lettura è garantita principalmente dai privilegi "
+            "dell'account."
         )
         hint.setWordWrap(True)
         hint.setStyleSheet("color: palette(placeholder-text);")
 
         self.__status = QLabel()
         self.__status.setWordWrap(True)
-        self.__status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.__status.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
 
         self.__test_button = QPushButton("Test connessione")
         self.__test_button.clicked.connect(self.test_connection)
@@ -175,12 +185,12 @@ class ConnectionDialog(QDialog):
 
     @property
     def test_button(self) -> QPushButton:
-        """"Test connessione" button."""
+        """ "Test connessione" button."""
         return self.__test_button
 
     @property
     def save_button(self) -> QPushButton:
-        """"Salva configurazione" button."""
+        """ "Salva configurazione" button."""
         return self.__save_button
 
     # ------------------------------------------------------------------ values
@@ -230,11 +240,13 @@ class ConnectionDialog(QDialog):
             pass
         super().done(result)
 
-    # ------------------------------------------------------------------ internals
+    # ---------------------------------------------------------------- internals
     def __check_required(self) -> bool:
         missing = self.missing_fields()
         if missing:
-            self.__set_status(False, "Campi obbligatori mancanti: " + ", ".join(missing) + ".")
+            self.__set_status(
+                False, "Campi obbligatori mancanti: " + ", ".join(missing) + "."
+            )
             return False
         return True
 
@@ -244,11 +256,17 @@ class ConnectionDialog(QDialog):
 
     def __on_toggle_password(self, visible: bool) -> None:
         self.__password.setEchoMode(
-            QLineEdit.EchoMode.Normal if visible else QLineEdit.EchoMode.Password
+            QLineEdit.EchoMode.Normal
+            if visible
+            else QLineEdit.EchoMode.Password
         )
 
     def __set_status(self, ok: bool, message: str) -> None:
-        color = ConnectionDialog.__OK_COLOR if ok else ConnectionDialog.__ERROR_COLOR
+        color = (
+            ConnectionDialog.__OK_COLOR
+            if ok
+            else ConnectionDialog.__ERROR_COLOR
+        )
         self.__status.setStyleSheet(f"color: {color};")
         self.__status.setText(message)
 

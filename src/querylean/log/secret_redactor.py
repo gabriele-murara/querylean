@@ -8,7 +8,7 @@ import threading
 
 
 class SecretRedactor(logging.Filter):
-    """Masks registered secrets and ``password=...`` pairs in every log record."""
+    """Masks registered secrets and ``password=...`` pairs in log records."""
 
     __PASSWORD_PAIR = re.compile(r"(?i)(password|passwd|pwd)(\s*[=:]\s*)(\S+)")
     __MASK = "***"
@@ -36,13 +36,17 @@ class SecretRedactor(logging.Filter):
             secrets = sorted(self.__secrets, key=len, reverse=True)
         for secret in secrets:
             text = text.replace(secret, SecretRedactor.__MASK)
-        return SecretRedactor.__PASSWORD_PAIR.sub(rf"\1\2{SecretRedactor.__MASK}", text)
+        return SecretRedactor.__PASSWORD_PAIR.sub(
+            rf"\1\2{SecretRedactor.__MASK}", text
+        )
 
     def filter(self, record: logging.LogRecord) -> bool:
         """Redact the formatted message and any traceback text of ``record``."""
         message = record.getMessage()
         if record.exc_info and not record.exc_text:
-            record.exc_text = logging.Formatter().formatException(record.exc_info)
+            record.exc_text = logging.Formatter().formatException(
+                record.exc_info
+            )
         record.msg = self.redact(message)
         record.args = None
         if record.exc_text:

@@ -14,7 +14,8 @@ from querylean.log.secret_redactor import SecretRedactor
 
 
 class LogManager:
-    """Configures handlers for the application logger tree and hands out loggers."""
+    """Configures handlers for the application logger tree and hands out
+    loggers."""
 
     __MAX_BYTES = 1_000_000
     __BACKUP_COUNT = 3
@@ -47,10 +48,13 @@ class LogManager:
 
     @staticmethod
     def configure(
-        log_dir: Path | None = None, level: int = logging.INFO, *, console: bool = False
+        log_dir: Path | None = None,
+        level: int = logging.INFO,
+        *,
+        console: bool = False,
     ) -> Path:
-        """Attach a size-limited rotating file handler (and optionally a console handler)
-        to the application logger. Returns the log file path."""
+        """Attach a size-limited rotating file handler (and optionally a console
+        handler) to the application logger. Returns the log file path."""
         log_dir = log_dir or LogManager.default_log_dir()
         log_dir.mkdir(parents=True, exist_ok=True)
         log_file = log_dir / f"{AppInfo.NAME}.log"

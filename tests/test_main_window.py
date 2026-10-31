@@ -16,7 +16,8 @@ from support.main_window_test_base import MainWindowTestBase
 
 
 class TestMainWindow(MainWindowTestBase):
-    """Opening, connection handling, execution, errors, responsiveness and closing."""
+    """Opening, connection handling, execution, errors, responsiveness and
+    closing."""
 
     def test_opens_disconnected(self, window):
         assert window.isVisible()
@@ -25,11 +26,32 @@ class TestMainWindow(MainWindowTestBase):
         assert not window.execute_action.isEnabled()
         assert not window.stop_action.isEnabled()
 
+    def test_toolbar_order_and_icons(self, window):
+        texts = [action.text() for action in window.toolbar_actions()]
+        assert texts == [
+            "Esegui",
+            "Interrompi",
+            "Connetti",
+            "Configurazione",
+            "Informazioni",
+        ]
+        for action in window.toolbar_actions():
+            assert not action.icon().isNull()
+
+    def test_connect_action_icon_follows_state(self, qtbot, window):
+        before = window.connect_action.icon().cacheKey()
+        self.connect(qtbot, window)
+        assert window.connect_action.icon().cacheKey() != before
+
     def test_connection_failure_is_shown(self, qtbot, window, connector):
-        connector.error = mysql_errors.InterfaceError(msg="Can't connect", errno=2003)
+        connector.error = mysql_errors.InterfaceError(
+            msg="Can't connect", errno=2003
+        )
         self.configure(window)
         window.toggle_connection()
-        qtbot.waitUntil(lambda: window.state == ConnectionState.ERROR, timeout=self.WAIT_MS)
+        qtbot.waitUntil(
+            lambda: window.state == ConnectionState.ERROR, timeout=self.WAIT_MS
+        )
         assert "Impossibile raggiungere" in window.message_label.text()
         assert not window.execute_action.isEnabled()
 
@@ -38,10 +60,14 @@ class TestMainWindow(MainWindowTestBase):
         assert window.connect_action.text() == "Disconnetti"
         window.toggle_connection()
         qtbot.waitUntil(
-            lambda: window.state == ConnectionState.DISCONNECTED, timeout=self.WAIT_MS
+            lambda: window.state == ConnectionState.DISCONNECTED,
+            timeout=self.WAIT_MS,
         )
         window.toggle_connection()
-        qtbot.waitUntil(lambda: window.state == ConnectionState.CONNECTED, timeout=self.WAIT_MS)
+        qtbot.waitUntil(
+            lambda: window.state == ConnectionState.CONNECTED,
+            timeout=self.WAIT_MS,
+        )
 
     def test_execute_valid_query_shows_results(self, qtbot, window):
         self.connect(qtbot, window)
@@ -67,13 +93,17 @@ class TestMainWindow(MainWindowTestBase):
 
     def test_timeout_is_shown(self, qtbot, window, connector):
         self.connect(qtbot, window)
-        connector.connections[0].handler = lambda sql: mysql_errors.DatabaseError(
-            msg="maximum statement execution time exceeded", errno=3024
+        connector.connections[0].handler = lambda sql: (
+            mysql_errors.DatabaseError(
+                msg="maximum statement execution time exceeded", errno=3024
+            )
         )
         self.run(qtbot, window, "SELECT SLEEP(10)")
         assert "Timeout" in window.message_label.text()
 
-    def test_gui_stays_responsive_and_query_can_be_stopped(self, qtbot, window, connector):
+    def test_gui_stays_responsive_and_query_can_be_stopped(
+        self, qtbot, window, connector
+    ):
         self.connect(qtbot, window)
         conn = connector.connections[0]
         gate = threading.Event()
@@ -104,7 +134,9 @@ class TestMainWindow(MainWindowTestBase):
         window.editor.setPlainText("DELETE FROM t\nSELECT n FROM t")
         cursor = window.editor.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.Down)
-        cursor.movePosition(QTextCursor.MoveOperation.EndOfLine, QTextCursor.MoveMode.KeepAnchor)
+        cursor.movePosition(
+            QTextCursor.MoveOperation.EndOfLine, QTextCursor.MoveMode.KeepAnchor
+        )
         window.editor.setTextCursor(cursor)
         window.execute_query()
         qtbot.waitUntil(lambda: not window.running, timeout=self.WAIT_MS)
@@ -116,7 +148,9 @@ class TestMainWindow(MainWindowTestBase):
         window.execute_query()
         assert not window.running
 
-    def test_close_releases_resources_and_persists_config(self, qtbot, window, tmp_path):
+    def test_close_releases_resources_and_persists_config(
+        self, qtbot, window, tmp_path
+    ):
         backend = window.secrets.backend
         self.configure(window, password="pw-123")
         window.close()

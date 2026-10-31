@@ -38,16 +38,21 @@ class ConfigManager:
     @staticmethod
     def default_path() -> Path:
         """Platform specific configuration file path."""
-        return Path(user_config_dir(AppInfo.NAME, appauthor=False)) / "config.json"
+        return (
+            Path(user_config_dir(AppInfo.NAME, appauthor=False)) / "config.json"
+        )
 
     def load(self) -> AppConfig:
-        """Load the configuration; a missing or corrupted file yields the defaults."""
+        """Load the configuration; a missing or corrupted file yields the
+        defaults."""
         if not self.__path.exists():
             return AppConfig()
         try:
             data = json.loads(self.__path.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
-            self.__log.warning("Unreadable configuration (%s): using defaults", exc)
+            self.__log.warning(
+                "Unreadable configuration (%s): using defaults", exc
+            )
             return AppConfig()
         if not isinstance(data, dict):
             data = {}
@@ -57,7 +62,8 @@ class ConfigManager:
         )
 
     def save(self, config: AppConfig) -> None:
-        """Atomically write ``config`` with 0600 permissions. Raises ``ConfigError``."""
+        """Atomically write ``config`` with 0600 permissions. Raises
+        ``ConfigError``."""
         payload = {
             "version": ConfigManager.__FORMAT_VERSION,
             "connection": config.connection.to_dict(),
@@ -81,5 +87,6 @@ class ConfigManager:
         except OSError as exc:
             self.__log.error("Cannot save the configuration: %s", exc)
             raise ConfigError(
-                f"Impossibile salvare la configurazione in {self.__path}: {exc.strerror or exc}"
+                f"Impossibile salvare la configurazione in {self.__path}: "
+                f"{exc.strerror or exc}"
             ) from exc

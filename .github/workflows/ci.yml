@@ -43,7 +43,9 @@ jobs:
       - name: Dipendenze
         run: pip install -e ".[dev]"
       - name: Lint
-        run: ruff check src tests
+        run: |
+          ruff check src tests packaging
+          ruff format --check src tests packaging
       - name: Database di test
         run: |
           mysql -h 127.0.0.1 -uroot -proot < tests/integration/setup_test_db.sql

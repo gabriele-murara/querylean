@@ -16,7 +16,9 @@ class TestSqlEditor:
         assert editor.query_text() == "DELETE FROM t\nSELECT n FROM t"
         cursor = editor.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.Down)
-        cursor.movePosition(QTextCursor.MoveOperation.EndOfLine, QTextCursor.MoveMode.KeepAnchor)
+        cursor.movePosition(
+            QTextCursor.MoveOperation.EndOfLine, QTextCursor.MoveMode.KeepAnchor
+        )
         editor.setTextCursor(cursor)
         assert editor.query_text() == "SELECT n FROM t"
 
@@ -24,4 +26,6 @@ class TestSqlEditor:
         editor = SqlEditor()
         qtbot.addWidget(editor)
         with qtbot.waitSignal(editor.execute_requested, timeout=1000):
-            qtbot.keyClick(editor, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier)
+            qtbot.keyClick(
+                editor, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier
+            )

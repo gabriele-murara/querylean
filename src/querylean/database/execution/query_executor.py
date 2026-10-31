@@ -22,9 +22,9 @@ from querylean.log.log_manager import LogManager
 class QueryExecutor:
     """Runs queries on the ``ConnectionManager`` session.
 
-    ``execute`` must be called from the database thread; ``cancel`` may be called from
-    any thread and interrupts the running query with ``KILL QUERY`` on a separate
-    connection.
+    ``execute`` must be called from the database thread; ``cancel`` may be
+    called from any thread and interrupts the running query with ``KILL QUERY``
+    on a separate connection.
     """
 
     CANCEL_BY_USER = "user"
@@ -36,13 +36,17 @@ class QueryExecutor:
     __log = LogManager.get_logger(__name__)
 
     def __init__(
-        self, manager: ConnectionManager, validator: ReadOnlyValidator | None = None
+        self,
+        manager: ConnectionManager,
+        validator: ReadOnlyValidator | None = None,
     ) -> None:
         self.__manager = manager
         self.__validator = validator or ReadOnlyValidator()
         self.__cancel_reason: str | None = None
         self.__running = threading.Event()
-        self.__session_timeout: tuple[int, int] | None = None  # (connection id, ms)
+        self.__session_timeout: tuple[int, int] | None = (
+            None  # (connection id, ms)
+        )
 
     @property
     def manager(self) -> ConnectionManager:
@@ -62,7 +66,8 @@ class QueryExecutor:
     def cancel(self, reason: str = CANCEL_BY_USER) -> bool:
         """Request the interruption of the running query.
 
-        Blocks for at most the connection timeout: call it outside the GUI thread.
+        Blocks for at most the connection timeout: call it outside the GUI
+        thread.
         """
         if not self.__running.is_set():
             return False
@@ -89,19 +94,25 @@ class QueryExecutor:
             rows: list[tuple[Any, ...]] = []
             truncated = False
             if columns:
-                rows, truncated = QueryExecutor.__fetch_limited(cursor, row_limit)
+                rows, truncated = QueryExecutor.__fetch_limited(
+                    cursor, row_limit
+                )
             elapsed = time.monotonic() - started
 
             if truncated:
-                # Do not download the rest of the result set: drop the session, it is
-                # reopened transparently for the next query.
+                # Do not download the rest of the result set: drop the session,
+                # it is reopened transparently for the next query.
                 cursor = None
                 self.__manager.abort_session()
             self.__log.info(
                 "Query executed: %d rows%s in %.3f s",
-                len(rows), " (truncated)" if truncated else "", elapsed,
+                len(rows),
+                " (truncated)" if truncated else "",
+                elapsed,
             )
-            return QueryResult(statement, columns, rows, truncated, row_limit, elapsed)
+            return QueryResult(
+                statement, columns, rows, truncated, row_limit, elapsed
+            )
         except Exception as exc:
             self.__log.info("Execution failed: %r", exc)
             raise self.__translate(exc, timeout, conn) from None
@@ -113,7 +124,7 @@ class QueryExecutor:
                 except Exception:
                     self.__manager.abort_session()
 
-    # ------------------------------------------------------------------ internals
+    # ---------------------------------------------------------------- internals
     def __apply_server_timeout(self, conn: Any, timeout: int) -> None:
         """Set MAX_EXECUTION_TIME (applies to SELECT) only when it changes."""
         ms = int(timeout) * 1000
@@ -124,13 +135,16 @@ class QueryExecutor:
         try:
             cursor.execute(f"SET SESSION MAX_EXECUTION_TIME = {ms}")
         except mysql_errors.Error as exc:
-            # E.g. MariaDB or MySQL < 5.7.8: the client-side watchdog still applies.
+            # E.g. MariaDB or MySQL < 5.7.8: the client-side watchdog still
+            # applies.
             self.__log.warning("MAX_EXECUTION_TIME not supported: %r", exc)
         finally:
             cursor.close()
         self.__session_timeout = key
 
-    def __translate(self, exc: BaseException, timeout: int, conn: Any) -> DatabaseError:
+    def __translate(
+        self, exc: BaseException, timeout: int, conn: Any
+    ) -> DatabaseError:
         reason = self.__cancel_reason
         errno = getattr(exc, "errno", None)
         if errno == QueryExecutor.__ER_QUERY_TIMEOUT:
@@ -143,8 +157,8 @@ class QueryExecutor:
         else:
             result = ErrorTranslator.translate_query_error(exc)
 
-        # After an error in the middle of a fetch the session may hold pending results:
-        # start again from a clean session.
+        # After an error in the middle of a fetch the session may hold pending
+        # results: start again from a clean session.
         if (
             result.kind == "connection_lost"
             or ErrorTranslator.is_connection_lost(exc)
@@ -155,12 +169,17 @@ class QueryExecutor:
         return result
 
     @staticmethod
-    def __fetch_limited(cursor: Any, row_limit: int) -> tuple[list[tuple[Any, ...]], bool]:
-        """Read at most ``row_limit`` rows (plus one, to know whether more exist)."""
+    def __fetch_limited(
+        cursor: Any, row_limit: int
+    ) -> tuple[list[tuple[Any, ...]], bool]:
+        """Read at most ``row_limit`` rows (plus one, to know whether more
+        exist)."""
         rows: list[tuple[Any, ...]] = []
         wanted = row_limit + 1
         while len(rows) < wanted:
-            batch = cursor.fetchmany(min(QueryExecutor.__FETCH_BATCH, wanted - len(rows)))
+            batch = cursor.fetchmany(
+                min(QueryExecutor.__FETCH_BATCH, wanted - len(rows))
+            )
             if not batch:
                 break
             rows.extend(batch)

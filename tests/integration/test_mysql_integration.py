@@ -1,8 +1,9 @@
 """Integration tests against a test MySQL instance (non destructive).
 
-Prerequisites: run ``tests/integration/setup_test_db.sql`` and set QUERYLEAN_TEST_HOST,
-QUERYLEAN_TEST_PORT, QUERYLEAN_TEST_DATABASE, QUERYLEAN_TEST_USER and
-QUERYLEAN_TEST_PASSWORD. Without these variables the tests are skipped.
+Prerequisites: run ``tests/integration/setup_test_db.sql`` and set
+QUERYLEAN_TEST_HOST, QUERYLEAN_TEST_PORT, QUERYLEAN_TEST_DATABASE,
+QUERYLEAN_TEST_USER and QUERYLEAN_TEST_PASSWORD. Without these variables the
+tests are skipped.
 """
 
 import os
@@ -22,15 +23,18 @@ from querylean.database.execution.query_executor import QueryExecutor
 
 @pytest.mark.integration
 @pytest.mark.skipif(
-    not os.environ.get("QUERYLEAN_TEST_USER") or "QUERYLEAN_TEST_PASSWORD" not in os.environ,
+    not os.environ.get("QUERYLEAN_TEST_USER")
+    or "QUERYLEAN_TEST_PASSWORD" not in os.environ,
     reason="QUERYLEAN_TEST_* variables not set: integration tests skipped",
 )
 class TestMysqlIntegration:
-    """Allowed reads, limits, timeouts, cancellation and the server-side barriers."""
+    """Allowed reads, limits, timeouts, cancellation and the server-side
+    barriers."""
 
     # Cartesian product slow enough to exceed short timeouts.
     SLOW_QUERY = (
-        "SELECT COUNT(*) FROM numbers a, numbers b, numbers c WHERE a.n + b.n = c.n"
+        "SELECT COUNT(*) FROM numbers a, numbers b, numbers c "
+        "WHERE a.n + b.n = c.n"
     )
 
     @pytest.fixture
@@ -38,7 +42,8 @@ class TestMysqlIntegration:
         return ConnectionConfig(
             host=os.environ.get("QUERYLEAN_TEST_HOST") or "127.0.0.1",
             port=int(os.environ.get("QUERYLEAN_TEST_PORT") or 3306),
-            database=os.environ.get("QUERYLEAN_TEST_DATABASE") or "querylean_test",
+            database=os.environ.get("QUERYLEAN_TEST_DATABASE")
+            or "querylean_test",
             username=os.environ["QUERYLEAN_TEST_USER"],
             connect_timeout=5,
         )
@@ -55,7 +60,9 @@ class TestMysqlIntegration:
         return QueryExecutor(manager)
 
     def test_select_types_and_nulls(self, executor):
-        result = executor.execute("SELECT * FROM people ORDER BY id", row_limit=100, timeout=10)
+        result = executor.execute(
+            "SELECT * FROM people ORDER BY id", row_limit=100, timeout=10
+        )
         assert result.columns[:3] == ["id", "name", "note"]
         by_id = {row[0]: row for row in result.rows}
         assert by_id[2][1] is None and by_id[2][2] == ""
@@ -68,10 +75,14 @@ class TestMysqlIntegration:
         assert executor.execute("EXPLAIN SELECT * FROM people", 100, 10).rows
 
     def test_row_limit_is_applied_and_session_recovers(self, executor):
-        result = executor.execute("SELECT n FROM numbers ORDER BY n", row_limit=1000, timeout=10)
+        result = executor.execute(
+            "SELECT n FROM numbers ORDER BY n", row_limit=1000, timeout=10
+        )
         assert len(result.rows) == 1000 and result.truncated
         assert result.rows[-1] == (1000,)
-        assert executor.execute("SELECT COUNT(*) FROM numbers", 10, 10).rows == [(2500,)]
+        assert executor.execute(
+            "SELECT COUNT(*) FROM numbers", 10, 10
+        ).rows == [(2500,)]
 
     def test_server_side_timeout(self, executor):
         started = time.monotonic()
@@ -122,7 +133,8 @@ class TestMysqlIntegration:
         ],
     )
     def test_server_blocks_writes_even_bypassing_validator(self, manager, sql):
-        """Second barrier: account privileges and READ ONLY session (non destructive)."""
+        """Second barrier: account privileges and READ ONLY session (non
+        destructive)."""
         cursor = manager.ensure_connected().cursor()
         with pytest.raises(mysql.connector.Error):
             cursor.execute(sql)
