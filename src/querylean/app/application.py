@@ -27,13 +27,16 @@ class Application:
         log_file = LogManager.configure(console=smoke_test)
         sys.excepthook = Application.handle_uncaught_exception
         Application.__log.info(
-            "Starting %s %s (log: %s)", AppInfo.NAME, AppInfo.VERSION, log_file
+            "Starting %s %s (log: %s)",
+            AppInfo.NAME,
+            AppInfo.version(),
+            log_file,
         )
 
         app = QApplication(argv)
         app.setApplicationName(AppInfo.NAME)
         app.setApplicationDisplayName(AppInfo.DISPLAY_NAME)
-        app.setApplicationVersion(AppInfo.VERSION)
+        app.setApplicationVersion(AppInfo.version())
 
         if smoke_test:
             return SmokeTest(app).run()

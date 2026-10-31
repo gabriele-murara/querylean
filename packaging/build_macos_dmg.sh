@@ -8,7 +8,12 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 PYTHON="${PYTHON:-python}"
 ARCH="$(uname -m)"
-VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)"
+# The version is read only from the .version file.
+VERSION="$(tr -d '[:space:]' < .version)"
+if [ -z "$VERSION" ]; then
+    echo "File .version mancante o vuoto" >&2
+    exit 1
+fi
 APP="dist/QueryLean.app"
 
 "$PYTHON" -m PyInstaller --noconfirm --clean \

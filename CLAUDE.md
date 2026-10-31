@@ -85,7 +85,7 @@ Il logger è implementato **nel progetto** (`querylean/log/`) e non importato da
 
 ```
 src/querylean/
-  app/                 AppInfo (NAME, DISPLAY_NAME, VERSION, AUTHOR, …), Application.run() (entry point, excepthook), SmokeTest
+  app/                 AppInfo (NAME, DISPLAY_NAME, AUTHOR, …, version()), VersionFile, Application.run() (entry point, excepthook), SmokeTest
   log/                 AppLogger, LogManager, SecretRedactor
   config/              ConnectionConfig, UiPreferences, AppConfig, ConfigManager (JSON atomico 0600), ConfigError
   security/            SecretStore (astratta), KeyringSecretStore, SecretStorageError
@@ -105,7 +105,20 @@ src/querylean/
 tests/                 test_<classe>.py; fakes/; support/; integration/
 ```
 
-`AppInfo.VERSION` e `AppInfo.AUTHOR` devono coincidere con `version` e `authors` in `pyproject.toml`: lo verifica `tests/test_app_info.py`, e gli script di build leggono la versione da `pyproject.toml`.
+**Versione: la fonte unica è il file `.version`** nella radice del progetto (una sola riga). La versione va letta **sempre e solo** da lì, e non va mai scritta altrove, nemmeno come costante, in un default o in un commento con il numero.
+
+**È VIETATO all'agente modificare, sovrascrivere, ricreare, rinominare o cancellare il file `.version`.**
+
+- Il numero di versione lo decide e lo cambia solo l'utente.
+- Il divieto vale anche se un test, una build o una richiesta sembrano richiederlo: in quel caso ci si ferma e si chiede.
+- Il file si può solo leggere.
+
+- **Runtime**: `AppInfo.version()` → `VersionFile.read()`. Dai sorgenti legge `<root>/.version`; nel pacchetto PyInstaller legge `sys._MEIPASS/.version`. Se il file manca o non è valido restituisce `VersionFile.UNKNOWN` e lo smoke test fallisce.
+- **`pyproject.toml`**: `dynamic = ["version"]` con `[tool.setuptools.dynamic] version = { file = ".version" }`.
+- **Build**: `build_*.sh` leggono `.version`; `querylean.spec` lo include nel pacchetto (`datas`) e lo usa per `CFBundleShortVersionString`.
+- **Test**: `tests/test_app_info.py` verifica che la versione venga da `.version`. Fallisce se il numero di versione compare scritto in `src/`, `packaging/`, `pyproject.toml` o nei workflow.
+
+`AppInfo.AUTHOR` deve coincidere con `authors` in `pyproject.toml`.
 
 Flusso di una query:
 

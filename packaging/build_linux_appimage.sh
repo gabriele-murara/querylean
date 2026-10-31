@@ -9,7 +9,12 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 PYTHON="${PYTHON:-python}"
 ARCH="$(uname -m)"
-VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)"
+# The version is read only from the .version file.
+VERSION="$(tr -d '[:space:]' < .version)"
+if [ -z "$VERSION" ]; then
+    echo "File .version mancante o vuoto" >&2
+    exit 1
+fi
 APPIMAGETOOL_VERSION="1.9.0"
 APPIMAGETOOL="build/appimagetool-${ARCH}.AppImage"
 APPIMAGETOOL_URL="https://github.com/AppImage/appimagetool/releases/download"

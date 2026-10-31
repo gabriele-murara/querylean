@@ -25,10 +25,12 @@ class AboutDialog(QDialog):
     versions of the runtime components."""
 
     __ICON_SIZE = 64
+    __MIN_HEIGHT = 400
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle(f"Informazioni su {AppInfo.DISPLAY_NAME}")
+        self.setMinimumHeight(AboutDialog.__MIN_HEIGHT)
 
         icon = QLabel()
         icon.setPixmap(
@@ -73,7 +75,7 @@ class AboutDialog(QDialog):
         )
         return (
             f"<h2>{e(AppInfo.DISPLAY_NAME)}</h2>"
-            f"<p><b>Versione {e(AppInfo.VERSION)}</b></p>"
+            f"<p><b>Versione {e(AppInfo.version())}</b></p>"
             f"<p>{e(AppInfo.DESCRIPTION)}</p>"
             "<p>Esegue solo istruzioni di lettura (SELECT, SHOW, DESCRIBE, "
             "EXPLAIN). La password è conservata nel portachiavi di sistema.</p>"

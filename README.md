@@ -201,6 +201,17 @@ Verificano query consentite, tipi e `NULL`, limite di righe, timeout, interruzio
 
 Le build vanno eseguite sulla piattaforma di destinazione: PyInstaller non fa cross-compilazione.
 
+### Versione
+
+La versione di QueryLean si legge **solo** dal file `.version` nella radice del progetto (una sola riga). Per cambiarla basta modificare quel file. Lo leggono:
+
+- `pyproject.toml`, come versione dinamica;
+- gli script di build, per il nome degli artefatti;
+- lo spec PyInstaller, che lo include nel pacchetto e lo usa per `Info.plist` su macOS;
+- l'applicazione a runtime, per la finestra **Informazioni** e il log.
+
+Dopo una modifica, dai sorgenti va rieseguito `pip install -e .` perché anche i metadati del pacchetto riportino la nuova versione.
+
 ### Linux (AppImage)
 
 ```bash
@@ -240,7 +251,7 @@ Per una firma valida ai fini della notarizzazione serve anche l'hardened runtime
 - build dell'AppImage e dei DMG arm64 e x86_64, ciascuna con smoke test (`--smoke-test`) del binario;
 - pubblicazione dei pacchetti come artefatti della build.
 
-## Limiti della versione 0.1
+## Limiti di questa versione
 
 - Una sola connessione e una sola query alla volta, una sola istruzione per esecuzione.
 - Non sono supportati: TLS/SSH tunnel configurabili da GUI, autocompletamento, cronologia, esportazione CSV/Excel, paginazione.

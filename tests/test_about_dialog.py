@@ -13,7 +13,7 @@ class TestAboutDialog:
         text = dialog.text.text()
         for expected in (
             AppInfo.DISPLAY_NAME,
-            AppInfo.VERSION,
+            AppInfo.version(),
             AppInfo.AUTHOR,
             AppInfo.LICENSE,
             "Python",

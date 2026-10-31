@@ -4,7 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "querylean"
-version = "0.1.0"
+# The version is read only from the .version file.
+dynamic = ["version"]
 description = "Client desktop minimale per eseguire query MySQL di sola lettura"
 readme = "README.md"
 license = { text = "MIT" }
@@ -32,6 +33,9 @@ where = ["src"]
 testpaths = ["tests"]
 qt_api = "pyside6"
 markers = ["integration: richiede un'istanza MySQL di test (variabili QUERYLEAN_TEST_*)"]
+
+[tool.setuptools.dynamic]
+version = { file = ".version" }
 
 [tool.ruff]
 line-length = 80

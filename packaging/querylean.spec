@@ -8,6 +8,10 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 ROOT = Path(SPECPATH).parent
 APP_NAME = "querylean"
+# The version is read only from .version, which is also bundled so that the
+# application can read it at runtime (VersionFile).
+VERSION_FILE = ROOT / ".version"
+VERSION = VERSION_FILE.read_text(encoding="utf-8").strip()
 
 hiddenimports = (
     # Authentication plugins are loaded at runtime.
@@ -17,7 +21,7 @@ hiddenimports = (
     + collect_submodules("keyring.backends")
     + ["sqlglot.dialects.mysql"]
 )
-datas = collect_data_files("mysql.connector")
+datas = collect_data_files("mysql.connector") + [(str(VERSION_FILE), ".")]
 
 a = Analysis(
     [str(ROOT / "packaging" / "launcher.py")],
@@ -60,7 +64,8 @@ if sys.platform == "darwin":
         icon=None,
         bundle_identifier="computer.murara.querylean",
         info_plist={
-            "CFBundleShortVersionString": "0.1.0",
+            "CFBundleShortVersionString": VERSION,
+            "CFBundleVersion": VERSION,
             "NSHighResolutionCapable": True,
             "LSMinimumSystemVersion": "12.0",
         },
