@@ -51,7 +51,7 @@ class ConfigManager:
             data = json.loads(self.__path.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
             self.__log.warning(
-                "Unreadable configuration (%s): using defaults", exc
+                "Unreadable configuration ({}): using defaults", exc
             )
             return AppConfig()
         if not isinstance(data, dict):
@@ -85,8 +85,7 @@ class ConfigManager:
                 Path(tmp_name).unlink(missing_ok=True)
                 raise
         except OSError as exc:
-            self.__log.error("Cannot save the configuration: %s", exc)
-            raise ConfigError(
-                f"Impossibile salvare la configurazione in {self.__path}: "
-                f"{exc.strerror or exc}"
-            ) from exc
+            self.__log.error("Cannot save the configuration: {}", exc)
+            msg = "Impossibile salvare la configurazione in {}: {}"
+            msg = msg.format(self.__path, exc.strerror or exc)
+            raise ConfigError(msg) from exc

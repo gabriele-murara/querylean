@@ -56,23 +56,18 @@ class ErrorTranslator:
                 errorcode.ER_BAD_DB_ERROR,
                 errorcode.ER_DBACCESS_DENIED_ERROR,
             ):
-                return DatabaseError(
-                    "Database inesistente o non accessibile con questo utente: "
-                    "verifica il nome del database e i privilegi dell'account.",
-                    kind="database",
-                )
+                msg = "Database inesistente o non accessibile con questo "
+                msg += "utente: verifica il nome del database e i privilegi "
+                msg += "dell'account."
+                return DatabaseError(msg, kind="database")
             if errno in ErrorTranslator.__CONNECTION_ERRNOS:
                 return ErrorTranslator.__unreachable()
             if errno == errorcode.ER_HOST_NOT_PRIVILEGED:
-                return DatabaseError(
-                    "Il server MySQL non consente connessioni da questo host "
-                    "per l'utente indicato.",
-                    kind="auth",
-                )
-            return DatabaseError(
-                f"Connessione fallita (errore MySQL {errno}).",
-                kind="connection",
-            )
+                msg = "Il server MySQL non consente connessioni da questo "
+                msg += "host per l'utente indicato."
+                return DatabaseError(msg, kind="auth")
+            msg = "Connessione fallita (errore MySQL {})."
+            return DatabaseError(msg.format(errno), kind="connection")
         if isinstance(exc, OSError):
             return ErrorTranslator.__unreachable()
         return DatabaseError(
@@ -85,45 +80,37 @@ class ErrorTranslator:
         if isinstance(exc, DatabaseError):
             return exc
         if not isinstance(exc, mysql_errors.Error):
-            return DatabaseError(
-                "Errore imprevisto durante il recupero dei risultati. Vedi il "
-                "log."
-            )
+            msg = "Errore imprevisto durante il recupero dei risultati. "
+            msg += "Vedi il log."
+            return DatabaseError(msg)
         errno = exc.errno
         msg = getattr(exc, "msg", None) or ""
         if errno == errorcode.ER_PARSE_ERROR:
-            return DatabaseError(
-                f"Errore di sintassi SQL: {msg}", kind="syntax"
-            )
+            text = "Errore di sintassi SQL: {}".format(msg)
+            return DatabaseError(text, kind="syntax")
         if errno in ErrorTranslator.__PRIVILEGE_ERRNOS:
-            return DatabaseError(
-                f"Accesso negato dal server: {msg}", kind="privileges"
-            )
+            text = "Accesso negato dal server: {}".format(msg)
+            return DatabaseError(text, kind="privileges")
         if errno == errorcode.ER_CANT_EXECUTE_IN_READ_ONLY_TRANSACTION:
-            return DatabaseError(
-                "Operazione rifiutata dal server: la sessione è in sola "
-                "lettura.",
-                kind="readonly",
-            )
+            text = "Operazione rifiutata dal server: la sessione è in sola "
+            text += "lettura."
+            return DatabaseError(text, kind="readonly")
         if isinstance(
             exc, mysql_errors.ReadTimeoutError | mysql_errors.WriteTimeoutError
         ):
-            return DatabaseError(
-                "Il server non risponde: la connessione è stata chiusa. "
-                "Riconnettiti e riprova.",
-                kind="connection_lost",
-            )
+            text = "Il server non risponde: la connessione è stata chiusa. "
+            text += "Riconnettiti e riprova."
+            return DatabaseError(text, kind="connection_lost")
         if (
             errno in ErrorTranslator.__CONNECTION_ERRNOS
             or ErrorTranslator.is_connection_lost(exc)
         ):
-            return DatabaseError(
-                "La connessione al server MySQL è stata persa. Riconnettiti e "
-                "riprova.",
-                kind="connection_lost",
-            )
+            text = "La connessione al server MySQL è stata persa. "
+            text += "Riconnettiti e riprova."
+            return DatabaseError(text, kind="connection_lost")
         if errno is not None and msg:
-            return DatabaseError(f"Errore MySQL {errno}: {msg}", kind="query")
+            text = "Errore MySQL {}: {}".format(errno, msg)
+            return DatabaseError(text, kind="query")
         return DatabaseError(
             "Errore durante l'esecuzione della query. Vedi il log."
         )
@@ -140,16 +127,12 @@ class ErrorTranslator:
 
     @staticmethod
     def __connect_timeout(timeout: int) -> DatabaseError:
-        return DatabaseError(
-            f"Timeout durante la connessione ({timeout} s): il server non ha "
-            "risposto in tempo.",
-            kind="timeout",
-        )
+        msg = "Timeout durante la connessione ({} s): il server non ha "
+        msg += "risposto in tempo."
+        return DatabaseError(msg.format(timeout), kind="timeout")
 
     @staticmethod
     def __unreachable() -> DatabaseError:
-        return DatabaseError(
-            "Impossibile raggiungere il server MySQL: verifica host, porta e "
-            "connettività di rete.",
-            kind="unreachable",
-        )
+        msg = "Impossibile raggiungere il server MySQL: verifica host, "
+        msg += "porta e connettività di rete."
+        return DatabaseError(msg, kind="unreachable")

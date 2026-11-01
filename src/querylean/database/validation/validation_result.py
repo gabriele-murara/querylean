@@ -42,4 +42,5 @@ class ValidationResult:
         return ValidationResult(False, "", reason)
 
     def __repr__(self) -> str:
-        return f"ValidationResult(ok={self.__ok}, reason={self.__reason!r})"
+        text = "ValidationResult(ok={}, reason={!r})"
+        return text.format(self.__ok, self.__reason)

@@ -47,7 +47,7 @@ class DbThread:
             self.__worker.manager.disconnect()
         else:
             self.__log.warning(
-                "Database thread did not stop within %d ms", timeout_ms
+                "Database thread did not stop within {} ms", timeout_ms
             )
             self.__worker.manager.abort_session()
             finished = bool(self.__thread.wait(DbThread.__LAST_RESORT_WAIT_MS))

@@ -30,11 +30,10 @@ class SyntaxTreeStage(ValidationStage):
         try:
             expressions = sqlglot.parse(statement, read="mysql")
         except SqlglotError as exc:
-            self.__log.info("SQL parsing failed: %s", exc)
-            raise ValidationRejected(
-                "Impossibile analizzare la query in modo sicuro: verifica la "
-                "sintassi. Le query non riconosciute vengono rifiutate."
-            ) from None
+            self.__log.info("SQL parsing failed: {}", exc)
+            msg = "Impossibile analizzare la query in modo sicuro: verifica "
+            msg += "la sintassi. Le query non riconosciute vengono rifiutate."
+            raise ValidationRejected(msg) from None
         expressions = [e for e in expressions if e is not None]
         if len(expressions) != 1:
             raise ValidationRejected(ReadOnlyRules.MULTIPLE_STATEMENTS)
@@ -44,23 +43,19 @@ class SyntaxTreeStage(ValidationStage):
     def __check_root(root: exp.Expression, first_word: str) -> None:
         if first_word == ReadOnlyRules.SHOW_FIRST_WORD:
             if not isinstance(root, exp.Show):
-                raise ValidationRejected(
-                    f"{ReadOnlyRules.NOT_ALLOWED} Forma di SHOW non "
-                    "riconosciuta."
-                )
+                msg = "{} Forma di SHOW non riconosciuta."
+                raise ValidationRejected(msg.format(ReadOnlyRules.NOT_ALLOWED))
         elif first_word in ReadOnlyRules.DESCRIBE_FIRST_WORDS:
             if not isinstance(root, exp.Describe):
-                raise ValidationRejected(
-                    f"{ReadOnlyRules.NOT_ALLOWED} Forma di {first_word} non "
-                    "riconosciuta."
-                )
+                msg = "{} Forma di {} non riconosciuta."
+                msg = msg.format(ReadOnlyRules.NOT_ALLOWED, first_word)
+                raise ValidationRejected(msg)
             if not isinstance(
                 root.this, (exp.Table, *ReadOnlyRules.SELECT_ROOTS)
             ):
-                raise ValidationRejected(
-                    f"{ReadOnlyRules.NOT_ALLOWED} {first_word} è ammesso solo "
-                    "su tabelle o SELECT."
-                )
+                msg = "{} {} è ammesso solo su tabelle o SELECT."
+                msg = msg.format(ReadOnlyRules.NOT_ALLOWED, first_word)
+                raise ValidationRejected(msg)
         elif first_word in ReadOnlyRules.SELECT_FIRST_WORDS:
             if not isinstance(root, ReadOnlyRules.SELECT_ROOTS):
                 raise ValidationRejected(ReadOnlyRules.NOT_ALLOWED)
@@ -71,17 +66,14 @@ class SyntaxTreeStage(ValidationStage):
     def __check_nodes(root: exp.Expression) -> None:
         for node in root.walk():
             if isinstance(node, ReadOnlyRules.FORBIDDEN_NODES):
-                raise ValidationRejected(
-                    f"{ReadOnlyRules.NOT_ALLOWED} Costrutto non ammesso: "
-                    f"{type(node).__name__}."
-                )
+                msg = "{} Costrutto non ammesso: {}."
+                msg = msg.format(ReadOnlyRules.NOT_ALLOWED, type(node).__name__)
+                raise ValidationRejected(msg)
             if isinstance(node, exp.Select) and (
                 node.args.get("locks") or node.args.get("into")
             ):
-                raise ValidationRejected(
-                    f"{ReadOnlyRules.NOT_ALLOWED} SELECT … INTO e i lock non "
-                    "sono consentiti."
-                )
+                msg = "{} SELECT … INTO e i lock non sono consentiti."
+                raise ValidationRejected(msg.format(ReadOnlyRules.NOT_ALLOWED))
             if isinstance(node, exp.Func):
                 name = (
                     node.name
@@ -89,7 +81,6 @@ class SyntaxTreeStage(ValidationStage):
                     else node.sql_name()
                 ).upper()
                 if name in ReadOnlyRules.FORBIDDEN_FUNCTIONS:
-                    raise ValidationRejected(
-                        f"La funzione {name}() non è consentita in modalità "
-                        "sola lettura."
-                    )
+                    msg = "La funzione {}() non è consentita in modalità "
+                    msg += "sola lettura."
+                    raise ValidationRejected(msg.format(name))

@@ -38,7 +38,7 @@ class TestAppInfo:
 
     def test_no_hardcoded_version_elsewhere(self):
         version = re.escape(AppInfo.version())
-        pattern = re.compile(rf"(?<![\d.]){version}(?![\d.])")
+        pattern = re.compile(r"(?<![\d.]){}(?![\d.])".format(version))
         sources = [
             *self.ROOT.joinpath("src").rglob("*.py"),
             *self.ROOT.joinpath("packaging").iterdir(),

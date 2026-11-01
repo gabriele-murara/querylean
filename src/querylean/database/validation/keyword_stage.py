@@ -40,17 +40,15 @@ class KeywordStage(ValidationStage):
                     and index == 1
                 )
                 if not show_create:
-                    raise ValidationRejected(
-                        f"{ReadOnlyRules.NOT_ALLOWED} Parola chiave non "
-                        f"ammessa: {upper}."
-                    )
+                    msg = "{} Parola chiave non ammessa: {}."
+                    msg = msg.format(ReadOnlyRules.NOT_ALLOWED, upper)
+                    raise ValidationRejected(msg)
             if (
                 upper in ReadOnlyRules.FORBIDDEN_FUNCTIONS
                 and following is not None
                 and following.is_symbol("(")
             ):
-                raise ValidationRejected(
-                    f"La funzione {upper}() non è consentita in modalità sola "
-                    "lettura."
-                )
+                msg = "La funzione {}() non è consentita in modalità sola "
+                msg += "lettura."
+                raise ValidationRejected(msg.format(upper))
         context.first_word = first

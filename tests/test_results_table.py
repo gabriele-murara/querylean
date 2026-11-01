@@ -31,10 +31,10 @@ class TestResultsTable:
 
         table.selectAll()
         text = table.copy_selection(headers=True)
-        assert text == (
-            "id\tname\tnote\twhen\tamount\n1\t\t\t2024-01-02\t1.50\n2\ta "
-            "b\tx y\t\t"
-        )
+        expected = "id\tname\tnote\twhen\tamount\n"
+        expected += "1\t\t\t2024-01-02\t1.50\n"
+        expected += "2\ta b\tx y\t\t"
+        assert text == expected
         assert QGuiApplication.clipboard().text() == text
 
         table.clearSelection()

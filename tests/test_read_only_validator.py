@@ -10,19 +10,24 @@ from querylean.database.validation.validation_stage import ValidationStage
 class TestReadOnlyValidator:
     """Accepted and rejected statements, bypass attempts, pipeline structure."""
 
+    __JOIN = "select * from users u join orders o on o.user_id = u.id "
+    __JOIN += "where o.total > 10"
+    __SUBQUERY = "SELECT u.name, (SELECT COUNT(*) FROM orders o "
+    __SUBQUERY += "WHERE o.user_id = u.id) AS n FROM users u"
+    __CTE = "WITH recent AS (SELECT * FROM orders WHERE created > NOW() - "
+    __CTE += "INTERVAL 1 DAY) SELECT * FROM recent"
+    __RECURSIVE_CTE = "WITH RECURSIVE n AS (SELECT 1 AS x UNION ALL "
+    __RECURSIVE_CTE += "SELECT x + 1 FROM n WHERE x < 5) SELECT * FROM n"
+
     ALLOWED = [
         "SELECT * FROM users",
         "SELECT id, name FROM users WHERE active = 1",
         "SELECT COUNT(*) FROM orders",
-        "select * from users u join orders o on o.user_id = u.id where o.total "
-        "> 10",
-        "SELECT u.name, (SELECT COUNT(*) FROM orders o WHERE o.user_id = u.id) "
-        "AS n FROM users u",
+        __JOIN,
+        __SUBQUERY,
         "SELECT * FROM users WHERE id IN (SELECT user_id FROM orders)",
-        "WITH recent AS (SELECT * FROM orders WHERE created > NOW() - INTERVAL "
-        "1 DAY) SELECT * FROM recent",
-        "WITH RECURSIVE n AS (SELECT 1 AS x UNION ALL SELECT x + 1 FROM n "
-        "WHERE x < 5) SELECT * FROM n",
+        __CTE,
+        __RECURSIVE_CTE,
         "SELECT a FROM t1 UNION SELECT a FROM t2",
         "(SELECT 1)",
         "-- commento iniziale\nSELECT 1",
@@ -128,12 +133,12 @@ class TestReadOnlyValidator:
     @pytest.mark.parametrize("sql", ALLOWED)
     def test_allowed(self, validator, sql):
         result = validator.validate(sql)
-        assert result.ok, f"{sql!r} rejected: {result.reason}"
+        assert result.ok, "{!r} rejected: {}".format(sql, result.reason)
 
     @pytest.mark.parametrize("sql", REJECTED)
     def test_rejected(self, validator, sql):
         result = validator.validate(sql)
-        assert not result.ok, f"{sql!r} accepted"
+        assert not result.ok, "{!r} accepted".format(sql)
         assert result.reason
 
     def test_trailing_semicolon_is_stripped_and_original_text_kept(

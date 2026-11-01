@@ -29,7 +29,7 @@ class AboutDialog(QDialog):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle(f"Informazioni su {AppInfo.DISPLAY_NAME}")
+        self.setWindowTitle("Informazioni su {}".format(AppInfo.DISPLAY_NAME))
         self.setMinimumHeight(AboutDialog.__MIN_HEIGHT)
 
         icon = QLabel()
@@ -68,19 +68,26 @@ class AboutDialog(QDialog):
     @staticmethod
     def html_text() -> str:
         """Rich text with the product information (all values escaped)."""
-        e = html.escape
-        runtime = (
-            f"Python {platform.python_version()} · Qt {qVersion()} · "
-            f"PySide6 {PySide6.__version__}"
+        runtime = "Python {} · Qt {} · PySide6 {}"
+        runtime = runtime.format(
+            platform.python_version(), qVersion(), PySide6.__version__
         )
-        return (
-            f"<h2>{e(AppInfo.DISPLAY_NAME)}</h2>"
-            f"<p><b>Versione {e(AppInfo.version())}</b></p>"
-            f"<p>{e(AppInfo.DESCRIPTION)}</p>"
-            "<p>Esegue solo istruzioni di lettura (SELECT, SHOW, DESCRIBE, "
-            "EXPLAIN). La password è conservata nel portachiavi di sistema.</p>"
-            f"<p>Autore: {e(AppInfo.AUTHOR)}<br>"
-            f"© {e(AppInfo.COPYRIGHT_YEAR)} {e(AppInfo.AUTHOR)} · "
-            f"Licenza {e(AppInfo.LICENSE)}</p>"
-            f"<p><small>{e(runtime)}</small></p>"
+        text = "<h2>{name}</h2>"
+        text += "<p><b>Versione {version}</b></p>"
+        text += "<p>{description}</p>"
+        text += "<p>Esegue solo istruzioni di lettura (SELECT, SHOW, "
+        text += "DESCRIBE, EXPLAIN). La password è conservata nel portachiavi "
+        text += "di sistema.</p>"
+        text += "<p>Autore: {author}<br>"
+        text += "© {year} {author} · Licenza {license}</p>"
+        text += "<p><small>{runtime}</small></p>"
+        e = html.escape
+        return text.format(
+            name=e(AppInfo.DISPLAY_NAME),
+            version=e(AppInfo.version()),
+            description=e(AppInfo.DESCRIPTION),
+            author=e(AppInfo.AUTHOR),
+            year=e(AppInfo.COPYRIGHT_YEAR),
+            license=e(AppInfo.LICENSE),
+            runtime=e(runtime),
         )

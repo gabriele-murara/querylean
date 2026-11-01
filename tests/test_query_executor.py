@@ -132,7 +132,7 @@ class TestQueryExecutor:
             time.sleep(0.01)
         assert executor.cancel(reason)
         assert connector.connections[-1].executed == [
-            f"KILL QUERY {conn.connection_id}"
+            "KILL QUERY {}".format(conn.connection_id)
         ]
         thread.join(5)
         assert len(errors) == 1 and isinstance(errors[0], expected)

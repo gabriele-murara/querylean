@@ -97,8 +97,9 @@ class DbWorker(QObject):
             )
             self.test_finished.emit(False, DbWorker.UNEXPECTED_ERROR)
         else:
-            suffix = f" (server MySQL {version})" if version else ""
-            self.test_finished.emit(True, f"Connessione riuscita{suffix}.")
+            suffix = " (server MySQL {})".format(version) if version else ""
+            msg = "Connessione riuscita{}.".format(suffix)
+            self.test_finished.emit(True, msg)
 
     @Slot(str, int, int)
     def __on_query(self, sql: str, row_limit: int, timeout: int) -> None:

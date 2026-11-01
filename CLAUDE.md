@@ -53,7 +53,8 @@ Test d'integrazione (`tests/integration/`): vengono saltati se mancano le variab
   - in **italiano**: testi rivolti all'utente (GUI, `DatabaseError.message`, motivi di rifiuto del validatore) e documentazione (`README.md`, questo file).
 - **Logging**:
   - usare il logger del progetto: `__log = LogManager.get_logger(__name__)` come attributo privato di classe, poi `self.__log.info(...)` o `NomeClasse.__log.info(...)` nei metodi statici;
-  - passare gli argomenti in stile `%s`, non f-string;
+  - anche i messaggi di log seguono le regole delle "Stringhe": segnaposto di `.format()` e argomenti passati al logger, `self.__log.info("Connected to {}:{}", host, port)`. Il logger chiama `.format()` solo se il livello è attivo, quindi non si formatta prima la stringa. Niente `%s`;
+  - un messaggio di log senza argomenti non viene formattato: le graffe e i `%` nel testo restano come sono. Con argomenti, le graffe letterali vanno raddoppiate (`{{` e `}}`);
   - **`print` è vietato** (anche in test e script Python): per l'output in console c'è `LogManager.configure(console=True)`.
 - **Test**: anche i test seguono le regole.
   - Ogni file contiene una classe `Test…` con i test come metodi e le fixture come metodi `@pytest.fixture`.
@@ -63,8 +64,22 @@ Test d'integrazione (`tests/integration/`): vengono saltati se mancano le variab
 - **Righe di massimo 80 colonne**:
   - vale per codice, docstring e commenti Python, compresi `packaging/querylean.spec` e `packaging/launcher.py`, e per gli script shell;
   - `ruff` lo verifica (`line-length = 80` in `pyproject.toml`) e `ruff format` lo applica al codice;
-  - docstring, commenti e stringhe lunghe vanno spezzati a mano: le stringhe si dividono per concatenazione implicita tra parentesi (`("prima parte "` / `"seconda parte")`);
+  - docstring e commenti lunghi vanno spezzati a mano; le stringhe lunghe si costruiscono come descritto in "Stringhe";
   - non usare `# noqa: E501`.
+- **Stringhe**:
+  - **niente concatenazione di stringhe**: né con `+` tra testo e valori (`"Errore: " + msg`), né per concatenazione implicita tra letterali adiacenti (`("prima parte "` / `"seconda parte")`);
+  - **i valori si inseriscono sempre con il metodo `.format()`**: niente f-string e niente formattazione con `%`;
+  - un testo lungo si costruisce su più righe con `+=` di soli letterali, applicando `.format()` alla fine:
+
+    ```python
+    msg = "bala blablablablablablabla"
+    msg += "bala blablablablablablabla {}"
+    msg = msg.format(value)
+    ```
+
+  - la regola vale anche per il logging (vedi "Logging") e per il formato dei record (`LogManager` usa `logging.Formatter(..., style="{")`);
+  - `tests/test_string_style.py` verifica tutto il codice (`src`, `tests`, `packaging`): fallisce con f-string, concatenazioni implicite, `+` tra stringhe, formattazione con `%` e segnaposto `%s` nelle chiamate di log;
+  - la regola `UP032` di ruff (che suggerisce le f-string al posto di `.format()`) è disattivata in `pyproject.toml`.
 - Il codice va formattato con `.venv/bin/ruff format src tests packaging`; `ruff format --check` deve risultare pulito.
 - Python ≥ 3.11, `ruff` con regole `E F W I B UP`.
 
@@ -77,7 +92,7 @@ Il logger è implementato **nel progetto** (`querylean/log/`) e non importato da
 - si installa da un indice pip privato con `--trusted-host` (rischio per build riproducibili, CI e PyInstaller);
 - richiede Python 3.12 e la dipendenza `boolifyer`.
 
-`AppLogger` ne ricalca l'interfaccia: `debug`/`info`/`warning`/`error`/`critical` più `exception`, con `stacklevel=2`. Gli altri componenti:
+`AppLogger` ne ricalca l'interfaccia: `debug`/`info`/`warning`/`error`/`critical` più `exception`. I messaggi usano i segnaposto di `.format()` e il record arriva agli handler già formattato; il chiamante è attribuito correttamente (`stacklevel=3`). Gli altri componenti:
 
 - `LogManager.configure()`: `RotatingFileHandler` da 1 MB × 3 sul logger `querylean`, con `SecretRedactor` applicato a ogni handler;
 - `LogManager.register_secret()`: maschera un segreto nei log.
@@ -180,6 +195,10 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
   - `.deb` per Ubuntu/Lubuntu 24.04 (`build_linux_deb.sh`, build su 24.04): bundle in `/opt/querylean`, lanciatore `/usr/bin/querylean`, versione Debian derivata da `.version`;
   - macOS `.app` + `.dmg` (`build_macos_dmg.sh`, firma ad-hoc, un'architettura per build).
 - Gli script includono `packaging/common.sh` (versione da `.version`, funzione `querylean_pyinstaller`).
+- **Dimensione**: `BundleSlimmer` nello spec toglie estensione C di mysql-connector, tema GTK3, traduzioni Qt e plugin Qt inutili; su Linux toglie anche le librerie di sistema orfane.
+  - Prima di escludere altro, verifica che il modulo o la libreria non venga caricato a runtime.
+  - Lo smoke test controlla `ssl`, `hashlib` e il backend Secret Service: un modulo critico che manca deve far fallire la CI.
+  - Non aggiungere `--strip` né UPX.
 - Le dipendenze del `.deb` (`Depends`) vanno ricavate dalle librerie che il bundle carica dal sistema (`readelf -d`, con `LC_ALL=C`), non scritte a intuito.
 - La CI è in `.github/workflows/ci.yml`. Esegue lint e test con MySQL 8 come service; costruisce AppImage, `.deb` (installato e rimosso con `apt`) e DMG arm64/x86_64, con smoke test su ciascuno.
 - Il pacchetto macOS non è ancora verificato: non dichiararlo compatibile finché la CI non passa.

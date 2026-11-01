@@ -181,9 +181,10 @@ class ConnectionConfig:
 
     def __repr__(self) -> str:
         fields = ", ".join(
-            f"{key}={value!r}" for key, value in self.to_dict().items()
+            "{}={!r}".format(key, value)
+            for key, value in self.to_dict().items()
         )
-        return f"ConnectionConfig({fields})"
+        return "ConnectionConfig({})".format(fields)
 
     @staticmethod
     def __clamp(value: object, low: int, high: int, default: int) -> int:

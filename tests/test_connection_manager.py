@@ -115,7 +115,7 @@ class TestConnectionManager:
         target = manager.connection_id
         assert manager.kill_running_query()
         killer = connector.connections[1]
-        assert killer.executed == [f"KILL QUERY {target}"]
+        assert killer.executed == ["KILL QUERY {}".format(target)]
         assert not killer.is_connected()
 
     def test_password_is_masked_in_params_repr(self):

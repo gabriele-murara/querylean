@@ -215,6 +215,32 @@ Dopo una modifica, dai sorgenti va rieseguito `pip install -e .` perché anche i
 
 Gli script condividono `packaging/common.sh`, che legge la versione da `.version` ed esegue PyInstaller. Con `PYTHON=.venv/bin/python` si sceglie l'interprete.
 
+### Dimensione dei pacchetti
+
+Lo spec (`BundleSlimmer`) toglie dal bundle quello che QueryLean non carica mai:
+
+| Rimosso | Motivo | Risparmio indicativo (bundle Linux) |
+|---|---|---|
+| Estensione C di mysql-connector (`_mysql_connector` e la sua copia di OpenSSL) | si usa sempre `use_pure=True`; il modulo `ssl` di Python usa la OpenSSL di sistema inclusa nel bundle, più piccola | ~28 MB |
+| Tema GTK3 di Qt e le librerie che trascina (GTK, cairo, pango, ATK, …) | non serve: senza, Qt usa il proprio stile | ~20 MB |
+| Traduzioni di Qt | l'app non installa un `QTranslator` | ~7 MB |
+| Plugin Qt per sistemi embedded o remoti (EGLFS, linuxfb, VNC, evdev, …), formati immagine diversi da SVG, `QtNetwork`, `QtDBus` Python | mai usati da un'app desktop | ~6 MB |
+| setuptools e pkg_resources | strumenti di build | ~1 MB |
+| Su macOS: secretstorage, jeepney, cryptography | servono solo al portachiavi Linux | ~14 MB |
+
+Su Linux, dopo il filtro, le librerie di sistema che nessun binario rimasto usa più vengono eliminate in automatico (`readelf -d`).
+
+Risultato su Linux x86_64: bundle da 191 a 133 MB, AppImage da 70 a 50 MB, `.deb` da 54 a 39 MB.
+
+Cosa resta e perché:
+
+- **ICU (~38 MB)**: è richiesta da `libQt6Core` e non si può togliere né sostituire con quella di sistema (Ubuntu 24.04 ha una versione diversa).
+- **cryptography (~14 MB, solo Linux)**: è richiesta da `secretstorage` per il portachiavi.
+- **Qt Core/Gui/Widgets, Python, OpenSSL**: indispensabili.
+- **Strip dei simboli**: risparmierebbe solo ~3% e invaliderebbe la firma su macOS, quindi non è attivo.
+
+Lo smoke test verifica che `ssl`, `hashlib` e, su Linux, il backend Secret Service siano presenti nel pacchetto. Così un'esclusione di troppo fa fallire la CI invece di disattivare in silenzio TLS o il portachiavi.
+
 ### Linux (AppImage)
 
 ```bash

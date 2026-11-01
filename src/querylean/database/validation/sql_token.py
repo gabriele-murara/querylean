@@ -42,4 +42,5 @@ class SqlToken:
         return self.__kind == SqlToken.SYMBOL and self.__text == symbol
 
     def __repr__(self) -> str:
-        return f"SqlToken({self.__kind}, {self.__text!r}, {self.__start})"
+        text = "SqlToken({}, {!r}, {})"
+        return text.format(self.__kind, self.__text, self.__start)

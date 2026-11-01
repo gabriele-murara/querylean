@@ -61,10 +61,9 @@ class ConnectionDialog(QDialog):
         self.__remember_password.setChecked(keyring_available)
         self.__remember_password.setEnabled(keyring_available)
         if not keyring_available:
-            self.__remember_password.setToolTip(
-                "Portachiavi non disponibile: la password resterà in memoria "
-                "solo per questa sessione."
-            )
+            tip = "Portachiavi non disponibile: la password resterà in "
+            tip += "memoria solo per questa sessione."
+            self.__remember_password.setToolTip(tip)
 
         max_timeout = ConnectionConfig.MAX_TIMEOUT_SECONDS
         self.__connect_timeout = ConnectionDialog.__spin(
@@ -90,11 +89,10 @@ class ConnectionDialog(QDialog):
         form.addRow("Timeout query", self.__query_timeout)
         form.addRow("Righe massime", self.__row_limit)
 
-        hint = QLabel(
-            "Usa un account MySQL con soli privilegi SELECT: la modalità di "
-            "sola lettura è garantita principalmente dai privilegi "
-            "dell'account."
-        )
+        hint_text = "Usa un account MySQL con soli privilegi SELECT: la "
+        hint_text += "modalità di sola lettura è garantita principalmente dai "
+        hint_text += "privilegi dell'account."
+        hint = QLabel(hint_text)
         hint.setWordWrap(True)
         hint.setStyleSheet("color: palette(placeholder-text);")
 
@@ -244,9 +242,8 @@ class ConnectionDialog(QDialog):
     def __check_required(self) -> bool:
         missing = self.missing_fields()
         if missing:
-            self.__set_status(
-                False, "Campi obbligatori mancanti: " + ", ".join(missing) + "."
-            )
+            msg = "Campi obbligatori mancanti: {}."
+            self.__set_status(False, msg.format(", ".join(missing)))
             return False
         return True
 
@@ -267,7 +264,7 @@ class ConnectionDialog(QDialog):
             if ok
             else ConnectionDialog.__ERROR_COLOR
         )
-        self.__status.setStyleSheet(f"color: {color};")
+        self.__status.setStyleSheet("color: {};".format(color))
         self.__status.setText(message)
 
     @staticmethod

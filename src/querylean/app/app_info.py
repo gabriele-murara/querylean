@@ -19,10 +19,9 @@ class AppInfo:
     COPYRIGHT_YEAR = "2026"
     LICENSE = "MIT"
     # User-facing description (Italian), shown in the "Informazioni" dialog.
-    DESCRIPTION = (
-        "Client desktop minimale per eseguire query MySQL di sola lettura: "
-        "una connessione, un editor SQL e una tabella dei risultati."
-    )
+    DESCRIPTION = "Client desktop minimale per eseguire query MySQL di sola "
+    DESCRIPTION += "lettura: una connessione, un editor SQL e una tabella dei "
+    DESCRIPTION += "risultati."
 
     @staticmethod
     def version() -> str:

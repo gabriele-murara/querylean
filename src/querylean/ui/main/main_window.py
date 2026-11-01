@@ -264,17 +264,15 @@ class MainWindow(QMainWindow):
                     "Configurazione salvata. Password salvata nel portachiavi."
                 )
             except SecretStorageError as exc:
-                self.show_message(f"Configurazione salvata. {exc}", error=True)
+                msg = "Configurazione salvata. {}".format(exc)
+                self.show_message(msg, error=True)
         else:
-            self.show_message(
-                "Configurazione salvata. La password resterà in memoria solo "
-                "per questa sessione."
-            )
+            msg = "Configurazione salvata. La password resterà in memoria "
+            msg += "solo per questa sessione."
+            self.show_message(msg)
         if self.__state == ConnectionState.CONNECTED:
-            self.show_message(
-                self.__message_label.text()
-                + " Riconnettiti per applicare le modifiche."
-            )
+            msg = "{} Riconnettiti per applicare le modifiche."
+            self.show_message(msg.format(self.__message_label.text()))
 
     def toggle_connection(self) -> None:
         """Connect, or disconnect when already connected."""
@@ -297,9 +295,8 @@ class MainWindow(QMainWindow):
             )
             return
         self.__set_state(ConnectionState.CONNECTING)
-        self.show_message(
-            f"Connessione a {cfg.host}:{cfg.port}/{cfg.database}…"
-        )
+        msg = "Connessione a {}:{}/{}…"
+        self.show_message(msg.format(cfg.host, cfg.port, cfg.database))
         self.worker.connect_requested.emit(cfg.copy(), self.__password)
 
     def execute_query(self) -> None:
@@ -328,9 +325,9 @@ class MainWindow(QMainWindow):
         preview = (
             single_line
             if len(single_line) <= limit
-            else single_line[: limit - 3] + "…"
+            else "{}…".format(single_line[: limit - 3])
         )
-        self.__running_label.setText(f"In esecuzione: {preview}")
+        self.__running_label.setText("In esecuzione: {}".format(preview))
         self.__running_label.show()
         self.show_message("Esecuzione in corso…")
         self.__watchdog.start(
@@ -360,7 +357,7 @@ class MainWindow(QMainWindow):
             self.__config_manager.save(self.__app_config)
         except ConfigError as exc:
             self.__log.warning(
-                "Saving the configuration on close failed: %s", exc
+                "Saving the configuration on close failed: {}", exc
             )
         self.__db.shutdown()
         event.accept()
@@ -406,7 +403,7 @@ class MainWindow(QMainWindow):
             ToolbarIcons.about(), "Informazioni", self
         )
         self.__about_action.setToolTip(
-            f"Informazioni su {AppInfo.DISPLAY_NAME}"
+            "Informazioni su {}".format(AppInfo.DISPLAY_NAME)
         )
         self.__about_action.setMenuRole(QAction.MenuRole.AboutRole)
         self.__about_action.triggered.connect(self.show_about)
@@ -483,9 +480,8 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ state
     def __set_state(self, state: ConnectionState) -> None:
         self.__state = state
-        self.__state_label.setText(
-            f"<b style='color:{state.color}'>●</b> {state.label}"
-        )
+        text = "<b style='color:{}'>●</b> {}"
+        self.__state_label.setText(text.format(state.color, state.label))
         self.__update_actions()
 
     def __update_actions(self) -> None:
@@ -523,7 +519,7 @@ class MainWindow(QMainWindow):
         password, ok = QInputDialog.getText(
             self,
             "Password",
-            f"Password per {cfg.username}@{cfg.host}:",
+            "Password per {}@{}:".format(cfg.username, cfg.host),
             QLineEdit.EchoMode.Password,
         )
         if ok and password:
@@ -548,7 +544,8 @@ class MainWindow(QMainWindow):
     def __on_connected(self) -> None:
         cfg = self.__app_config.connection
         self.__set_state(ConnectionState.CONNECTED)
-        self.show_message(f"Connesso a {cfg.host}:{cfg.port}/{cfg.database}.")
+        msg = "Connesso a {}:{}/{}."
+        self.show_message(msg.format(cfg.host, cfg.port, cfg.database))
         self.__editor.setFocus()
 
     def __on_connect_failed(self, message: str) -> None:
@@ -572,12 +569,12 @@ class MainWindow(QMainWindow):
     def __on_query_finished(self, result: QueryResult) -> None:
         self.__finish_run()
         self.__results.set_result(result.columns, result.rows)
-        self.__rows_label.setText(f"{len(result.rows)} righe")
-        self.__time_label.setText(f"· {result.elapsed * 1000:.0f} ms")
+        self.__rows_label.setText("{} righe".format(len(result.rows)))
+        elapsed_ms = result.elapsed * 1000
+        self.__time_label.setText("· {:.0f} ms".format(elapsed_ms))
         if result.truncated:
-            self.__limit_label.setText(
-                f"· Risultati limitati alle prime {result.row_limit} righe"
-            )
+            msg = "· Risultati limitati alle prime {} righe"
+            self.__limit_label.setText(msg.format(result.row_limit))
         self.show_message(
             "Query eseguita."
             if result.columns

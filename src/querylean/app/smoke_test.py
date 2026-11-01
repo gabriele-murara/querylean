@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import sys
 import tempfile
 from pathlib import Path
 
@@ -21,10 +22,17 @@ from querylean.ui.main.main_window import MainWindow
 class SmokeTest:
     """Checks that a packaged build contains every runtime module (CI)."""
 
-    __DRIVER_PLUGINS = (
+    # Modules that must be importable from the bundle. ``ssl`` is imported
+    # by mysql-connector inside a try block: if it were missing, TLS would be
+    # silently unavailable, so it is checked explicitly.
+    __REQUIRED_MODULES = (
         "mysql.connector.plugins.caching_sha2_password",
         "mysql.connector.plugins.mysql_native_password",
+        "ssl",
+        "hashlib",
     )
+    # Secret Service backend (Linux): needs secretstorage and cryptography.
+    __LINUX_MODULES = ("keyring.backends.SecretService", "secretstorage")
     __WINDOW_LIFETIME_MS = 500
     __log = LogManager.get_logger(__name__)
 
@@ -40,16 +48,19 @@ class SmokeTest:
         """Run the checks and briefly show the main window. Returns the exit
         code."""
         try:
-            for module in SmokeTest.__DRIVER_PLUGINS:
+            modules = list(SmokeTest.__REQUIRED_MODULES)
+            if sys.platform.startswith("linux"):
+                modules += SmokeTest.__LINUX_MODULES
+            for module in modules:
                 importlib.import_module(module)
             if AppInfo.version() == VersionFile.UNKNOWN:
                 self.__log.error(
-                    "Smoke test: %s not found or invalid at %s",
+                    "Smoke test: {} not found or invalid at {}",
                     VersionFile.FILE_NAME,
                     VersionFile.path(),
                 )
                 return 1
-            self.__log.info("Smoke test: version %s", AppInfo.version())
+            self.__log.info("Smoke test: version {}", AppInfo.version())
             validator = ReadOnlyValidator()
             if (
                 not validator.validate("SELECT 1").ok
@@ -60,7 +71,7 @@ class SmokeTest:
                 )
                 return 1
             self.__log.info(
-                "Smoke test: keychain available = %s",
+                "Smoke test: keychain available = {}",
                 KeyringSecretStore().is_available(),
             )
             with tempfile.TemporaryDirectory() as tmp:

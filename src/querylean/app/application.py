@@ -27,7 +27,7 @@ class Application:
         log_file = LogManager.configure(console=smoke_test)
         sys.excepthook = Application.handle_uncaught_exception
         Application.__log.info(
-            "Starting %s %s (log: %s)",
+            "Starting {} {} (log: {})",
             AppInfo.NAME,
             AppInfo.version(),
             log_file,
@@ -44,7 +44,7 @@ class Application:
         window = MainWindow()
         window.show()
         code = app.exec()
-        Application.__log.info("Application closed (exit code %s)", code)
+        Application.__log.info("Application closed (exit code {})", code)
         return code
 
     @staticmethod

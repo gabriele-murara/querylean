@@ -37,7 +37,7 @@ class SecretRedactor(logging.Filter):
         for secret in secrets:
             text = text.replace(secret, SecretRedactor.__MASK)
         return SecretRedactor.__PASSWORD_PAIR.sub(
-            rf"\1\2{SecretRedactor.__MASK}", text
+            r"\1\2{}".format(SecretRedactor.__MASK), text
         )
 
     def filter(self, record: logging.LogRecord) -> bool:

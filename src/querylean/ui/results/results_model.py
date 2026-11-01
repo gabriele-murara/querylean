@@ -85,7 +85,9 @@ class ResultsModel(QAbstractTableModel):
                 return ValueFormatter.NULL_TEXT
             text = ValueFormatter.format_value(value)
             limit = ResultsModel.MAX_CELL_CHARS
-            return text if len(text) <= limit else text[:limit] + "…"
+            if len(text) <= limit:
+                return text
+            return "{}…".format(text[:limit])
         if role == Qt.ItemDataRole.ToolTipRole and value is not None:
             text = ValueFormatter.format_value(value)
             if len(text) > ResultsModel.__TOOLTIP_MIN_CHARS:

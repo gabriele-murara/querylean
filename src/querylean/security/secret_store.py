@@ -19,7 +19,7 @@ class SecretStore(ABC):
     @staticmethod
     def account_key(username: str, host: str, port: int) -> str:
         """Key identifying the password of one MySQL account."""
-        return f"{username}@{host}:{port}"
+        return "{}@{}:{}".format(username, host, port)
 
     @abstractmethod
     def is_available(self) -> bool:

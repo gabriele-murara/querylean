@@ -22,14 +22,15 @@ class ConnectionManager:
     ``kill_running_query`` which opens its own short-lived connection.
     """
 
+    # Align the server lexer with the validator (backslash escapes in
+    # strings).
+    __SQL_MODE = "SET SESSION sql_mode = REPLACE(@@SESSION.sql_mode, "
+    __SQL_MODE += "'NO_BACKSLASH_ESCAPES', '')"
     # Fixed internal statements run when every session is opened.
     __SESSION_SETUP = (
         # Server-side barrier on top of the account privileges.
         "SET SESSION TRANSACTION READ ONLY",
-        # Align the server lexer with the validator (backslash escapes in
-        # strings).
-        "SET SESSION sql_mode = REPLACE(@@SESSION.sql_mode, "
-        "'NO_BACKSLASH_ESCAPES', '')",
+        __SQL_MODE,
     )
     __log = LogManager.get_logger(__name__)
 
@@ -63,7 +64,7 @@ class ConnectionManager:
             self.__conn = conn
             self.__params = params
             self.__connection_id = getattr(conn, "connection_id", None)
-        self.__log.info("Connected (session id %s)", self.__connection_id)
+        self.__log.info("Connected (session id {})", self.__connection_id)
 
     def test_connection(self, config: ConnectionConfig, password: str) -> str:
         """Check reachability and credentials. Returns the server version."""
@@ -117,7 +118,7 @@ class ConnectionManager:
         with self.__lock:
             self.__conn = conn
             self.__connection_id = getattr(conn, "connection_id", None)
-        self.__log.info("Session reopened (id %s)", self.__connection_id)
+        self.__log.info("Session reopened (id {})", self.__connection_id)
         return conn
 
     def kill_running_query(self) -> bool:
@@ -131,16 +132,16 @@ class ConnectionManager:
         try:
             conn = self.__connector(**params.to_connect_kwargs())
         except Exception as exc:
-            self.__log.warning("Connection for KILL QUERY failed: %r", exc)
+            self.__log.warning("Connection for KILL QUERY failed: {!r}", exc)
             return False
         try:
             cursor = conn.cursor()
-            cursor.execute(f"KILL QUERY {int(target)}")
+            cursor.execute("KILL QUERY {}".format(int(target)))
             cursor.close()
-            self.__log.info("KILL QUERY sent to session %s", target)
+            self.__log.info("KILL QUERY sent to session {}", target)
             return True
         except Exception as exc:
-            self.__log.warning("KILL QUERY failed: %r", exc)
+            self.__log.warning("KILL QUERY failed: {!r}", exc)
             return False
         finally:
             ConnectionManager.__close_quietly(conn)
@@ -150,7 +151,7 @@ class ConnectionManager:
         LogManager.register_secret(params.password)
         cfg = params.config
         self.__log.info(
-            "Connecting to %s:%s/%s as %s",
+            "Connecting to {}:{}/{} as {}",
             cfg.host,
             cfg.port,
             cfg.database,
@@ -159,7 +160,7 @@ class ConnectionManager:
         try:
             conn = self.__connector(**params.to_connect_kwargs())
         except Exception as exc:
-            self.__log.warning("Connection failed: %r", exc)
+            self.__log.warning("Connection failed: {!r}", exc)
             raise ErrorTranslator.translate_connect_error(
                 exc, cfg.connect_timeout
             ) from None
@@ -171,12 +172,11 @@ class ConnectionManager:
             finally:
                 cursor.close()
         except Exception as exc:
-            self.__log.warning("Session initialisation failed: %r", exc)
+            self.__log.warning("Session initialisation failed: {!r}", exc)
             ConnectionManager.__close_quietly(conn)
-            raise DatabaseError(
-                "Connessione aperta ma impossibile impostare la sessione in "
-                "sola lettura. Vedi il log per i dettagli."
-            ) from None
+            msg = "Connessione aperta ma impossibile impostare la sessione "
+            msg += "in sola lettura. Vedi il log per i dettagli."
+            raise DatabaseError(msg) from None
         return conn
 
     @staticmethod
@@ -192,5 +192,5 @@ class ConnectionManager:
             conn.shutdown()
         except Exception as exc:
             ConnectionManager.__log.debug(
-                "Ignoring error while closing the connection: %r", exc
+                "Ignoring error while closing the connection: {!r}", exc
             )

@@ -17,28 +17,29 @@ class SqlHighlighter(QSyntaxHighlighter):
     """Highlights keywords, strings, numbers and comments (including
     multi-line)."""
 
-    KEYWORDS = (
-        "ADD ALL AND ANY AS ASC BETWEEN BINARY BY CASE CAST COLLATE CREATE "
-        "CROSS CURRENT_DATE CURRENT_TIME CURRENT_TIMESTAMP DATABASE DATABASES "
-        "DEFAULT DELETE DESC DESCRIBE DISTINCT DIV DROP ELSE END ESCAPE EXCEPT "
-        "EXISTS EXPLAIN FALSE FOR FROM FULL GROUP HAVING IF IN INDEX INNER "
-        "INSERT INTERSECT INTERVAL INTO IS JOIN KEY LATERAL LEFT LIKE LIMIT "
-        "MOD NATURAL NOT NULL OFFSET ON OR ORDER OUTER OVER PARTITION "
-        "RECURSIVE REGEXP RIGHT ROLLUP ROW ROWS SELECT SET SHOW STATUS "
-        "STRAIGHT_JOIN TABLE TABLES THEN TRUE UNION UNIQUE UPDATE USING VALUES "
-        "VARIABLES VIEW WHEN WHERE WINDOW WITH XOR"
-    ).split()
+    __WORDS = "ADD ALL AND ANY AS ASC BETWEEN BINARY BY CASE CAST COLLATE "
+    __WORDS += "CREATE CROSS CURRENT_DATE CURRENT_TIME CURRENT_TIMESTAMP "
+    __WORDS += "DATABASE DATABASES DEFAULT DELETE DESC DESCRIBE DISTINCT DIV "
+    __WORDS += "DROP ELSE END ESCAPE EXCEPT EXISTS EXPLAIN FALSE FOR FROM "
+    __WORDS += "FULL GROUP HAVING IF IN INDEX INNER INSERT INTERSECT INTERVAL "
+    __WORDS += "INTO IS JOIN KEY LATERAL LEFT LIKE LIMIT MOD NATURAL NOT NULL "
+    __WORDS += "OFFSET ON OR ORDER OUTER OVER PARTITION RECURSIVE REGEXP "
+    __WORDS += "RIGHT ROLLUP ROW ROWS SELECT SET SHOW STATUS STRAIGHT_JOIN "
+    __WORDS += "TABLE TABLES THEN TRUE UNION UNIQUE UPDATE USING VALUES "
+    __WORDS += "VARIABLES VIEW WHEN WHERE WINDOW WITH XOR"
+    KEYWORDS = __WORDS.split()
 
     __IN_COMMENT = 1
     __KEYWORD_RE = re.compile(
-        r"\b(?:" + "|".join(KEYWORDS) + r")\b", re.IGNORECASE
+        r"\b(?:{})\b".format("|".join(KEYWORDS)), re.IGNORECASE
     )
     __NUMBER_RE = re.compile(r"\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b")
     # Strings, quoted identifiers and line comments, in order of appearance.
-    __SPAN_RE = re.compile(
-        r"'(?:\\.|''|[^'\\])*'?|\"(?:\\.|\"\"|[^\"\\])*\"?|`(?:``|[^`])*`?"
-        r"|#.*$|--(?:\s.*)?$|/\*"
-    )
+    __SPAN = r"'(?:\\.|''|[^'\\])*'?"
+    __SPAN += r"|\"(?:\\.|\"\"|[^\"\\])*\"?"
+    __SPAN += r"|`(?:``|[^`])*`?"
+    __SPAN += r"|#.*$|--(?:\s.*)?$|/\*"
+    __SPAN_RE = re.compile(__SPAN)
 
     def __init__(self, document: QTextDocument) -> None:
         super().__init__(document)

@@ -52,7 +52,7 @@ class ValueFormatter:
             suffix = (
                 "…" if len(data) > ValueFormatter.MAX_BINARY_PREVIEW else ""
             )
-            return f"0x{preview}{suffix}"
+            return "0x{}{}".format(preview, suffix)
 
     @staticmethod
     def __format_timedelta(value: dt.timedelta) -> str:
@@ -61,4 +61,4 @@ class ValueFormatter:
         total = abs(total)
         hours, rest = divmod(total, 3600)
         minutes, seconds = divmod(rest, 60)
-        return f"{sign}{hours:02d}:{minutes:02d}:{seconds:02d}"
+        return "{}{:02d}:{:02d}:{:02d}".format(sign, hours, minutes, seconds)

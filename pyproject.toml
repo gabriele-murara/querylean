@@ -44,3 +44,5 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP"]
+# The coding style requires str.format() instead of f-strings (see CLAUDE.md).
+ignore = ["UP032"]

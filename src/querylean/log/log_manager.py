@@ -19,7 +19,7 @@ class LogManager:
 
     __MAX_BYTES = 1_000_000
     __BACKUP_COUNT = 3
-    __FORMAT = "%(asctime)s %(levelname)s %(name)s [%(threadName)s] %(message)s"
+    __FORMAT = "{asctime} {levelname} {name} [{threadName}] {message}"
     __HANDLER_MARK = "_querylean_handler"
     __redactor = SecretRedactor()
 
@@ -27,8 +27,8 @@ class LogManager:
     def get_logger(name: str) -> AppLogger:
         """Return a logger inside the application tree (``querylean.*``)."""
         root = AppInfo.NAME
-        if name != root and not name.startswith(root + "."):
-            name = f"{root}.{name}"
+        if name != root and not name.startswith("{}.".format(root)):
+            name = "{}.{}".format(root, name)
         return AppLogger(name)
 
     @staticmethod
@@ -57,7 +57,7 @@ class LogManager:
         handler) to the application logger. Returns the log file path."""
         log_dir = log_dir or LogManager.default_log_dir()
         log_dir.mkdir(parents=True, exist_ok=True)
-        log_file = log_dir / f"{AppInfo.NAME}.log"
+        log_file = log_dir / "{}.log".format(AppInfo.NAME)
 
         app_logger = logging.getLogger(AppInfo.NAME)
         app_logger.setLevel(level)
@@ -77,7 +77,9 @@ class LogManager:
         if console:
             handlers.append(logging.StreamHandler())
         for handler in handlers:
-            handler.setFormatter(logging.Formatter(LogManager.__FORMAT))
+            handler.setFormatter(
+                logging.Formatter(LogManager.__FORMAT, style="{")
+            )
             handler.addFilter(LogManager.__redactor)
             setattr(handler, LogManager.__HANDLER_MARK, True)
             app_logger.addHandler(handler)

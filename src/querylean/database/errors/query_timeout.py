@@ -9,12 +9,10 @@ class QueryTimeout(DatabaseError):
     """The query was stopped because it exceeded the configured timeout."""
 
     def __init__(self, seconds: int) -> None:
-        super().__init__(
-            f"Timeout: la query ha superato il limite di {seconds} secondi "
-            "ed è stata interrotta. Puoi aumentare il timeout nella "
-            "configurazione.",
-            kind="timeout",
-        )
+        msg = "Timeout: la query ha superato il limite di {} secondi ed è "
+        msg += "stata interrotta. Puoi aumentare il timeout nella "
+        msg += "configurazione."
+        super().__init__(msg.format(seconds), kind="timeout")
         self.__seconds = seconds
 
     @property

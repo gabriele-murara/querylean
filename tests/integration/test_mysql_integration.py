@@ -32,10 +32,8 @@ class TestMysqlIntegration:
     barriers."""
 
     # Cartesian product slow enough to exceed short timeouts.
-    SLOW_QUERY = (
-        "SELECT COUNT(*) FROM numbers a, numbers b, numbers c "
-        "WHERE a.n + b.n = c.n"
-    )
+    SLOW_QUERY = "SELECT COUNT(*) FROM numbers a, numbers b, numbers c "
+    SLOW_QUERY += "WHERE a.n + b.n = c.n"
 
     @pytest.fixture
     def config(self) -> ConnectionConfig:

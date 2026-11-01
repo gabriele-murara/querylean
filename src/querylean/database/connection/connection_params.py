@@ -66,4 +66,5 @@ class ConnectionParams:
         }
 
     def __repr__(self) -> str:
-        return f"ConnectionParams(config={self.__config!r}, password='***')"
+        text = "ConnectionParams(config={!r}, password='***')"
+        return text.format(self.__config)

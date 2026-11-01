@@ -16,10 +16,14 @@ class MySqlLexer:
     and unterminated strings or comments.
     """
 
-    __MULTIPLE_STATEMENTS = (
-        "Sono presenti più istruzioni SQL: questa versione ne esegue una "
-        "sola per volta."
-    )
+    __MULTIPLE_STATEMENTS = "Sono presenti più istruzioni SQL: questa "
+    __MULTIPLE_STATEMENTS += "versione ne esegue una sola per volta."
+    __AMBIGUOUS_DASHES = "Sequenza «--» ambigua: in MySQL è un commento "
+    __AMBIGUOUS_DASHES += "solo se seguita da uno spazio. Aggiungi uno "
+    __AMBIGUOUS_DASHES += "spazio o riformula l'espressione."
+    __EXECUTABLE_COMMENT = "I commenti eseguibili MySQL (/*! … */) e gli "
+    __EXECUTABLE_COMMENT += "hint dell'ottimizzatore (/*+ … */) non sono "
+    __EXECUTABLE_COMMENT += "consentiti."
 
     @staticmethod
     def tokenize(sql: str) -> LexedStatement:
@@ -51,18 +55,11 @@ class MySqlLexer:
                 if after == "" or after.isspace() or ord(after) < 32:
                     i = MySqlLexer.__skip_line(sql, i)
                 else:
-                    raise ValidationRejected(
-                        "Sequenza «--» ambigua: in MySQL è un commento solo se "
-                        "seguita da uno spazio. Aggiungi uno spazio o "
-                        "riformula l'espressione."
-                    )
+                    raise ValidationRejected(MySqlLexer.__AMBIGUOUS_DASHES)
             elif ch == "/" and nxt == "*":
                 marker = sql[i + 2] if i + 2 < n else ""
                 if marker in ("!", "+"):
-                    raise ValidationRejected(
-                        "I commenti eseguibili MySQL (/*! … */) e gli hint "
-                        "dell'ottimizzatore (/*+ … */) non sono consentiti."
-                    )
+                    raise ValidationRejected(MySqlLexer.__EXECUTABLE_COMMENT)
                 end = sql.find("*/", i + 2)
                 if end < 0:
                     raise ValidationRejected("Commento /* … */ non chiuso.")

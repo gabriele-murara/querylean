@@ -105,7 +105,7 @@ class QueryExecutor:
                 cursor = None
                 self.__manager.abort_session()
             self.__log.info(
-                "Query executed: %d rows%s in %.3f s",
+                "Query executed: {} rows{} in {:.3f} s",
                 len(rows),
                 " (truncated)" if truncated else "",
                 elapsed,
@@ -114,7 +114,7 @@ class QueryExecutor:
                 statement, columns, rows, truncated, row_limit, elapsed
             )
         except Exception as exc:
-            self.__log.info("Execution failed: %r", exc)
+            self.__log.info("Execution failed: {!r}", exc)
             raise self.__translate(exc, timeout, conn) from None
         finally:
             self.__running.clear()
@@ -133,11 +133,11 @@ class QueryExecutor:
             return
         cursor = conn.cursor()
         try:
-            cursor.execute(f"SET SESSION MAX_EXECUTION_TIME = {ms}")
+            cursor.execute("SET SESSION MAX_EXECUTION_TIME = {}".format(ms))
         except mysql_errors.Error as exc:
             # E.g. MariaDB or MySQL < 5.7.8: the client-side watchdog still
             # applies.
-            self.__log.warning("MAX_EXECUTION_TIME not supported: %r", exc)
+            self.__log.warning("MAX_EXECUTION_TIME not supported: {!r}", exc)
         finally:
             cursor.close()
         self.__session_timeout = key
