@@ -114,6 +114,7 @@ src/querylean/
     errors/            DatabaseError(message, kind), QueryCancelled, QueryTimeout, ErrorTranslator
     connection/        ConnectionParams (kwargs del driver, password mascherata), ConnectionManager
     execution/         QueryExecutor (execute/cancel), QueryResult
+    schema/            TableCatalog (SHOW FULL TABLES tramite QueryExecutor), TableInfo (select_statement), MySqlIdentifier (quoting con backtick)
     validation/        ReadOnlyValidator → stadi ValidationStage su ValidationContext;
                        MySqlLexer, SqlToken, LexedStatement, ReadOnlyRules, ValidationResult
   ui/
@@ -122,6 +123,7 @@ src/querylean/
     icons/             ToolbarIcons (icone disegnate con QPainter: nessun asset da impacchettare)
     editor/            SqlEditor, SqlHighlighter, LineNumberArea
     results/           ResultsTable, ResultsModel, ValueFormatter
+    sidebar/           TableSidebar (elenco tabelle a sinistra; table_chosen → MainWindow.use_table)
     worker/            DbWorker (QObject nel thread DB), DbThread (avvio/arresto), ExportThread (scrittura dell'export)
 tests/                 test_<classe>.py; fakes/; support/; integration/
 ```
@@ -185,6 +187,10 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
   - la scrittura è atomica (file temporaneo nella cartella di destinazione + `os.replace`) con permessi 0600;
   - in Excel il testo è sempre una cella stringa, mai una formula (`data_type = "s"`);
   - in tutti i formati i valori sono scritti senza perdite (`ValueFormatter.full_text`, non `format_value`).
+- **Barra delle tabelle**:
+  - l'elenco si legge con `TableCatalog` tramite `QueryExecutor` (validatore, timeout, limite di righe), nel thread del worker (`tables_requested` → `tables_loaded`/`tables_failed`), mai con SQL fuori dal validatore;
+  - i nomi entrano nella query solo tramite `MySqlIdentifier.quote`;
+  - scegliere una tabella sostituisce il testo dell'editor in modo annullabile (`SqlEditor.replace_query`) e non esegue la query.
 - **Errori**: all'utente solo messaggi comprensibili (`DatabaseError.message`), mai stack trace; i dettagli vanno nel log.
 - **Tabella risultati**: non modificabile. NULL è mostrato come `NULL` in corsivo e si distingue da `""`. Nella copia TSV il NULL diventa una cella vuota.
 
@@ -197,7 +203,9 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
   - Per simulare `KILL QUERY` si usa `FakeConnection.on_kill`.
   - Per il keyring ci sono `MemoryKeyring` e `LockedKeyring`.
 - I test GUI estendono `support/main_window_test_base.MainWindowTestBase`, che fornisce le fixture `connector`/`window` e gli helper `configure`/`connect`/`run`. Vanno attesi con `qtbot.waitUntil`.
-- **Non aggiungere funzionalità escluse** da `PROJECT.md` §16: multi-connessione, browser schemi, cronologia, autocomplete, plugin, telemetria, ecc. L'esportazione in Excel, CSV e JSON è stata richiesta dall'utente per la 1.1; altre forme di esportazione restano escluse.
+- **Non aggiungere funzionalità escluse** da `PROJECT.md` §16: multi-connessione, browser schemi, cronologia, autocomplete, plugin, telemetria, ecc. Eccezioni richieste dall'utente:
+  - 1.1: esportazione in Excel, CSV e JSON; altre forme di esportazione restano escluse;
+  - 1.2: barra laterale con l'elenco delle tabelle del database configurato, che prepara `SELECT * FROM <tabella> LIMIT 1;`. Niente albero di colonne, indici o altri database, niente esecuzione automatica.
 
 ## Packaging
 

@@ -19,6 +19,7 @@ from querylean.database.errors.database_error import DatabaseError
 from querylean.database.errors.query_cancelled import QueryCancelled
 from querylean.database.errors.query_timeout import QueryTimeout
 from querylean.database.execution.query_executor import QueryExecutor
+from querylean.database.schema.table_catalog import TableCatalog
 
 
 @pytest.mark.integration
@@ -71,6 +72,14 @@ class TestMysqlIntegration:
         assert executor.execute("SHOW TABLES", 100, 10).rows
         assert executor.execute("DESCRIBE people", 100, 10).rows
         assert executor.execute("EXPLAIN SELECT * FROM people", 100, 10).rows
+
+    def test_table_catalog_and_preview_query(self, executor):
+        tables = TableCatalog(executor).list_tables(10)
+        by_name = {t.name: t for t in tables}
+        assert {"people", "numbers"} <= set(by_name)
+        assert not by_name["people"].is_view
+        result = executor.execute(by_name["people"].select_statement, 100, 10)
+        assert len(result.rows) == 1
 
     def test_row_limit_is_applied_and_session_recovers(self, executor):
         result = executor.execute(

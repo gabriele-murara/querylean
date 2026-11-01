@@ -31,6 +31,7 @@ class ToolbarIcons:
     __PLAY = "#2e7d32"
     __STOP = "#c62828"
     __EXPORT = "#00897b"
+    __REFRESH = "#546e7a"
     __CONNECT = "#1565c0"
     __DISCONNECT = "#6d4c41"
     __SETTINGS = "#546e7a"
@@ -50,6 +51,11 @@ class ToolbarIcons:
     def export() -> QIcon:
         """Arrow leaving a tray ("Esporta")."""
         return ToolbarIcons.__render(ToolbarIcons.__draw_export)
+
+    @staticmethod
+    def refresh() -> QIcon:
+        """Circular arrow ("Aggiorna")."""
+        return ToolbarIcons.__render(ToolbarIcons.__draw_refresh)
 
     @staticmethod
     def connect() -> QIcon:
@@ -125,6 +131,20 @@ class ToolbarIcons:
         ToolbarIcons.__fill(painter, ToolbarIcons.__EXPORT)
         painter.drawPolygon(
             QPolygonF([QPointF(18, 22), QPointF(32, 4), QPointF(46, 22)])
+        )
+
+    @staticmethod
+    def __draw_refresh(painter: QPainter) -> None:
+        pen = QPen(QColor(ToolbarIcons.__REFRESH), 7)
+        pen.setCapStyle(Qt.PenCapStyle.FlatCap)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        # Arc of 300 degrees (Qt angles are in 1/16 of a degree), open at
+        # the top right where the arrow head sits.
+        painter.drawArc(QRectF(12, 12, 40, 40), 60 * 16, 300 * 16)
+        ToolbarIcons.__fill(painter, ToolbarIcons.__REFRESH)
+        painter.drawPolygon(
+            QPolygonF([QPointF(36, 4), QPointF(52, 16), QPointF(34, 24)])
         )
 
     @staticmethod

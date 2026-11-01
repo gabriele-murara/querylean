@@ -14,6 +14,7 @@ editor and a table of copyable results.
   - line numbers;
   - highlighting of keywords, strings, numbers and comments;
   - execution with `Ctrl+Enter` (Linux) or `Cmd+Enter` (macOS).
+- Side bar with the tables and views of the database you have access to: a click on a table prepares `SELECT * FROM <table> LIMIT 1;` in the editor.
 - Only read statements are allowed (`SELECT`, `WITH … SELECT`, `UNION`, `SHOW`, `DESCRIBE`/`DESC`, `EXPLAIN SELECT`). Every query goes through a parser-based validator.
 - Queries run outside the GUI thread, with an activity indicator, a **Stop** button and timeouts.
 - Read-only results table:
@@ -22,7 +23,7 @@ editor and a table of copyable results.
   - copy of cells or rows as tab-separated text, ready to paste into Excel and LibreOffice Calc;
   - export of the result to Excel (`.xlsx`), CSV or JSON.
 - The row limit (default 1,000, maximum 10,000) is enforced while fetching the data.
-- Window and splitter sizes are remembered between sessions.
+- Window, splitter and side bar sizes are remembered between sessions.
 - No telemetry, no cloud services, no local database.
 
 ## Supported platforms
@@ -61,13 +62,22 @@ macOS compatibility should be considered confirmed only once the corresponding C
 
 ## Usage
 
-The toolbar contains, in order: **Esegui** (Run, ▶), **Interrompi** (Stop, enabled only while a query runs), **Esporta** (Export, drop-down menu, enabled when there is a result), **Connetti**/**Disconnetti** (Connect/Disconnect), **Configurazione** (Configuration) and **Informazioni** (About: version, author, license). The connection state is shown at the bottom right. The user interface is in Italian.
+The toolbar contains, in order: **Esegui** (Run, ▶), **Interrompi** (Stop, enabled only while a query runs), **Esporta** (Export, drop-down menu, enabled when there is a result), **Connetti**/**Disconnetti** (Connect/Disconnect), **Configurazione** (Configuration) and **Informazioni** (About: version, author, license). The connection state is shown at the bottom right. The user interface is in Italian. On the left, for the whole height of the window, there is the **Tabelle** (Tables) side bar.
 
 1. **Configuration**: fill in host, port, database, username, password and timeouts, then use **Test connessione** (Test connection) and **Salva configurazione** (Save configuration). Saving does not open the connection.
 2. **Connect**: the state goes from *Disconnesso* (Disconnected) to *Connessione in corso* (Connecting) and then to *Connesso* (Connected) or *Errore di connessione* (Connection error). If the password is not in the keychain, it is asked for.
-3. Write the query and press **Run** or `Ctrl/Cmd+Enter`.
+3. Write the query and press **Run** or `Ctrl/Cmd+Enter`. Alternatively choose a table in the side bar (see [Table side bar](#table-side-bar)). Below the results you see rows and time, then "Query eseguita:" (Query executed:) followed by the query just executed, on one line. Beyond 160 characters the query is cut with "…"; the full text is in the message tooltip.
 4. Select cells or rows and press `Ctrl/Cmd+C`. The context menu also offers the "with headers" and "whole rows" variants.
 5. To save the result to a file open the **Export** menu and choose the format (see [Export](#export)).
+
+### Table side bar
+
+After connecting, the **Tabelle** (Tables) side bar lists the tables and views of the configured database (`SHOW FULL TABLES`), that is only those the account can access. Views are in italics and the number of items is shown at the bottom.
+
+- A click on an item, or `Enter` on the selected one, replaces the editor content with `SELECT * FROM <table> LIMIT 1;`. The query is **not executed**: press **Run** to start it. The previous text can be restored with `Ctrl/Cmd+Z`.
+- The table name is always between backticks, with any inner backticks doubled, so names with spaces or reserved words work too.
+- The ⟳ button reloads the list, for example after a table has been created. On disconnection the list is emptied.
+- Reading the list goes through the validator, respects the query timeout and shows at most 10,000 items. An error (for example missing privileges) is shown in the side bar, without closing the connection.
 
 ### Execution rules
 
@@ -205,8 +215,8 @@ src/querylean/
   config/       configuration model and JSON persistence
   security/     password in the keychain (abstract SecretStore, KeyringSecretStore)
   export/       Excel/CSV/JSON export (abstract ResultExporter)
-  database/     errors/, connection/, execution/, validation/ (staged validator)
-  ui/           main/, dialogs/, editor/, icons/, results/, worker/ (QThread thread)
+  database/     errors/, connection/, execution/, schema/ (table list), validation/ (staged validator)
+  ui/           main/, dialogs/, editor/, icons/, results/, sidebar/, worker/ (QThread thread)
 tests/          one Test… class per file; fakes/ (test doubles), support/ (bases), integration/
 packaging/      PyInstaller spec, AppImage/.deb/DMG scripts, desktop file, icon,
                 third-party license generator, licenses/ (vendored license texts)

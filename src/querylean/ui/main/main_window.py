@@ -34,6 +34,7 @@ from querylean.database.connection.connection_manager import (
 )
 from querylean.database.execution.query_executor import QueryExecutor
 from querylean.database.execution.query_result import QueryResult
+from querylean.database.schema.table_info import TableInfo
 from querylean.export.export_report import ExportReport
 from querylean.export.result_exporter import ResultExporter
 from querylean.export.result_exporters import ResultExporters
@@ -47,20 +48,23 @@ from querylean.ui.editor.sql_editor import SqlEditor
 from querylean.ui.icons.toolbar_icons import ToolbarIcons
 from querylean.ui.main.connection_state import ConnectionState
 from querylean.ui.results.results_table import ResultsTable
+from querylean.ui.sidebar.table_sidebar import TableSidebar
 from querylean.ui.worker.db_thread import DbThread
 from querylean.ui.worker.db_worker import DbWorker
 from querylean.ui.worker.export_thread import ExportThread
 
 
 class MainWindow(QMainWindow):
-    """Toolbar (run, stop, export, connect, configuration, about), editor and
-    result panel separated by a resizable splitter; connection state at the
-    bottom right."""
+    """Toolbar (run, stop, export, connect, configuration, about); below it
+    the table side bar on the left and, on the right, editor and result
+    panel separated by a resizable splitter; connection state at the bottom
+    right."""
 
     # Delay after the query timeout before the watchdog sends KILL QUERY: lets
     # the server-side MAX_EXECUTION_TIME act first.
     WATCHDOG_GRACE_MS = 2000
     __MAX_RUNNING_PREVIEW = 160
+    __SIDEBAR_WIDTH = 220
     __ERROR_STYLE = "color: #c62828;"
     __log = LogManager.get_logger(__name__)
 
@@ -176,6 +180,16 @@ class MainWindow(QMainWindow):
         return self.__splitter
 
     @property
+    def sidebar(self) -> TableSidebar:
+        """Side bar with the tables of the current database."""
+        return self.__sidebar
+
+    @property
+    def sidebar_splitter(self) -> QSplitter:
+        """Splitter between the side bar and editor/results."""
+        return self.__sidebar_splitter
+
+    @property
     def state_label(self) -> QLabel:
         """Connection state indicator."""
         return self.__state_label
@@ -261,12 +275,25 @@ class MainWindow(QMainWindow):
         """Open the "Informazioni su QueryLean" dialog."""
         AboutDialog(self).exec()
 
-    def show_message(self, text: str, *, error: bool = False) -> None:
+    def show_message(
+        self, text: str, *, error: bool = False, tooltip: str = ""
+    ) -> None:
         """Show a status (or error) message in the result panel."""
         self.__message_label.setStyleSheet(
             MainWindow.__ERROR_STYLE if error else ""
         )
         self.__message_label.setText(text)
+        self.__message_label.setToolTip(tooltip)
+
+    @staticmethod
+    def query_preview(sql: str) -> str:
+        """``sql`` on one line (whitespace runs collapsed), cut with "…"
+        when longer than the preview limit."""
+        single_line = " ".join(sql.split())
+        limit = MainWindow.__MAX_RUNNING_PREVIEW
+        if len(single_line) <= limit:
+            return single_line
+        return "{}…".format(single_line[: limit - 1])
 
     def open_configuration(self) -> None:
         """Open the configuration dialog and persist the accepted values."""
@@ -351,13 +378,7 @@ class MainWindow(QMainWindow):
         self.__rows_label.clear()
         self.__time_label.clear()
         self.__limit_label.clear()
-        single_line = " ".join(sql.split())
-        limit = MainWindow.__MAX_RUNNING_PREVIEW
-        preview = (
-            single_line
-            if len(single_line) <= limit
-            else "{}…".format(single_line[: limit - 3])
-        )
+        preview = MainWindow.query_preview(sql)
         self.__running_label.setText("In esecuzione: {}".format(preview))
         self.__running_label.show()
         self.show_message("Esecuzione in corso…")
@@ -372,6 +393,20 @@ class MainWindow(QMainWindow):
             self.show_message("Interruzione in corso…")
             self.__stop_action.setEnabled(False)
             self.worker.cancel_query(QueryExecutor.CANCEL_BY_USER)
+
+    def refresh_tables(self) -> None:
+        """Reload the table list of the side bar (only when connected)."""
+        if self.__state != ConnectionState.CONNECTED:
+            return
+        self.__sidebar.set_loading()
+        timeout = self.__app_config.connection.query_timeout
+        self.worker.tables_requested.emit(timeout)
+
+    def use_table(self, table: TableInfo) -> None:
+        """Put the preview query of ``table`` in the editor, replacing its
+        content (undoable with Ctrl/Cmd+Z). The query is not executed."""
+        self.__editor.replace_query(table.select_statement)
+        self.__editor.setFocus()
 
     def export_results(self, exporter: ResultExporter | None = None) -> None:
         """Ask for a file name and export the displayed result.
@@ -422,6 +457,9 @@ class MainWindow(QMainWindow):
         ui = self.__app_config.ui
         ui.window_geometry = MainWindow.__encode(self.saveGeometry())
         ui.splitter_state = MainWindow.__encode(self.__splitter.saveState())
+        ui.sidebar_state = MainWindow.__encode(
+            self.__sidebar_splitter.saveState()
+        )
         try:
             self.__config_manager.save(self.__app_config)
         except ConfigError as exc:
@@ -522,11 +560,14 @@ class MainWindow(QMainWindow):
         self.__progress.setTextVisible(False)
         self.__progress.hide()
         self.__message_label = QLabel()
+        # Messages contain SQL: "<" must never be read as rich text.
+        self.__message_label.setTextFormat(Qt.TextFormat.PlainText)
         self.__message_label.setWordWrap(True)
         self.__message_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
         self.__running_label = QLabel()
+        self.__running_label.setTextFormat(Qt.TextFormat.PlainText)
         self.__running_label.setStyleSheet("color: palette(placeholder-text);")
         self.__running_label.hide()
 
@@ -553,12 +594,28 @@ class MainWindow(QMainWindow):
         self.__splitter.setStretchFactor(1, 3)
         self.__splitter.setChildrenCollapsible(False)
 
+        self.__sidebar = TableSidebar()
+        self.__sidebar.table_chosen.connect(self.use_table)
+        self.__sidebar.refresh_requested.connect(self.refresh_tables)
+
+        # Side bar on the left, for the whole height below the toolbar.
+        self.__sidebar_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.__sidebar_splitter.setObjectName("sidebar-splitter")
+        self.__sidebar_splitter.addWidget(self.__sidebar)
+        self.__sidebar_splitter.addWidget(self.__splitter)
+        self.__sidebar_splitter.setStretchFactor(0, 0)
+        self.__sidebar_splitter.setStretchFactor(1, 1)
+        self.__sidebar_splitter.setChildrenCollapsible(False)
+
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(6, 6, 6, 6)
-        layout.addWidget(self.__splitter)
+        layout.addWidget(self.__sidebar_splitter)
         self.setCentralWidget(container)
         self.resize(1000, 700)
+        self.__sidebar_splitter.setSizes(
+            [MainWindow.__SIDEBAR_WIDTH, 1000 - MainWindow.__SIDEBAR_WIDTH]
+        )
 
     def __connect_worker(self) -> None:
         worker = self.worker
@@ -567,12 +624,16 @@ class MainWindow(QMainWindow):
         worker.disconnected.connect(self.__on_disconnected)
         worker.query_finished.connect(self.__on_query_finished)
         worker.query_failed.connect(self.__on_query_failed)
+        worker.tables_loaded.connect(self.__on_tables_loaded)
+        worker.tables_failed.connect(self.__on_tables_failed)
 
     # ------------------------------------------------------------------ state
     def __set_state(self, state: ConnectionState) -> None:
         self.__state = state
         text = "<b style='color:{}'>●</b> {}"
         self.__state_label.setText(text.format(state.color, state.label))
+        if state != ConnectionState.CONNECTED:
+            self.__sidebar.show_message(TableSidebar.NOT_CONNECTED)
         self.__update_actions()
 
     def __update_actions(self) -> None:
@@ -648,6 +709,7 @@ class MainWindow(QMainWindow):
         msg = "Connesso a {}:{}/{}."
         self.show_message(msg.format(cfg.host, cfg.port, cfg.database))
         self.__editor.setFocus()
+        self.refresh_tables()
 
     def __on_connect_failed(self, message: str) -> None:
         self.__set_state(ConnectionState.ERROR)
@@ -677,11 +739,15 @@ class MainWindow(QMainWindow):
         if result.truncated:
             msg = "· Risultati limitati alle prime {} righe"
             self.__limit_label.setText(msg.format(result.row_limit))
-        self.show_message(
-            "Query eseguita."
-            if result.columns
-            else "Query eseguita: nessun risultato tabellare."
-        )
+        preview = MainWindow.query_preview(result.statement)
+        if result.columns:
+            msg = "Query eseguita: {}"
+        else:
+            msg = "Query eseguita (nessun risultato tabellare): {}"
+        # The full statement is in the tooltip when the preview is cut.
+        cut = preview != " ".join(result.statement.split())
+        full = result.statement if cut else ""
+        self.show_message(msg.format(preview), tooltip=full)
 
     def __on_query_failed(self, message: str, kind: str) -> None:
         self.__finish_run()
@@ -691,6 +757,15 @@ class MainWindow(QMainWindow):
         elif kind == "connection_lost":
             self.__set_state(ConnectionState.ERROR)
             self.worker.disconnect_requested.emit()
+
+    def __on_tables_loaded(self, tables: list[TableInfo]) -> None:
+        # A response that arrives after a disconnection is stale.
+        if self.__state == ConnectionState.CONNECTED:
+            self.__sidebar.set_tables(tables)
+
+    def __on_tables_failed(self, message: str) -> None:
+        if self.__state == ConnectionState.CONNECTED:
+            self.__sidebar.set_error(message)
 
     # ------------------------------------------------------------------- export
     def __ask_export_path(
@@ -779,6 +854,10 @@ class MainWindow(QMainWindow):
             if ui.splitter_state:
                 self.__splitter.restoreState(
                     QByteArray(base64.b64decode(ui.splitter_state))
+                )
+            if ui.sidebar_state:
+                self.__sidebar_splitter.restoreState(
+                    QByteArray(base64.b64decode(ui.sidebar_state))
                 )
         except (ValueError, TypeError):
             self.__log.warning("Invalid window geometry: ignored")

@@ -33,12 +33,13 @@ class TestConfigManager:
                 username="ro",
                 row_limit=500,
             ),
-            UiPreferences(window_geometry="abc"),
+            UiPreferences(window_geometry="abc", sidebar_state="def"),
         )
         manager.save(cfg)
         loaded = manager.load()
         assert loaded.connection == cfg.connection
         assert loaded.ui.window_geometry == "abc"
+        assert loaded.ui.sidebar_state == "def"
         assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
 
     def test_password_is_never_written(self, tmp_path):

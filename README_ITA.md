@@ -14,6 +14,7 @@ SQL e una tabella di risultati copiabili.
   - numeri di riga;
   - evidenziazione di keyword, stringhe, numeri e commenti;
   - esecuzione con `Ctrl+Invio` (Linux) o `Cmd+Invio` (macOS).
+- Barra laterale con le tabelle e le viste del database a cui si ha accesso: un clic su una tabella prepara nell'editor `SELECT * FROM <tabella> LIMIT 1;`.
 - Sono ammesse solo istruzioni di lettura (`SELECT`, `WITH … SELECT`, `UNION`, `SHOW`, `DESCRIBE`/`DESC`, `EXPLAIN SELECT`). Ogni query passa da un validatore basato sul parsing.
 - L'esecuzione avviene fuori dal thread della GUI, con indicatore di attività, pulsante **Interrompi** e timeout.
 - Tabella dei risultati non modificabile:
@@ -22,7 +23,7 @@ SQL e una tabella di risultati copiabili.
   - copia di celle o righe in formato tabulato, incollabile in Excel e LibreOffice Calc;
   - esportazione del risultato in Excel (`.xlsx`), CSV o JSON.
 - Il limite di righe (predefinito 1.000, massimo 10.000) è applicato durante il recupero dei dati.
-- Dimensioni della finestra e del divisore vengono ricordate tra una sessione e l'altra.
+- Dimensioni della finestra, del divisore e della barra laterale vengono ricordate tra una sessione e l'altra.
 - Nessuna telemetria, nessun servizio cloud, nessun database locale.
 
 ## Piattaforme supportate
@@ -61,13 +62,22 @@ La compatibilità macOS va considerata confermata solo quando la pipeline CI cor
 
 ## Uso
 
-La barra in alto contiene, nell'ordine: **Esegui** (▶), **Interrompi** (attivo solo durante l'esecuzione), **Esporta** (menu a tendina, attivo quando c'è un risultato), **Connetti**/**Disconnetti**, **Configurazione** e **Informazioni** (versione, autore, licenza). Lo stato della connessione è in basso a destra.
+La barra in alto contiene, nell'ordine: **Esegui** (▶), **Interrompi** (attivo solo durante l'esecuzione), **Esporta** (menu a tendina, attivo quando c'è un risultato), **Connetti**/**Disconnetti**, **Configurazione** e **Informazioni** (versione, autore, licenza). Lo stato della connessione è in basso a destra. A sinistra, per tutta l'altezza della finestra, c'è la barra **Tabelle**.
 
 1. **Configurazione**: compila host, porta, database, username, password e i timeout, poi usa **Test connessione** e **Salva configurazione**. Salvare non apre la connessione.
 2. **Connetti**: lo stato passa da *Disconnesso* a *Connessione in corso* e poi a *Connesso* o *Errore di connessione*. Se la password non è nel portachiavi, viene richiesta.
-3. Scrivi la query e premi **Esegui** oppure `Ctrl/Cmd+Invio`.
+3. Scrivi la query e premi **Esegui** oppure `Ctrl/Cmd+Invio`. In alternativa scegli una tabella nella barra laterale (vedi [Barra delle tabelle](#barra-delle-tabelle)). Sotto i risultati compaiono righe e tempo, poi "Query eseguita:" seguito dalla query appena eseguita, su una riga. Oltre i 160 caratteri la query è troncata con "…"; il testo completo è nel tooltip del messaggio.
 4. Seleziona celle o righe e premi `Ctrl/Cmd+C`. Il menu contestuale offre anche le varianti "con intestazioni" e "righe intere".
 5. Per salvare il risultato su file apri il menu **Esporta** e scegli il formato (vedi [Esportazione](#esportazione)).
+
+### Barra delle tabelle
+
+Dopo la connessione la barra **Tabelle** elenca tabelle e viste del database configurato (`SHOW FULL TABLES`), cioè solo quelle a cui l'account ha accesso. Le viste sono in corsivo e in fondo c'è il numero di elementi.
+
+- Un clic su una voce, oppure `Invio` sulla voce selezionata, sostituisce il contenuto dell'editor con `SELECT * FROM <tabella> LIMIT 1;`. La query **non viene eseguita**: premi **Esegui** per lanciarla. Il testo precedente si recupera con `Ctrl/Cmd+Z`.
+- Il nome della tabella è sempre tra backtick, con gli eventuali backtick interni raddoppiati, quindi funzionano anche nomi con spazi o parole riservate.
+- Il pulsante ⟳ ricarica l'elenco, per esempio dopo la creazione di una tabella. Alla disconnessione l'elenco si svuota.
+- La lettura dell'elenco passa dal validatore, rispetta il timeout delle query e mostra al massimo 10.000 voci. Un errore (per esempio permessi insufficienti) viene mostrato nella barra, senza chiudere la connessione.
 
 ### Regole di esecuzione
 
@@ -205,8 +215,8 @@ src/querylean/
   config/       modello della configurazione e persistenza JSON
   security/     password nel portachiavi (SecretStore astratta, KeyringSecretStore)
   export/       esportazione Excel/CSV/JSON (ResultExporter astratta)
-  database/     errors/, connection/, execution/, validation/ (validatore a stadi)
-  ui/           main/, dialogs/, editor/, icons/, results/, worker/ (thread QThread)
+  database/     errors/, connection/, execution/, schema/ (elenco tabelle), validation/ (validatore a stadi)
+  ui/           main/, dialogs/, editor/, icons/, results/, sidebar/, worker/ (thread QThread)
 tests/          una classe Test… per file; fakes/ (doppioni), support/ (basi), integration/
 packaging/      spec PyInstaller, script AppImage/.deb/DMG, desktop file, icona,
                 generatore delle licenze di terzi, licenses/ (testi delle licenze)

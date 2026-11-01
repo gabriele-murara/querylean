@@ -9,6 +9,7 @@ from PySide6.QtGui import (
     QPainter,
     QPaintEvent,
     QResizeEvent,
+    QTextCursor,
 )
 from PySide6.QtWidgets import QPlainTextEdit, QWidget
 
@@ -58,6 +59,17 @@ class SqlEditor(QPlainTextEdit):
                 .replace("\u2028", "\n")
             )
         return self.toPlainText()
+
+    def replace_query(self, text: str) -> None:
+        """Replace the whole content with ``text`` as one edit, so that
+        Ctrl/Cmd+Z restores the previous query; the cursor goes to the
+        end."""
+        cursor = self.textCursor()
+        cursor.beginEditBlock()
+        cursor.select(QTextCursor.SelectionType.Document)
+        cursor.insertText(text)
+        cursor.endEditBlock()
+        self.setTextCursor(cursor)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
         # On macOS Qt maps Cmd to ControlModifier.

@@ -171,3 +171,36 @@ class TestMainWindow(MainWindowTestBase):
         assert restarted.app_config.connection.host == "db"
         assert restarted.password == "pw-123"
         restarted.close()
+
+    def test_executed_query_is_reported(self, qtbot, window):
+        self.connect(qtbot, window)
+        self.run(qtbot, window, "SELECT n\n  FROM t;")
+        text = window.message_label.text()
+        assert text == "Query eseguita: SELECT n FROM t"
+        assert window.message_label.toolTip() == ""
+
+    def test_long_executed_query_is_cut(self, qtbot, window):
+        self.connect(qtbot, window)
+        columns = ", ".join("c{}".format(i) for i in range(80))
+        sql = "SELECT {} FROM t WHERE a < b".format(columns)
+        self.run(qtbot, window, sql)
+        text = window.message_label.text()
+        assert text.startswith("Query eseguita: SELECT c0, c1")
+        assert text.endswith("…")
+        assert window.message_label.toolTip() == sql
+
+    def test_query_without_result_set_is_reported(
+        self, qtbot, window, connector
+    ):
+        self.connect(qtbot, window)
+        connector.connections[0].handler = lambda sql: ([], [])
+        self.run(qtbot, window, "SHOW WARNINGS")
+        assert window.message_label.text() == (
+            "Query eseguita (nessun risultato tabellare): SHOW WARNINGS"
+        )
+
+    def test_query_preview(self):
+        assert MainWindow.query_preview(" SELECT\n\t1 ") == "SELECT 1"
+        preview = MainWindow.query_preview("x" * 500)
+        assert preview.endswith("…")
+        assert len(preview) == len(MainWindow.query_preview("y" * 900))

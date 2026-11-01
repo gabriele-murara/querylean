@@ -29,3 +29,14 @@ class TestSqlEditor:
             qtbot.keyClick(
                 editor, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier
             )
+
+    def test_replace_query_is_one_undo_step(self, qtbot):
+        editor = SqlEditor()
+        qtbot.addWidget(editor)
+        editor.setPlainText("SELECT 1")
+        editor.replace_query("SELECT * FROM `t` LIMIT 1;")
+        assert editor.toPlainText() == "SELECT * FROM `t` LIMIT 1;"
+        assert editor.textCursor().position() == len(editor.toPlainText())
+        assert not editor.textCursor().hasSelection()
+        editor.undo()
+        assert editor.toPlainText() == "SELECT 1"
