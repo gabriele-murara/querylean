@@ -2,9 +2,10 @@
 
 import csv
 import json
+from pathlib import Path
 
 from openpyxl import load_workbook
-from PySide6.QtWidgets import QFileDialog
+from PySide6.QtWidgets import QFileDialog, QToolBar, QToolButton
 
 from support.main_window_test_base import MainWindowTestBase
 
@@ -117,3 +118,58 @@ class TestMainWindowExport(MainWindowTestBase):
         window.export_results()
         assert not window.exporting
         assert list(tmp_path.glob("r*")) == []
+
+    def test_toolbar_button_opens_format_menu(self, window):
+        texts = [a.text() for a in window.export_menu.actions()]
+        assert texts == [
+            "Excel (.xlsx)",
+            "CSV (.csv)",
+            "JSON (.json)",
+            "",
+            "Esporta…",
+        ]
+        assert window.export_menu.actions()[3].isSeparator()
+        toolbar = window.findChild(QToolBar, "main-toolbar")
+        button = toolbar.widgetForAction(window.export_action)
+        assert isinstance(button, QToolButton)
+        assert (
+            button.popupMode() == QToolButton.ToolButtonPopupMode.InstantPopup
+        )
+
+    def test_format_entry_offers_only_that_format(
+        self, qtbot, window, tmp_path, monkeypatch
+    ):
+        self.connect(qtbot, window)
+        self.run(qtbot, window, "SELECT n FROM t")
+        offered = []
+
+        def dialog(parent, caption, start, filters, selected):
+            offered.append((Path(start).name, filters))
+            return str(tmp_path / "r.json"), selected
+
+        monkeypatch.setattr(QFileDialog, "getSaveFileName", dialog)
+        csv_entry = window.export_menu.actions()[1]
+        csv_entry.trigger()
+        qtbot.waitUntil(lambda: not window.exporting, timeout=self.WAIT_MS)
+        assert offered == [("risultato.csv", "CSV (*.csv)")]
+        # The chosen format wins over a different typed extension.
+        written = tmp_path / "r.json.csv"
+        with written.open(encoding="utf-8", newline="") as f:
+            assert next(csv.reader(f)) == ["n"]
+
+    def test_export_any_entry_offers_every_format(
+        self, qtbot, window, tmp_path, monkeypatch
+    ):
+        self.connect(qtbot, window)
+        self.run(qtbot, window, "SELECT n FROM t")
+        offered = []
+
+        def dialog(parent, caption, start, filters, selected):
+            offered.append(filters)
+            return str(tmp_path / "r.json"), selected
+
+        monkeypatch.setattr(QFileDialog, "getSaveFileName", dialog)
+        window.export_menu.actions()[-1].trigger()
+        qtbot.waitUntil(lambda: not window.exporting, timeout=self.WAIT_MS)
+        assert offered == ["Excel (*.xlsx);;CSV (*.csv);;JSON (*.json)"]
+        assert json.loads((tmp_path / "r.json").read_text(encoding="utf-8"))

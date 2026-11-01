@@ -61,13 +61,13 @@ La compatibilità macOS va considerata confermata solo quando la pipeline CI cor
 
 ## Uso
 
-La barra in alto contiene, nell'ordine: **Esegui** (▶), **Interrompi** (attivo solo durante l'esecuzione), **Esporta** (attivo quando c'è un risultato), **Connetti**/**Disconnetti**, **Configurazione** e **Informazioni** (versione, autore, licenza). Lo stato della connessione è in basso a destra.
+La barra in alto contiene, nell'ordine: **Esegui** (▶), **Interrompi** (attivo solo durante l'esecuzione), **Esporta** (menu a tendina, attivo quando c'è un risultato), **Connetti**/**Disconnetti**, **Configurazione** e **Informazioni** (versione, autore, licenza). Lo stato della connessione è in basso a destra.
 
 1. **Configurazione**: compila host, porta, database, username, password e i timeout, poi usa **Test connessione** e **Salva configurazione**. Salvare non apre la connessione.
 2. **Connetti**: lo stato passa da *Disconnesso* a *Connessione in corso* e poi a *Connesso* o *Errore di connessione*. Se la password non è nel portachiavi, viene richiesta.
 3. Scrivi la query e premi **Esegui** oppure `Ctrl/Cmd+Invio`.
 4. Seleziona celle o righe e premi `Ctrl/Cmd+C`. Il menu contestuale offre anche le varianti "con intestazioni" e "righe intere".
-5. Per salvare il risultato su file usa **Esporta** e scegli il formato (vedi [Esportazione](#esportazione)).
+5. Per salvare il risultato su file apri il menu **Esporta** e scegli il formato (vedi [Esportazione](#esportazione)).
 
 ### Regole di esecuzione
 
@@ -82,7 +82,10 @@ Le celle copiate sono separate da tabulazioni e le righe da a capo. La selezione
 
 ### Esportazione
 
-**Esporta** salva su file il risultato mostrato nella tabella, con le intestazioni delle colonne. Il formato si sceglie nella finestra di salvataggio, oppure dall'estensione del nome (`.xlsx`, `.csv`, `.json`).
+**Esporta** salva su file il risultato mostrato nella tabella, con le intestazioni delle colonne. Il pulsante apre un menu:
+
+- **Excel (.xlsx)**, **CSV (.csv)**, **JSON (.json)**: la finestra di salvataggio propone solo quel formato. Se il nome non ha la sua estensione, viene aggiunta.
+- **Esporta…**: la finestra di salvataggio propone tutti i formati. Decide l'estensione del nome (`.xlsx`, `.csv`, `.json`) oppure, se manca, il formato selezionato nella finestra.
 
 - Si esportano **le righe già caricate**, cioè al massimo il limite di righe impostato: la query non viene rieseguita. Se il risultato era troncato, il messaggio finale lo ricorda.
 - Il file viene scritto in un thread separato, quindi la finestra resta utilizzabile. Lo si scrive prima in un file temporaneo nella stessa cartella, poi lo si rinomina: un file esistente viene sostituito solo da un'esportazione completa.

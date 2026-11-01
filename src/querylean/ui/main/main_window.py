@@ -14,11 +14,13 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QProgressBar,
     QSplitter,
     QStatusBar,
     QToolBar,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -215,8 +217,13 @@ class MainWindow(QMainWindow):
 
     @property
     def export_action(self) -> QAction:
-        """ "Esporta" action."""
+        """ "Esporta" toolbar entry: opens the export menu."""
         return self.__export_action
+
+    @property
+    def export_menu(self) -> QMenu:
+        """Export menu: one entry per format, then "Esporta…"."""
+        return self.__export_menu
 
     @property
     def connect_action(self) -> QAction:
@@ -366,13 +373,16 @@ class MainWindow(QMainWindow):
             self.__stop_action.setEnabled(False)
             self.worker.cancel_query(QueryExecutor.CANCEL_BY_USER)
 
-    def export_results(self) -> None:
-        """Ask for a file name and export the displayed result."""
+    def export_results(self, exporter: ResultExporter | None = None) -> None:
+        """Ask for a file name and export the displayed result.
+
+        With ``exporter`` the dialog offers only that format; without it
+        ("Esporta…") every format is offered and the extension decides."""
         if not self.__can_export():
             return
-        path = self.__ask_export_path()
+        path = self.__ask_export_path(exporter)
         if path is not None:
-            self.export_to(path)
+            self.export_to(path, exporter)
 
     def export_to(
         self, path: Path, exporter: ResultExporter | None = None
@@ -455,7 +465,18 @@ class MainWindow(QMainWindow):
         self.__export_action.setToolTip(
             "Esporta il risultato in Excel, CSV o JSON"
         )
-        self.__export_action.triggered.connect(self.export_results)
+        self.__export_menu = QMenu("Esporta", self)
+        for exporter in ResultExporters.all():
+            entry = self.__export_menu.addAction(
+                "{} ({})".format(exporter.label, exporter.extension)
+            )
+            entry.triggered.connect(
+                lambda _checked=False, e=exporter: self.export_results(e)
+            )
+        self.__export_menu.addSeparator()
+        export_any = self.__export_menu.addAction("Esporta…")
+        export_any.triggered.connect(lambda: self.export_results())
+        self.__export_action.setMenu(self.__export_menu)
         self.__connect_action = QAction(self.__connect_icon, "Connetti", self)
         self.__connect_action.triggered.connect(self.toggle_connection)
         self.__config_action = QAction(
@@ -473,6 +494,12 @@ class MainWindow(QMainWindow):
         self.__about_action.triggered.connect(self.show_about)
         for action in self.toolbar_actions():
             toolbar.addAction(action)
+        # A click on "Esporta" opens the menu directly.
+        export_button = toolbar.widgetForAction(self.__export_action)
+        if isinstance(export_button, QToolButton):
+            export_button.setPopupMode(
+                QToolButton.ToolButtonPopupMode.InstantPopup
+            )
 
         quit_action = QAction(self)
         quit_action.setShortcut(QKeySequence.StandardKey.Quit)
@@ -666,11 +693,14 @@ class MainWindow(QMainWindow):
             self.worker.disconnect_requested.emit()
 
     # ------------------------------------------------------------------- export
-    def __ask_export_path(self) -> Path | None:
-        """File chosen in the save dialog, with the extension of the selected
-        format added when missing; None when cancelled."""
-        exporters = ResultExporters.all()
-        current = (
+    def __ask_export_path(
+        self, fixed: ResultExporter | None = None
+    ) -> Path | None:
+        """File chosen in the save dialog, with the extension of the format
+        added when missing; None when cancelled. With ``fixed`` only that
+        format is offered and its extension is always enforced."""
+        exporters = [fixed] if fixed is not None else ResultExporters.all()
+        current = fixed or (
             ResultExporters.for_name_filter(self.__export_filter)
             or exporters[0]
         )
@@ -685,8 +715,12 @@ class MainWindow(QMainWindow):
         if not name:
             return None
         path = Path(name)
-        chosen = ResultExporters.for_name_filter(selected) or current
-        if ResultExporters.for_path(path) is None:
+        chosen = fixed or ResultExporters.for_name_filter(selected) or current
+        if fixed is not None:
+            missing = path.suffix.lower() != fixed.extension
+        else:
+            missing = ResultExporters.for_path(path) is None
+        if missing:
             path = path.with_name("{}{}".format(path.name, chosen.extension))
             # The dialog confirmed the overwrite of the name without the
             # extension only.

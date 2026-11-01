@@ -61,13 +61,13 @@ macOS compatibility should be considered confirmed only once the corresponding C
 
 ## Usage
 
-The toolbar contains, in order: **Esegui** (Run, ▶), **Interrompi** (Stop, enabled only while a query runs), **Esporta** (Export, enabled when there is a result), **Connetti**/**Disconnetti** (Connect/Disconnect), **Configurazione** (Configuration) and **Informazioni** (About: version, author, license). The connection state is shown at the bottom right. The user interface is in Italian.
+The toolbar contains, in order: **Esegui** (Run, ▶), **Interrompi** (Stop, enabled only while a query runs), **Esporta** (Export, drop-down menu, enabled when there is a result), **Connetti**/**Disconnetti** (Connect/Disconnect), **Configurazione** (Configuration) and **Informazioni** (About: version, author, license). The connection state is shown at the bottom right. The user interface is in Italian.
 
 1. **Configuration**: fill in host, port, database, username, password and timeouts, then use **Test connessione** (Test connection) and **Salva configurazione** (Save configuration). Saving does not open the connection.
 2. **Connect**: the state goes from *Disconnesso* (Disconnected) to *Connessione in corso* (Connecting) and then to *Connesso* (Connected) or *Errore di connessione* (Connection error). If the password is not in the keychain, it is asked for.
 3. Write the query and press **Run** or `Ctrl/Cmd+Enter`.
 4. Select cells or rows and press `Ctrl/Cmd+C`. The context menu also offers the "with headers" and "whole rows" variants.
-5. To save the result to a file use **Export** and choose the format (see [Export](#export)).
+5. To save the result to a file open the **Export** menu and choose the format (see [Export](#export)).
 
 ### Execution rules
 
@@ -82,7 +82,10 @@ Copied cells are separated by tabs and rows by newlines. The selection is copied
 
 ### Export
 
-**Esporta** (Export) saves the result shown in the table to a file, with the column headers. The format is chosen in the save dialog, or from the extension of the name (`.xlsx`, `.csv`, `.json`).
+**Esporta** (Export) saves the result shown in the table to a file, with the column headers. The button opens a menu:
+
+- **Excel (.xlsx)**, **CSV (.csv)**, **JSON (.json)**: the save dialog offers only that format. If the name lacks its extension, it is added.
+- **Esporta…** (Export…): the save dialog offers every format. The extension of the name (`.xlsx`, `.csv`, `.json`) decides or, when missing, the format selected in the dialog.
 
 - **The rows already loaded** are exported, that is at most the configured row limit: the query is not run again. If the result was truncated, the final message says so.
 - The file is written in a separate thread, so the window stays usable. It is first written to a temporary file in the same folder and then renamed: an existing file is replaced only by a complete export.
