@@ -220,7 +220,7 @@ Gli script condividono `packaging/common.sh`, che legge la versione da `.version
 
 ### Dimensione dei pacchetti
 
-Lo spec (`BundleSlimmer`) toglie dal bundle quello che QueryLean non carica mai:
+Lo spec (`BundleSlimmer`, in `packaging/bundle_slimmer.py`) toglie dal bundle quello che QueryLean non carica mai:
 
 | Rimosso | Motivo | Risparmio indicativo (bundle Linux) |
 |---|---|---|
@@ -274,6 +274,16 @@ packaging/build_linux_appimage.sh     # → dist/querylean-<ver>-x86_64.AppImage
 
 Lo script scarica `appimagetool` (versione fissata nello script) e il runtime AppImage in `build/`; al secondo avvio li riusa. Senza FUSE usa `APPIMAGE_EXTRACT_AND_RUN=1`. Per la massima compatibilità, conviene fare la build sulla distribuzione più vecchia da supportare (Ubuntu 22.04).
 
+Requisiti per la build su Linux (AppImage e `.deb`):
+
+```bash
+sudo apt install curl file desktop-file-utils \
+  libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
+  libxcb-shape0 libxcb-util1 libxcb-xkb1 libxkbcommon-x11-0
+```
+
+Le librerie `libxcb-*` e `libxkbcommon-x11-0` servono al plugin xcb di Qt e vengono incluse nel pacchetto solo se sono installate sulla macchina di build: se mancano la build fallisce, per non produrre un pacchetto che non parte sui sistemi che non le hanno. `desktop-file-utils` serve ad `appimagetool`.
+
 ### Ubuntu/Lubuntu 24.04 (.deb)
 
 ```bash
@@ -321,7 +331,25 @@ Per una firma valida ai fini della notarizzazione serve anche l'hardened runtime
 - test unitari, GUI e integrazione su Ubuntu 22.04 con MySQL 8 in un service container;
 - build dell'AppImage (Ubuntu 22.04), del `.deb` (Ubuntu 24.04) e dei DMG arm64 e x86_64, ciascuna con smoke test (`--smoke-test`, che verifica anche le licenze di terze parti);
 - il `.deb` viene installato con `apt`, verificato e poi rimosso;
-- pubblicazione dei pacchetti come artefatti della build.
+- pubblicazione dei pacchetti come artefatti della build;
+- sui tag `vX.Y.Z`, creazione della release su GitHub (vedi sotto).
+
+La CI parte sui push in `main` e nei branch `release-*`, sui tag `v*` e sulle pull request.
+
+### Rilascio
+
+Il flusso di rilascio è questo:
+
+1. Da `develop` si crea il branch `release-X.Y.Z`, dove `X.Y.Z` è la versione attuale senza `-dev`.
+2. Nel branch si porta `.version` a `X.Y.Z` e si pubblica il branch: la CI costruisce e verifica tutti i pacchetti.
+3. Si fa merge di `release-X.Y.Z` in `main`, si tagga `main` con `vX.Y.Z` e si pubblica il tag.
+4. Sul tag, il job `release` della CI:
+   - verifica che il tag corrisponda a `.version`;
+   - aspetta che tutti i pacchetti siano costruiti e superino lo smoke test;
+   - crea la release su GitHub con AppImage, `.deb`, i due DMG, le licenze di terze parti dell'AppImage e il file `SHA256SUMS`;
+   - la segna come pre-release se il tag contiene un trattino (es. `v1.1.0-rc1`).
+
+Per verificare un download: `sha256sum -c SHA256SUMS --ignore-missing`.
 
 ## Limiti di questa versione
 

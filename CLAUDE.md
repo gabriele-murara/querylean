@@ -198,7 +198,7 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
   - `.deb` per Ubuntu/Lubuntu 24.04 (`build_linux_deb.sh`, build su 24.04): bundle in `/opt/querylean`, lanciatore `/usr/bin/querylean`, versione Debian derivata da `.version`;
   - macOS `.app` + `.dmg` (`build_macos_dmg.sh`, firma ad-hoc, un'architettura per build).
 - Gli script includono `packaging/common.sh` (versione da `.version`, funzione `querylean_pyinstaller`).
-- **Dimensione**: `BundleSlimmer` nello spec toglie estensione C di mysql-connector, tema GTK3, traduzioni Qt e plugin Qt inutili; su Linux toglie anche le librerie di sistema orfane.
+- **Dimensione**: `BundleSlimmer` (`packaging/bundle_slimmer.py`, usato dallo spec) toglie estensione C di mysql-connector, tema GTK3, traduzioni Qt e plugin Qt inutili; su Linux toglie anche le librerie di sistema orfane.
   - Prima di escludere altro, verifica che il modulo o la libreria non venga caricato a runtime.
   - Lo smoke test controlla `ssl`, `hashlib` e il backend Secret Service: un modulo critico che manca deve far fallire la CI.
   - Non aggiungere `--strip` né UPX.
@@ -209,5 +209,18 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
   - il `.deb` collega il file in `/usr/share/doc/querylean/` e ha un `copyright` DEP-5; il DMG lo mette accanto all'app; la finestra Informazioni vi rimanda (`AboutDialog.third_party_html`);
   - nei pacchetti lo smoke test fallisce se il file manca.
 - Le dipendenze del `.deb` (`Depends`) vanno ricavate dalle librerie che il bundle carica dal sistema (`readelf -d`, con `LC_ALL=C`), non scritte a intuito.
-- La CI è in `.github/workflows/ci.yml`. Esegue lint e test (dipendenze `[dev,build]`) con MySQL 8 come service; costruisce AppImage, `.deb` (installato e rimosso con `apt`) e DMG arm64/x86_64, con smoke test su ciascuno.
+- **Librerie xcb**: su Linux `BundleSlimmer.check_required_libraries` fa fallire la build se mancano le librerie del plugin xcb di Qt (`REQUIRED_LINUX_LIBRARIES`). Vanno installate sulla macchina di build (in CI: `QT_XCB_PACKAGES`); non togliere il controllo.
+- Il comando `querylean` installato da pip (`[project.gui-scripts]`) punta a `querylean.app.application:Application.run`; `tests/test_app_info.py` verifica che il riferimento sia valido.
+- La CI è in `.github/workflows/ci.yml`. Parte su `main`, `release-*`, tag `v*` e pull request. Esegue lint e test (dipendenze `[dev,build]`) con MySQL 8 come service; costruisce AppImage, `.deb` (installato e rimosso con `apt`, smoke test con `/usr/bin/querylean`) e DMG arm64/x86_64, con smoke test su ciascuno. Sui tag `vX.Y.Z` il job `release` crea la release GitHub.
+
+## Rilascio
+
+Politica di rilascio decisa dall'utente:
+
+1. Da `develop` si crea il branch `release-X.Y.Z`, con `X.Y.Z` = versione attuale senza `-dev`.
+2. Nel branch si modifica `.version` (lo fa **l'utente**) e si pubblica il branch.
+3. Si fa merge di `release-X.Y.Z` in `main` e si tagga `main` con `vX.Y.Z`.
+4. Sul tag la CI pubblica la release (pacchetti, licenze di terze parti, `SHA256SUMS`); il job verifica che il tag corrisponda a `.version`.
+
+Le correzioni alla build durante un rilascio si fanno su `develop` e si portano nel branch `release-X.Y.Z` con un merge: il merge non tocca `.version` del branch di rilascio. Non creare, spostare o cancellare tag e non fare merge in `main` senza richiesta esplicita.
 - Il pacchetto macOS non è ancora verificato: non dichiararlo compatibile finché la CI non passa.

@@ -220,7 +220,7 @@ The scripts share `packaging/common.sh`, which reads the version from `.version`
 
 ### Package size
 
-The spec (`BundleSlimmer`) removes from the bundle what QueryLean never loads:
+The spec (`BundleSlimmer`, in `packaging/bundle_slimmer.py`) removes from the bundle what QueryLean never loads:
 
 | Removed | Reason | Approximate saving (Linux bundle) |
 |---|---|---|
@@ -274,6 +274,16 @@ packaging/build_linux_appimage.sh     # → dist/querylean-<ver>-x86_64.AppImage
 
 The script downloads `appimagetool` (version pinned in the script) and the AppImage runtime into `build/`; on later runs it reuses them. Without FUSE, use `APPIMAGE_EXTRACT_AND_RUN=1`. For maximum compatibility, build on the oldest distribution you want to support (Ubuntu 22.04).
 
+Build requirements on Linux (AppImage and `.deb`):
+
+```bash
+sudo apt install curl file desktop-file-utils \
+  libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
+  libxcb-shape0 libxcb-util1 libxcb-xkb1 libxkbcommon-x11-0
+```
+
+The `libxcb-*` and `libxkbcommon-x11-0` libraries are needed by Qt's xcb plugin and are bundled only if they are installed on the build machine: without them the build fails, so as not to produce a package that does not start on systems lacking them. `desktop-file-utils` is needed by `appimagetool`.
+
 ### Ubuntu/Lubuntu 24.04 (.deb)
 
 ```bash
@@ -321,7 +331,25 @@ A signature valid for notarization also requires the hardened runtime (`codesign
 - unit, GUI and integration tests on Ubuntu 22.04 with MySQL 8 in a service container;
 - builds of the AppImage (Ubuntu 22.04), the `.deb` (Ubuntu 24.04) and the arm64 and x86_64 DMGs, each with a smoke test (`--smoke-test`, which also checks the third-party licenses);
 - the `.deb` is installed with `apt`, checked and then removed;
-- publication of the packages as build artifacts.
+- publication of the packages as build artifacts;
+- on `vX.Y.Z` tags, creation of the GitHub release (see below).
+
+The CI runs on pushes to `main` and to `release-*` branches, on tags `v*` and on pull requests.
+
+### Release
+
+The release flow is:
+
+1. From `develop`, create the `release-X.Y.Z` branch, where `X.Y.Z` is the current version without `-dev`.
+2. On that branch, change `.version` to `X.Y.Z` and push the branch: the CI builds and checks all packages.
+3. Merge `release-X.Y.Z` into `main` and tag `main` with `vX.Y.Z`, then push the tag.
+4. On the tag, the `release` job of the CI:
+   - checks that the tag matches `.version`;
+   - waits for all packages to be built and smoke-tested;
+   - creates the GitHub release with the AppImage, the `.deb`, the two DMGs, the third-party licenses of the AppImage and the `SHA256SUMS` file;
+   - marks it as a pre-release if the tag contains a hyphen (e.g. `v1.1.0-rc1`).
+
+To verify a download: `sha256sum -c SHA256SUMS --ignore-missing`.
 
 ## Limitations of this version
 
