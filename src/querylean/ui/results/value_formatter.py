@@ -15,17 +15,28 @@ class ValueFormatter:
 
     @staticmethod
     def format_value(value: Any) -> str:
-        """Display text of a non-NULL value."""
+        """Display text of a non-NULL value (long binary values are cut to a
+        preview)."""
+        return ValueFormatter.__text(value, full=False)
+
+    @staticmethod
+    def full_text(value: Any) -> str:
+        """Lossless text of a non-NULL value, used by the exports: binary
+        values are written in full, TIME values keep their microseconds."""
+        return ValueFormatter.__text(value, full=True)
+
+    @staticmethod
+    def __text(value: Any, *, full: bool) -> str:
         if isinstance(value, bool):
             return "true" if value else "false"
         if isinstance(value, bytes | bytearray):
-            return ValueFormatter.__format_bytes(bytes(value))
+            return ValueFormatter.__format_bytes(bytes(value), full=full)
         if isinstance(value, dt.datetime):
             return value.isoformat(sep=" ")
         if isinstance(value, dt.date | dt.time):
             return value.isoformat()
         if isinstance(value, dt.timedelta):  # TIME columns
-            return ValueFormatter.__format_timedelta(value)
+            return ValueFormatter.__format_timedelta(value, full=full)
         if isinstance(value, decimal.Decimal):
             return format(value, "f")
         if isinstance(value, set):
@@ -44,21 +55,23 @@ class ValueFormatter:
         return text
 
     @staticmethod
-    def __format_bytes(data: bytes) -> str:
+    def __format_bytes(data: bytes, *, full: bool) -> str:
         try:
             return data.decode("utf-8")
         except UnicodeDecodeError:
-            preview = data[: ValueFormatter.MAX_BINARY_PREVIEW].hex()
-            suffix = (
-                "…" if len(data) > ValueFormatter.MAX_BINARY_PREVIEW else ""
-            )
-            return "0x{}{}".format(preview, suffix)
+            limit = ValueFormatter.MAX_BINARY_PREVIEW
+            if full or len(data) <= limit:
+                return "0x{}".format(data.hex())
+            return "0x{}…".format(data[:limit].hex())
 
     @staticmethod
-    def __format_timedelta(value: dt.timedelta) -> str:
-        total = int(value.total_seconds())
-        sign = "-" if total < 0 else ""
-        total = abs(total)
+    def __format_timedelta(value: dt.timedelta, *, full: bool) -> str:
+        sign = "-" if value < dt.timedelta(0) else ""
+        micros = abs(value) // dt.timedelta(microseconds=1)
+        total, micros = divmod(micros, 1_000_000)
         hours, rest = divmod(total, 3600)
         minutes, seconds = divmod(rest, 60)
-        return "{}{:02d}:{:02d}:{:02d}".format(sign, hours, minutes, seconds)
+        text = "{}{:02d}:{:02d}:{:02d}".format(sign, hours, minutes, seconds)
+        if full and micros:
+            text = "{}.{:06d}".format(text, micros)
+        return text

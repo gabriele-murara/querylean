@@ -46,6 +46,12 @@ excludes = [
     "PySide6.QtQuick",
     "PySide6.QtSql",
     "PySide6.QtTest",
+    # Optional openpyxl accelerators and extras: the xlsx export needs none
+    # of them.
+    "numpy",
+    "pandas",
+    "PIL",
+    "lxml",
 ]
 if sys.platform == "darwin":
     # SecretService (and its cryptography dependency) is Linux only.

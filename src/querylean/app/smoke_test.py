@@ -15,6 +15,7 @@ from querylean.app.bundle_resources import BundleResources
 from querylean.app.version_file import VersionFile
 from querylean.config.config_manager import ConfigManager
 from querylean.database.validation.read_only_validator import ReadOnlyValidator
+from querylean.export.result_exporters import ResultExporters
 from querylean.log.log_manager import LogManager
 from querylean.security.keyring_secret_store import KeyringSecretStore
 from querylean.ui.main.main_window import MainWindow
@@ -78,6 +79,11 @@ class SmokeTest:
                 KeyringSecretStore().is_available(),
             )
             with tempfile.TemporaryDirectory() as tmp:
+                # The exports load their modules (openpyxl) only when
+                # writing: write a file of each format.
+                for exporter in ResultExporters.all():
+                    name = "smoke{}".format(exporter.extension)
+                    exporter.export(Path(tmp) / name, ["n"], [(1,)])
                 window = MainWindow(ConfigManager(Path(tmp) / "config.json"))
                 window.show()
                 QTimer.singleShot(SmokeTest.__WINDOW_LIFETIME_MS, window.close)

@@ -19,7 +19,8 @@ editor and a table of copyable results.
 - Read-only results table:
   - `NULL` is distinct from the empty string;
   - resizable columns;
-  - copy of cells or rows as tab-separated text, ready to paste into Excel and LibreOffice Calc.
+  - copy of cells or rows as tab-separated text, ready to paste into Excel and LibreOffice Calc;
+  - export of the result to Excel (`.xlsx`), CSV or JSON.
 - The row limit (default 1,000, maximum 10,000) is enforced while fetching the data.
 - Window and splitter sizes are remembered between sessions.
 - No telemetry, no cloud services, no local database.
@@ -43,6 +44,7 @@ macOS compatibility should be considered confirmed only once the corresponding C
 | Driver | mysql-connector-python (pure Python implementation) | Needs no installed MySQL client. Gives control over multi-statements and LOCAL INFILE |
 | SQL parser | sqlglot (MySQL dialect) | Pure Python parser, used as the second layer of the validator |
 | Secrets | keyring | Secret Service on Linux, Keychain on macOS |
+| Excel export | openpyxl | Writes `.xlsx` files without Excel or LibreOffice; pure Python, MIT license |
 | Packaging | PyInstaller → AppImage / `.deb` / `.app` + `.dmg` | End users do not have to install any runtime |
 | Tests | pytest, pytest-qt | |
 
@@ -59,12 +61,13 @@ macOS compatibility should be considered confirmed only once the corresponding C
 
 ## Usage
 
-The toolbar contains, in order: **Esegui** (Run, ▶), **Interrompi** (Stop, enabled only while a query runs), **Connetti**/**Disconnetti** (Connect/Disconnect), **Configurazione** (Configuration) and **Informazioni** (About: version, author, license). The connection state is shown at the bottom right. The user interface is in Italian.
+The toolbar contains, in order: **Esegui** (Run, ▶), **Interrompi** (Stop, enabled only while a query runs), **Esporta** (Export, enabled when there is a result), **Connetti**/**Disconnetti** (Connect/Disconnect), **Configurazione** (Configuration) and **Informazioni** (About: version, author, license). The connection state is shown at the bottom right. The user interface is in Italian.
 
 1. **Configuration**: fill in host, port, database, username, password and timeouts, then use **Test connessione** (Test connection) and **Salva configurazione** (Save configuration). Saving does not open the connection.
 2. **Connect**: the state goes from *Disconnesso* (Disconnected) to *Connessione in corso* (Connecting) and then to *Connesso* (Connected) or *Errore di connessione* (Connection error). If the password is not in the keychain, it is asked for.
 3. Write the query and press **Run** or `Ctrl/Cmd+Enter`.
 4. Select cells or rows and press `Ctrl/Cmd+C`. The context menu also offers the "with headers" and "whole rows" variants.
+5. To save the result to a file use **Export** and choose the format (see [Export](#export)).
 
 ### Execution rules
 
@@ -76,6 +79,23 @@ The toolbar contains, in order: **Esegui** (Run, ▶), **Interrompi** (Stop, ena
 ### Copy
 
 Copied cells are separated by tabs and rows by newlines. The selection is copied as a rectangle, and unselected cells inside it stay empty. A `NULL` becomes an empty cell, while tabs and newlines inside values become spaces, so the grid stays aligned. Binary values that are not valid UTF-8 are shown in hexadecimal (`0x…`, truncated to 64 bytes).
+
+### Export
+
+**Esporta** (Export) saves the result shown in the table to a file, with the column headers. The format is chosen in the save dialog, or from the extension of the name (`.xlsx`, `.csv`, `.json`).
+
+- **The rows already loaded** are exported, that is at most the configured row limit: the query is not run again. If the result was truncated, the final message says so.
+- The file is written in a separate thread, so the window stays usable. It is first written to a temporary file in the same folder and then renamed: an existing file is replaced only by a complete export.
+- The file is readable only by your user (permissions `0600`), because it may contain confidential data.
+- Exporting is still possible after disconnecting.
+
+| Format | Content |
+| --- | --- |
+| Excel (`.xlsx`) | One sheet, "Risultato" (Result), with a bold, frozen header row. Numbers, booleans, dates and date-times are native Excel values. Text never becomes a formula, even when it starts with `=`. Values Excel would alter stay text: integers and DECIMAL values with more than 15 significant digits, dates before 1900, `TIME` values. `NULL` and the empty string are both empty cells. Control characters Excel does not allow become `�`; cells longer than 32,767 characters are cut and the final message counts them |
+| CSV (`.csv`) | UTF-8, comma separator, header row. Fields are quoted only when needed, and newlines inside values are kept. `NULL` becomes an empty field, as in the copy |
+| JSON (`.json`) | UTF-8, an array with one object per row, keyed by column name. `NULL` becomes `null`, while integers, floating-point numbers and booleans stay numbers and booleans. DECIMAL values become strings, so that no digit is lost. Repeated column names get a suffix (`id`, `id_2`) |
+
+In every format binary values are written in full (UTF-8 text or hexadecimal `0x…`, without the 64-byte cut of the table), dates in ISO format and `TIME` values as `hh:mm:ss[.ffffff]`.
 
 ### Settings
 
@@ -181,6 +201,7 @@ src/querylean/
   log/          application logger, rotating log, secret redaction
   config/       configuration model and JSON persistence
   security/     password in the keychain (abstract SecretStore, KeyringSecretStore)
+  export/       Excel/CSV/JSON export (abstract ResultExporter)
   database/     errors/, connection/, execution/, validation/ (staged validator)
   ui/           main/, dialogs/, editor/, icons/, results/, worker/ (QThread thread)
 tests/          one Test… class per file; fakes/ (test doubles), support/ (bases), integration/
@@ -233,7 +254,9 @@ The spec (`BundleSlimmer`, in `packaging/bundle_slimmer.py`) removes from the bu
 
 On Linux, after filtering, system libraries that no remaining binary uses are removed automatically (`readelf -d`).
 
-Result on Linux x86_64: bundle from 191 to 133 MB, AppImage from 70 to 50 MB, `.deb` from 54 to 39 MB.
+Result on Linux x86_64: bundle from 191 to 133 MB, AppImage from 70 to 50 MB, `.deb` from 54 to 39 MB. The Excel export (openpyxl) adds about 0.5 MB.
+
+`numpy`, `pandas`, `PIL` and `lxml`, which openpyxl uses only when present, are excluded from the bundle.
 
 What remains and why:
 
@@ -242,7 +265,7 @@ What remains and why:
 - **Qt Core/Gui/Widgets, Python, OpenSSL**: essential.
 - **Symbol stripping**: it would save only ~3% and would invalidate the signature on macOS, so it is not enabled.
 
-The smoke test checks that `ssl`, `hashlib` and, on Linux, the Secret Service backend are present in the package. This way an over-eager exclusion makes CI fail instead of silently disabling TLS or the keychain.
+The smoke test checks that `ssl`, `hashlib` and, on Linux, the Secret Service backend are present in the package, and writes a test file in every export format. This way an over-eager exclusion makes CI fail instead of silently disabling TLS or the keychain.
 
 ### Third-party licenses
 
@@ -354,7 +377,8 @@ To verify a download: `sha256sum -c SHA256SUMS --ignore-missing`.
 ## Limitations of this version
 
 - One connection and one query at a time, one statement per execution.
-- Not supported: TLS/SSH tunnels configurable from the GUI, autocompletion, history, CSV/Excel export, pagination.
+- Not supported: TLS/SSH tunnels configurable from the GUI, autocompletion, history, pagination.
+- The export saves only the loaded rows (at most 10,000): to export more, use a tool such as `mysqldump` or `mysql --batch`.
 - `SHOW` is allowed only in the forms recognized by the parser; the others are rejected.
 - Reserved write words used as column names must be quoted (`` `update` ``) or qualified (`t.update`), as MySQL requires.
 - `--` sequences not followed by whitespace outside strings (e.g. `1--1`) are rejected to avoid ambiguity with comments: write `1 - -1`.
