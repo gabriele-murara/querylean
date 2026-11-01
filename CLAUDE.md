@@ -18,7 +18,7 @@ Client desktop minimale (Linux/macOS, **no Windows**) per eseguire **solo query 
 ## Comandi
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"   # setup (aggiungere [build] per PyInstaller)
+python3 -m venv .venv && .venv/bin/pip install -e ".[dev,build]"   # setup ([build]: PyInstaller, serve anche ai test delle licenze)
 .venv/bin/python -m querylean                                # avvio dai sorgenti
 .venv/bin/python -m querylean --smoke-test                   # verifica import/pacchetto (usato in CI)
 .venv/bin/ruff check src tests packaging                     # lint (deve essere pulito)
@@ -104,7 +104,7 @@ Il logger è implementato **nel progetto** (`querylean/log/`) e non importato da
 
 ```
 src/querylean/
-  app/                 AppInfo (NAME, DISPLAY_NAME, AUTHOR, …, version()), VersionFile, Application.run() (entry point, excepthook), SmokeTest
+  app/                 AppInfo (NAME, DISPLAY_NAME, AUTHOR, …, version()), VersionFile, BundleResources (percorsi nel bundle: `_MEIPASS` o radice), Application.run() (entry point, excepthook), SmokeTest
   log/                 AppLogger, LogManager, SecretRedactor
   config/              ConnectionConfig, UiPreferences, AppConfig, ConfigManager (JSON atomico 0600), ConfigError
   security/            SecretStore (astratta), KeyringSecretStore, SecretStorageError
@@ -202,6 +202,12 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
   - Prima di escludere altro, verifica che il modulo o la libreria non venga caricato a runtime.
   - Lo smoke test controlla `ssl`, `hashlib` e il backend Secret Service: un modulo critico che manca deve far fallire la CI.
   - Non aggiungere `--strip` né UPX.
+- **Licenze di terze parti** (`packaging/third_party_licenses.py`, classe `ThirdPartyLicenses`, richiamata dallo spec dopo `BundleSlimmer`):
+  - genera `licenses/THIRD_PARTY_LICENSES.txt` nel bundle, più lo zip dei sorgenti di mysql-connector-python (GPLv2 incluso solo come bytecode);
+  - attribuisce ogni file del bundle al pacchetto Python, al pacchetto Ubuntu (`dpkg`) o all'interprete. Un file senza origine nota fa **fallire la build**: non aggirare l'errore, ma aggiungi l'origine o il testo della licenza;
+  - `packaging/licenses/` contiene i testi ufficiali per i componenti che non li includono (LGPL-3.0, GPL-3.0, ICU 73, Apache-2.0). Non vanno modificati; se Qt aggiorna ICU, va aggiunto il testo della nuova versione;
+  - il `.deb` collega il file in `/usr/share/doc/querylean/` e ha un `copyright` DEP-5; il DMG lo mette accanto all'app; la finestra Informazioni vi rimanda (`AboutDialog.third_party_html`);
+  - nei pacchetti lo smoke test fallisce se il file manca.
 - Le dipendenze del `.deb` (`Depends`) vanno ricavate dalle librerie che il bundle carica dal sistema (`readelf -d`, con `LC_ALL=C`), non scritte a intuito.
-- La CI è in `.github/workflows/ci.yml`. Esegue lint e test con MySQL 8 come service; costruisce AppImage, `.deb` (installato e rimosso con `apt`) e DMG arm64/x86_64, con smoke test su ciascuno.
+- La CI è in `.github/workflows/ci.yml`. Esegue lint e test (dipendenze `[dev,build]`) con MySQL 8 come service; costruisce AppImage, `.deb` (installato e rimosso con `apt`) e DMG arm64/x86_64, con smoke test su ciascuno.
 - Il pacchetto macOS non è ancora verificato: non dichiararlo compatibile finché la CI non passa.

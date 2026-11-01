@@ -18,12 +18,6 @@ class SecretRedactor(logging.Filter):
         self.__secrets: set[str] = set()
         self.__lock = threading.Lock()
 
-    @property
-    def secret_count(self) -> int:
-        """Number of secrets currently registered."""
-        with self.__lock:
-            return len(self.__secrets)
-
     def register_secret(self, secret: str | None) -> None:
         """Add a secret that must never appear in log output."""
         if secret:

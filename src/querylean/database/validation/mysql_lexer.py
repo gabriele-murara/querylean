@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from querylean.database.validation.lexed_statement import LexedStatement
+from querylean.database.validation.read_only_rules import ReadOnlyRules
 from querylean.database.validation.sql_token import SqlToken
 from querylean.database.validation.validation_rejected import ValidationRejected
 
@@ -16,8 +17,6 @@ class MySqlLexer:
     and unterminated strings or comments.
     """
 
-    __MULTIPLE_STATEMENTS = "Sono presenti più istruzioni SQL: questa "
-    __MULTIPLE_STATEMENTS += "versione ne esegue una sola per volta."
     __AMBIGUOUS_DASHES = "Sequenza «--» ambigua: in MySQL è un commento "
     __AMBIGUOUS_DASHES += "solo se seguita da uno spazio. Aggiungi uno "
     __AMBIGUOUS_DASHES += "spazio o riformula l'espressione."
@@ -44,7 +43,7 @@ class MySqlLexer:
                 and not ch.isspace()
                 and not MySqlLexer.__starts_comment(sql, i)
             ):
-                raise ValidationRejected(MySqlLexer.__MULTIPLE_STATEMENTS)
+                raise ValidationRejected(ReadOnlyRules.MULTIPLE_STATEMENTS)
 
             if ch.isspace():
                 i += 1

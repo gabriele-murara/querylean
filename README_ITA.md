@@ -184,7 +184,8 @@ src/querylean/
   database/     errors/, connection/, execution/, validation/ (validatore a stadi)
   ui/           main/, dialogs/, editor/, icons/, results/, worker/ (thread QThread)
 tests/          una classe Test… per file; fakes/ (doppioni), support/ (basi), integration/
-packaging/      spec PyInstaller, script AppImage/.deb/DMG, desktop file, icona
+packaging/      spec PyInstaller, script AppImage/.deb/DMG, desktop file, icona,
+                generatore delle licenze di terzi, licenses/ (testi delle licenze)
 .github/workflows/ci.yml     lint, test, build degli artefatti
 ```
 
@@ -243,6 +244,27 @@ Cosa resta e perché:
 
 Lo smoke test verifica che `ssl`, `hashlib` e, su Linux, il backend Secret Service siano presenti nel pacchetto. Così un'esclusione di troppo fa fallire la CI invece di disattivare in silenzio TLS o il portachiavi.
 
+### Licenze di terze parti
+
+Ogni pacchetto contiene anche i componenti di terze parti che include (Qt, PySide6, Python, mysql-connector-python, ICU, OpenSSL, le librerie di sistema di Ubuntu e i pacchetti Python). Durante la build, `packaging/third_party_licenses.py`, richiamato dallo spec, genera `licenses/THIRD_PARTY_LICENSES.txt` dentro il bundle:
+
+- **Attribuzione:** ogni file del bundle viene attribuito alla sua origine e da lì si prende la licenza:
+  - il pacchetto Python che lo ha installato (file di licenza nel `dist-info`);
+  - su Linux, il pacchetto Ubuntu che lo possiede (`dpkg`, file `/usr/share/doc/<pacchetto>/copyright`);
+  - l'interprete Python (`LICENSE.txt` della libreria standard).
+- **Testi mancanti:** per i componenti che non includono il testo della licenza (PySide6 e shiboken6, ICU incluso in Qt, OpenSSL incluso in Python su macOS) si usano i testi ufficiali conservati in `packaging/licenses/` (LGPL-3.0, GPL-3.0, ICU 73, Apache-2.0).
+- **Contenuto:** il file contiene l'elenco dei componenti con versione e licenza, dove trovare il codice sorgente (rilasci di Qt e PySide6, PyPI, pacchetti Ubuntu su Launchpad) e i testi completi delle licenze.
+- **Sorgenti di mysql-connector-python:** il connettore è GPLv2 (con l'eccezione Universal FOSS) ed è incluso solo come bytecode, quindi nel pacchetto c'è anche il suo codice sorgente (`licenses/mysql-connector-python-<ver>-source.zip`).
+- **Fail-closed:** se un file del bundle non ha un'origine nota, la build fallisce. Una nuova dipendenza non può quindi essere distribuita senza la sua licenza.
+
+Dove trovare le licenze:
+
+- `.deb`: `/usr/share/doc/querylean/THIRD_PARTY_LICENSES.txt`;
+- DMG: accanto all'applicazione, insieme a `LICENSE.txt`;
+- AppImage: dentro il bundle (`usr/lib/querylean/_internal/licenses/`).
+
+La finestra **Informazioni** rimanda al file. Nei pacchetti, lo smoke test fallisce se il file manca.
+
 ### Linux (AppImage)
 
 ```bash
@@ -264,7 +286,7 @@ La build va fatta su Ubuntu 24.04 (o una derivata come Lubuntu): il bundle richi
 - il bundle PyInstaller in `/opt/querylean`;
 - il lanciatore `/usr/bin/querylean`;
 - la voce di menu e l'icona;
-- la licenza in `/usr/share/doc/querylean/copyright`.
+- le licenze in `/usr/share/doc/querylean/copyright` (formato DEP-5) e quelle di terze parti in `/usr/share/doc/querylean/THIRD_PARTY_LICENSES.txt`.
 
 Qt, Python e le altre librerie sono inclusi nel bundle. Le dipendenze dichiarate sono solo `libc6 (>= 2.38)`, `libegl1`, `libgl1` e `libxcb1`, ricavate dalle librerie che il bundle carica dal sistema. Il portachiavi (`gnome-keyring` o `keepassxc`) e le librerie Wayland sono *Recommends*.
 
@@ -277,7 +299,7 @@ pip install -e ".[build]"
 packaging/build_macos_dmg.sh          # → dist/querylean-<ver>-<arch>.dmg
 ```
 
-L'architettura è quella dell'interprete Python usato. Si ottengono quindi due build separate: arm64 su Apple Silicon e x86_64 su Intel.
+L'architettura è quella dell'interprete Python usato. Si ottengono quindi due build separate: arm64 su Apple Silicon e x86_64 su Intel. L'immagine disco contiene anche `LICENSE.txt` e `THIRD_PARTY_LICENSES.txt`.
 
 #### Firma e notarizzazione (macOS)
 
@@ -297,7 +319,7 @@ Per una firma valida ai fini della notarizzazione serve anche l'hardened runtime
 
 - `ruff`;
 - test unitari, GUI e integrazione su Ubuntu 22.04 con MySQL 8 in un service container;
-- build dell'AppImage (Ubuntu 22.04), del `.deb` (Ubuntu 24.04) e dei DMG arm64 e x86_64, ciascuna con smoke test (`--smoke-test`);
+- build dell'AppImage (Ubuntu 22.04), del `.deb` (Ubuntu 24.04) e dei DMG arm64 e x86_64, ciascuna con smoke test (`--smoke-test`, che verifica anche le licenze di terze parti);
 - il `.deb` viene installato con `apt`, verificato e poi rimosso;
 - pubblicazione dei pacchetti come artefatti della build.
 
@@ -309,3 +331,7 @@ Per una firma valida ai fini della notarizzazione serve anche l'hardened runtime
 - Le parole riservate di scrittura usate come nomi di colonna devono essere quotate (`` `update` ``) o qualificate (`t.update`), come richiede MySQL.
 - Sequenze `--` non seguite da spazio fuori dalle stringhe (es. `1--1`) vengono rifiutate per evitare ambiguità con i commenti: scrivi `1 - -1`.
 - Il supporto a MariaDB non è garantito: `MAX_EXECUTION_TIME` non esiste e si usa solo il watchdog.
+
+## Licenza
+
+QueryLean è distribuito con [licenza MIT](LICENSE). I pacchetti contengono anche componenti di terze parti, ciascuno con la propria licenza: vedi [Licenze di terze parti](#licenze-di-terze-parti).

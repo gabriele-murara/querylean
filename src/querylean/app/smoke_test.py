@@ -11,6 +11,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
 from querylean.app.app_info import AppInfo
+from querylean.app.bundle_resources import BundleResources
 from querylean.app.version_file import VersionFile
 from querylean.config.config_manager import ConfigManager
 from querylean.database.validation.read_only_validator import ReadOnlyValidator
@@ -61,6 +62,8 @@ class SmokeTest:
                 )
                 return 1
             self.__log.info("Smoke test: version {}", AppInfo.version())
+            if not SmokeTest.__licenses_present():
+                return 1
             validator = ReadOnlyValidator()
             if (
                 not validator.validate("SELECT 1").ok
@@ -84,3 +87,17 @@ class SmokeTest:
             return 1
         self.__log.info("Smoke test OK")
         return code
+
+    @staticmethod
+    def __licenses_present() -> bool:
+        """A packaged build must ship the third-party license notices."""
+        if not BundleResources.is_frozen():
+            return True
+        notices = BundleResources.third_party_licenses()
+        if not notices.is_file() or notices.stat().st_size == 0:
+            SmokeTest.__log.error(
+                "Smoke test: third-party licenses missing at {}", notices
+            )
+            return False
+        SmokeTest.__log.info("Smoke test: third-party licenses at {}", notices)
+        return True

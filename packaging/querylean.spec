@@ -9,6 +9,9 @@ from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
+sys.path.insert(0, SPECPATH)
+from third_party_licenses import ThirdPartyLicenses  # noqa: E402
+
 ROOT = Path(SPECPATH).parent
 APP_NAME = "querylean"
 # The version is read only from .version, which is also bundled so that the
@@ -57,6 +60,21 @@ class BundleSlimmer:
             if not any(p.search(dest) for p in patterns):
                 kept.append(entry)
         return kept
+
+    @staticmethod
+    def drop_dangling_symlinks(toc, bundled):
+        """Drop the SYMLINK entries of ``toc`` whose target is not among the
+        ``bundled`` destinations (e.g. the top-level links PyInstaller adds
+        to dropped Qt libraries)."""
+        return [
+            entry
+            for entry in toc
+            if entry[2] != "SYMLINK"
+            or os.path.normpath(
+                os.path.join(os.path.dirname(entry[0]), entry[1])
+            )
+            in bundled
+        ]
 
     @staticmethod
     def prune_orphan_libraries(binaries):
@@ -150,6 +168,18 @@ a.binaries = BundleSlimmer.prune_orphan_libraries(
     BundleSlimmer.drop_unused(a.binaries)
 )
 a.datas = BundleSlimmer.drop_unused(a.datas)
+# PyInstaller lists the symlinks to libraries among the datas.
+bundled = {e[0] for e in a.binaries + a.datas if e[2] != "SYMLINK"}
+a.binaries = BundleSlimmer.drop_dangling_symlinks(a.binaries, bundled)
+a.datas = BundleSlimmer.drop_dangling_symlinks(a.datas, bundled)
+
+# License notices of every bundled third-party component (fails the build
+# when a file has no known license).
+notices = ThirdPartyLicenses(
+    ROOT, ROOT / "packaging" / "licenses", Path(workpath) / "licenses"
+)
+notices.collect(a.binaries + a.datas + a.pure + a.scripts)
+a.datas += notices.write()
 pyz = PYZ(a.pure)
 
 exe = EXE(

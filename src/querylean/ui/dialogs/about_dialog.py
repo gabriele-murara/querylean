@@ -6,7 +6,7 @@ import html
 import platform
 
 import PySide6
-from PySide6.QtCore import Qt, qVersion
+from PySide6.QtCore import Qt, QUrl, qVersion
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from querylean.app.app_info import AppInfo
+from querylean.app.bundle_resources import BundleResources
 from querylean.ui.icons.toolbar_icons import ToolbarIcons
 
 
@@ -46,7 +47,9 @@ class AboutDialog(QDialog):
         self.__text.setMinimumWidth(360)
         self.__text.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.LinksAccessibleByMouse
         )
+        self.__text.setOpenExternalLinks(True)
 
         body = QHBoxLayout()
         body.addWidget(icon)
@@ -80,6 +83,7 @@ class AboutDialog(QDialog):
         text += "di sistema.</p>"
         text += "<p>Autore: {author}<br>"
         text += "© {year} {author} · Licenza {license}</p>"
+        text += "<p>{third_party}</p>"
         text += "<p><small>{runtime}</small></p>"
         e = html.escape
         return text.format(
@@ -89,5 +93,21 @@ class AboutDialog(QDialog):
             author=e(AppInfo.AUTHOR),
             year=e(AppInfo.COPYRIGHT_YEAR),
             license=e(AppInfo.LICENSE),
+            third_party=AboutDialog.third_party_html(),
             runtime=e(runtime),
         )
+
+    @staticmethod
+    def third_party_html() -> str:
+        """Note on the bundled third-party components, with a link to their
+        licenses when the file is available (packaged builds)."""
+        text = "Include componenti di terze parti (Qt, PySide6, "
+        text += "mysql-connector-python e altri), ciascuno distribuito con "
+        text += "la propria licenza: {}."
+        notices = BundleResources.third_party_licenses()
+        if not notices.is_file():
+            name = html.escape(BundleResources.THIRD_PARTY_LICENSES)
+            return text.format("vedi {} nei pacchetti".format(name))
+        url = html.escape(QUrl.fromLocalFile(str(notices)).toString())
+        link = '<a href="{}">licenze di terze parti</a>'.format(url)
+        return text.format(link)

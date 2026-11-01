@@ -32,6 +32,9 @@ class ConnectionManager:
         "SET SESSION TRANSACTION READ ONLY",
         __SQL_MODE,
     )
+    # User-facing message shown when a query is requested without a session.
+    NOT_CONNECTED = "Non connesso: premi «Connetti» prima di eseguire una "
+    NOT_CONNECTED += "query."
     __log = LogManager.get_logger(__name__)
 
     def __init__(self, connector: Callable[..., Any] | None = None) -> None:
@@ -103,8 +106,7 @@ class ConnectionManager:
         """Return a live connection, reopening the session if it was dropped."""
         if self.__params is None:
             raise DatabaseError(
-                "Non connesso: premi «Connetti» prima di eseguire una query.",
-                kind="not_connected",
+                ConnectionManager.NOT_CONNECTED, kind="not_connected"
             )
         if self.__conn is not None:
             try:

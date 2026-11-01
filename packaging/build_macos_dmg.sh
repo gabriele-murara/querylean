@@ -24,6 +24,15 @@ rm -rf "$STAGING"
 mkdir -p "$STAGING"
 cp -R "$APP" "$STAGING/"
 ln -s /Applications "$STAGING/Applications"
+# License of QueryLean and notices of the bundled third-party components,
+# visible next to the application in the disk image.
+NOTICES="$(find "$APP" -name THIRD_PARTY_LICENSES.txt -type f | head -n 1)"
+if [ -z "$NOTICES" ]; then
+    echo "Licenze di terze parti mancanti in $APP" >&2
+    exit 1
+fi
+cp LICENSE "$STAGING/LICENSE.txt"
+cp "$NOTICES" "$STAGING/THIRD_PARTY_LICENSES.txt"
 
 OUTPUT="dist/querylean-${VERSION}-${ARCH}.dmg"
 rm -f "$OUTPUT"

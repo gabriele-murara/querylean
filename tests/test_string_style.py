@@ -3,7 +3,9 @@
 - no f-strings;
 - no implicit concatenation of adjacent string literals;
 - no ``+`` between a string literal and another value;
-- no ``%`` formatting, logger calls included.
+- no ``%`` formatting, logger calls included;
+- in ``src`` and ``packaging``, no ``%`` placeholder in any string literal
+  (messages passed to helpers that log them included).
 """
 
 from __future__ import annotations
@@ -20,6 +22,8 @@ class TestStringStyle:
 
     __ROOT = Path(__file__).resolve().parents[1]
     __SOURCES = ("src", "tests", "packaging")
+    # Folders where no string literal may contain a ``%`` placeholder.
+    __STRICT = ("src", "packaging")
     __LOG_METHODS = frozenset(
         {"debug", "info", "warning", "error", "critical", "exception"}
     )
@@ -58,9 +62,13 @@ class TestStringStyle:
         return lines
 
     @staticmethod
-    def violations(path: Path) -> list[str]:
-        """Human readable violations found in ``path``."""
+    def violations(path: Path, strict: bool | None = None) -> list[str]:
+        """Human readable violations found in ``path``. ``strict`` (forbid
+        ``%`` placeholders in every literal) defaults to the folder rule."""
         source = path.read_text(encoding="utf-8")
+        if strict is None:
+            folder = path.relative_to(TestStringStyle.__ROOT).parts[0]
+            strict = folder in TestStringStyle.__STRICT
         found: list[str] = []
         for line in TestStringStyle.implicit_concatenations(source):
             found.append("{}: implicit concatenation".format(line))
@@ -79,6 +87,13 @@ class TestStringStyle:
                     found.append("{}: '%' formatting".format(line))
             elif TestStringStyle.is_percent_log_call(node):
                 found.append("{}: '%' placeholder in a log call".format(line))
+            elif (
+                strict
+                and isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and TestStringStyle.__PERCENT.search(node.value)
+            ):
+                found.append("{}: '%' placeholder in a string".format(line))
         return sorted(set(found), key=lambda item: int(item.split(":")[0]))
 
     @staticmethod
@@ -117,11 +132,21 @@ class TestStringStyle:
         code += 'e += "fine"\n'
         code += "e = e.format(a)\n"
         sample.write_text(code, encoding="utf-8")
-        found = TestStringStyle.violations(sample)
+        found = TestStringStyle.violations(sample, strict=False)
         assert [item.split(":")[0] for item in found] == [
             "1",
             "2",
             "3",
             "4",
             "5",
+        ]
+
+    def test_strict_mode_finds_percent_in_any_literal(
+        self, tmp_path: Path
+    ) -> None:
+        sample = tmp_path / "sample.py"
+        sample.write_text('warn("Cannot read %s", path)\n', encoding="utf-8")
+        assert TestStringStyle.violations(sample, strict=False) == []
+        assert TestStringStyle.violations(sample, strict=True) == [
+            "1: '%' placeholder in a string"
         ]

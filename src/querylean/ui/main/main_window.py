@@ -25,6 +25,9 @@ from querylean.app.app_info import AppInfo
 from querylean.config.app_config import AppConfig
 from querylean.config.config_error import ConfigError
 from querylean.config.config_manager import ConfigManager
+from querylean.database.connection.connection_manager import (
+    ConnectionManager,
+)
 from querylean.database.execution.query_executor import QueryExecutor
 from querylean.database.execution.query_result import QueryResult
 from querylean.log.log_manager import LogManager
@@ -308,10 +311,7 @@ class MainWindow(QMainWindow):
         if not sql.strip():
             return
         if self.__state != ConnectionState.CONNECTED:
-            self.show_message(
-                "Non connesso: premi «Connetti» prima di eseguire una query.",
-                error=True,
-            )
+            self.show_message(ConnectionManager.NOT_CONNECTED, error=True)
             return
         cfg = self.__app_config.connection
         self.__running = True

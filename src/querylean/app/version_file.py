@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import re
-import sys
 from pathlib import Path
+
+from querylean.app.bundle_resources import BundleResources
 
 
 class VersionFile:
@@ -20,19 +21,13 @@ class VersionFile:
     # Shown when the file is missing or malformed (user facing, Italian).
     UNKNOWN = "sconosciuta"
     __PATTERN = re.compile(r"^\d+\.\d+\.\d+(?:[-.+][0-9A-Za-z.-]+)?$")
-    # src/querylean/app/version_file.py -> project root.
-    __SOURCE_ROOT_DEPTH = 3
     __cache: str | None = None
 
     @staticmethod
     def path() -> Path:
         """Location of ``.version``: the PyInstaller bundle directory when
         frozen, the project root when running from sources."""
-        bundle_dir = getattr(sys, "_MEIPASS", None)
-        if bundle_dir:
-            return Path(bundle_dir) / VersionFile.FILE_NAME
-        root = Path(__file__).resolve().parents[VersionFile.__SOURCE_ROOT_DEPTH]
-        return root / VersionFile.FILE_NAME
+        return BundleResources.root() / VersionFile.FILE_NAME
 
     @staticmethod
     def parse(path: Path) -> str:
@@ -41,10 +36,10 @@ class VersionFile:
         try:
             text = path.read_text(encoding="utf-8").strip()
         except OSError as exc:
-            VersionFile.__warn("Cannot read %s: %s", path, exc)
+            VersionFile.__warn("Cannot read {}: {}", path, exc)
             return VersionFile.UNKNOWN
         if not VersionFile.__PATTERN.match(text):
-            VersionFile.__warn("Invalid version in %s: %r", path, text)
+            VersionFile.__warn("Invalid version in {}: {!r}", path, text)
             return VersionFile.UNKNOWN
         return text
 
