@@ -30,7 +30,7 @@ editor and a table of copyable results.
 | Platform | Package | Status |
 | --- | --- | --- |
 | Linux x86_64 (Ubuntu 22.04+ or equivalents with glibc ≥ 2.35) | AppImage | Built and smoke-tested in CI |
-| macOS Apple Silicon (arm64), macOS 12+ | `.dmg` | Built and smoke-tested in CI (`macos-14` runner) |
+| macOS Apple Silicon (arm64), macOS 12+ | `.dmg` | Built and smoke-tested in CI (`macos-15` runner) |
 | macOS Intel (x86_64), macOS 12+ | `.dmg` | Built and smoke-tested in CI (`macos-15-intel` runner) |
 
 macOS compatibility should be considered confirmed only once the corresponding CI pipeline passes. Windows is not supported.
