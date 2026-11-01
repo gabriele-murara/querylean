@@ -11,7 +11,9 @@
 
 Fanno eccezione le variabili d'ambiente, che per convenzione sono maiuscole (`QUERYLEAN_TEST_*`). "QueryLean" (`AppInfo.DISPLAY_NAME`) è solo il nome visibile all'utente: titolo della finestra, `QueryLean.app`, voce del menu.
 
-Client desktop minimale (Linux/macOS, **no Windows**) per eseguire **solo query MySQL di lettura**. Le specifiche complete sono in `PROJECT.md`, la documentazione utente e di build in `README.md`.
+Client desktop minimale (Linux/macOS, **no Windows**) per eseguire **solo query MySQL di lettura**. Le specifiche complete sono in `PROJECT.md`, la documentazione utente e di build in `README.md` (inglese) e `README_ITA.md` (italiano).
+
+**I due README vanno tenuti allineati.** Ogni modifica che tocca la documentazione si applica a **entrambi** i file nella stessa modifica, con lo stesso contenuto e la stessa struttura delle sezioni. Riguarda funzionalità, comandi, packaging, dimensioni, limiti e CI. Non si aggiorna mai uno solo dei due.
 
 ## Comandi
 
@@ -50,7 +52,8 @@ Test d'integrazione (`tests/integration/`): vengono saltati se mancano le variab
   Non creare astrazioni senza un secondo uso plausibile.
 - **Lingua**:
   - in **inglese**: docstring (modulo, classe, metodi pubblici), commenti nel codice, messaggi di log;
-  - in **italiano**: testi rivolti all'utente (GUI, `DatabaseError.message`, motivi di rifiuto del validatore) e documentazione (`README.md`, questo file).
+  - in **italiano**: testi rivolti all'utente (GUI, `DatabaseError.message`, motivi di rifiuto del validatore) e documentazione (`README_ITA.md`, questo file);
+  - in **inglese**, come traduzione fedele di `README_ITA.md`: `README.md`. Nel README inglese i testi della GUI restano in italiano, seguiti dalla traduzione tra parentesi alla prima occorrenza, ad esempio **Esegui** (Run).
 - **Logging**:
   - usare il logger del progetto: `__log = LogManager.get_logger(__name__)` come attributo privato di classe, poi `self.__log.info(...)` o `NomeClasse.__log.info(...)` nei metodi statici;
   - anche i messaggi di log seguono le regole delle "Stringhe": segnaposto di `.format()` e argomenti passati al logger, `self.__log.info("Connected to {}:{}", host, port)`. Il logger chiama `.format()` solo se il livello è attivo, quindi non si formatta prima la stringa. Niente `%s`;
