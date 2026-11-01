@@ -2,13 +2,21 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # release-*: verifica dei pacchetti prima del merge in main.
+    branches: [main, "release-*"]
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
 env:
   PYTHON_VERSION: "3.12"
+  # Librerie del plugin xcb di Qt: devono essere presenti sulla macchina di
+  # build perché PyInstaller le includa nel pacchetto (BundleSlimmer
+  # .check_required_libraries fa fallire la build se mancano).
+  QT_XCB_PACKAGES: >-
+    libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1
+    libxcb-render-util0 libxcb-shape0 libxcb-util1 libxcb-xkb1
+    libxkbcommon-x11-0
 
 jobs:
   test:
@@ -68,12 +76,18 @@ jobs:
           cache: pip
       - run: |
           sudo apt-get update
-          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 file
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 file \
+            desktop-file-utils $QT_XCB_PACKAGES
       - run: pip install -e ".[build]"
       - name: Build
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
-        run: packaging/build_linux_appimage.sh
+        run: |
+          packaging/build_linux_appimage.sh
+          # Licenze di terze parti dell'AppImage, allegate alla release.
+          APPIMAGE="$(ls dist/querylean-*.AppImage)"
+          cp dist/querylean/_internal/licenses/THIRD_PARTY_LICENSES.txt \
+            "${APPIMAGE}.THIRD_PARTY_LICENSES.txt"
       - name: Smoke test dell'AppImage
         env:
           QT_QPA_PLATFORM: offscreen
@@ -82,7 +96,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: linux-appimage
-          path: dist/*.AppImage
+          path: |
+            dist/*.AppImage
+            dist/*.AppImage.THIRD_PARTY_LICENSES.txt
+          if-no-files-found: error
 
   package-deb:
     name: Pacchetto .deb (Ubuntu/Lubuntu 24.04 amd64)
@@ -94,6 +111,10 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
+      - name: Librerie di sistema per Qt
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y $QT_XCB_PACKAGES
       - run: pip install -e ".[build]"
       - name: Build
         run: packaging/build_linux_deb.sh
@@ -104,7 +125,8 @@ jobs:
       - name: Smoke test del pacchetto installato
         env:
           QT_QPA_PLATFORM: offscreen
-        run: timeout 30 querylean --smoke-test
+        # Percorso esplicito: nel PATH c'è anche il comando installato da pip.
+        run: timeout 30 /usr/bin/querylean --smoke-test
       - name: Rimozione pulita
         run: |
           sudo apt-get remove -y querylean
@@ -113,6 +135,7 @@ jobs:
         with:
           name: linux-deb
           path: dist/*.deb
+          if-no-files-found: error
 
   package-macos:
     name: DMG (macOS ${{ matrix.arch }})
@@ -142,3 +165,42 @@ jobs:
         with:
           name: macos-dmg-${{ matrix.arch }}
           path: dist/*.dmg
+          if-no-files-found: error
+
+  release:
+    name: Release su GitHub
+    # Solo per i tag di versione (vX.Y.Z), dopo che tutti i pacchetti sono
+    # stati costruiti e verificati.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [package-linux, package-deb, package-macos]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Il tag corrisponde a .version
+        run: |
+          VERSION="$(tr -d '[:space:]' < .version)"
+          if [ "v${VERSION}" != "${GITHUB_REF_NAME}" ]; then
+            echo "Il tag ${GITHUB_REF_NAME} non corrisponde a .version (${VERSION})" >&2
+            exit 1
+          fi
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Checksum
+        run: |
+          cd release
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+      - name: Pubblicazione
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Un tag con trattino (es. v1.1.0-rc1) diventa una pre-release.
+          PRERELEASE=""
+          case "${GITHUB_REF_NAME}" in *-*) PRERELEASE="--prerelease" ;; esac
+          gh release create "${GITHUB_REF_NAME}" release/* \
+            --verify-tag --generate-notes $PRERELEASE \
+            --title "QueryLean ${GITHUB_REF_NAME#v}"

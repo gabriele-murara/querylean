@@ -1,10 +1,12 @@
 """Consistency of application metadata and of the version source."""
 
+import importlib
 import re
 import tomllib
 from pathlib import Path
 
 from querylean.app.app_info import AppInfo
+from querylean.app.application import Application
 from querylean.app.version_file import VersionFile
 
 
@@ -31,6 +33,14 @@ class TestAppInfo:
         dynamic = data["tool"]["setuptools"]["dynamic"]["version"]
         assert dynamic == {"file": ".version"}
         assert data["project"]["name"] == AppInfo.NAME
+
+    def test_gui_script_points_to_the_entry_point(self):
+        scripts = self.pyproject()["project"]["gui-scripts"]
+        module_name, _, attribute = scripts[AppInfo.NAME].partition(":")
+        target = importlib.import_module(module_name)
+        for part in attribute.split("."):
+            target = getattr(target, part)
+        assert target is Application.run
 
     def test_author_matches_pyproject(self):
         data = self.pyproject()

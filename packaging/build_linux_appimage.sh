@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Genera dist/querylean-<versione>-<arch>.AppImage.
 # Requisiti: Python con le dipendenze di build (`pip install -e .[build]`),
-# curl, file, FUSE oppure APPIMAGE_EXTRACT_AND_RUN=1 per eseguire
-# appimagetool. Per la massima compatibilità va eseguito sulla distribuzione
-# più vecchia da supportare (Ubuntu 22.04).
+# curl, file, desktop-file-utils, FUSE oppure APPIMAGE_EXTRACT_AND_RUN=1 per
+# eseguire appimagetool. Per la massima compatibilità va eseguito sulla
+# distribuzione più vecchia da supportare (Ubuntu 22.04). Le librerie xcb di
+# Qt devono essere installate (vedi QT_XCB_PACKAGES in ci.yml).
 set -euo pipefail
 
 . "$(dirname "$0")/common.sh"

@@ -24,7 +24,7 @@ dev = ["pytest>=8", "pytest-qt>=4.4", "ruff>=0.6"]
 build = ["pyinstaller>=6.10"]
 
 [project.gui-scripts]
-querylean = "querylean.main:main"
+querylean = "querylean.app.application:Application.run"
 
 [tool.setuptools.packages.find]
 where = ["src"]
