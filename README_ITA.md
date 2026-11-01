@@ -373,7 +373,7 @@ Il flusso di rilascio è questo:
    - verifica che il tag corrisponda a `.version`;
    - aspetta che tutti i pacchetti siano costruiti e superino lo smoke test;
    - crea la release su GitHub con AppImage, `.deb`, i due DMG, le licenze di terze parti dell'AppImage e il file `SHA256SUMS`;
-   - la segna come pre-release se il tag contiene un trattino (es. `v1.1.0-rc1`).
+   - la segna come pre-release se il tag contiene un trattino (es. `vX.Y.Z-rc1`).
 
 Per verificare un download: `sha256sum -c SHA256SUMS --ignore-missing`.
 

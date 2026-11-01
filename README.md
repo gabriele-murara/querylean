@@ -373,7 +373,7 @@ The release flow is:
    - checks that the tag matches `.version`;
    - waits for all packages to be built and smoke-tested;
    - creates the GitHub release with the AppImage, the `.deb`, the two DMGs, the third-party licenses of the AppImage and the `SHA256SUMS` file;
-   - marks it as a pre-release if the tag contains a hyphen (e.g. `v1.1.0-rc1`).
+   - marks it as a pre-release if the tag contains a hyphen (e.g. `vX.Y.Z-rc1`).
 
 To verify a download: `sha256sum -c SHA256SUMS --ignore-missing`.
 
