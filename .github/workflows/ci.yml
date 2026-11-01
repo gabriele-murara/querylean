@@ -144,7 +144,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-14
+          - runner: macos-15
             arch: arm64
           - runner: macos-15-intel
             arch: x86_64
@@ -198,7 +198,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Un tag con trattino (es. v1.1.0-rc1) diventa una pre-release.
+          # Un tag con trattino (es. vX.Y.Z-rc1) diventa una pre-release.
           PRERELEASE=""
           case "${GITHUB_REF_NAME}" in *-*) PRERELEASE="--prerelease" ;; esac
           gh release create "${GITHUB_REF_NAME}" release/* \

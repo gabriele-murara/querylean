@@ -30,7 +30,7 @@ SQL e una tabella di risultati copiabili.
 | Piattaforma | Pacchetto | Stato |
 | --- | --- | --- |
 | Linux x86_64 (Ubuntu 22.04+ o equivalenti con glibc ≥ 2.35) | AppImage | Build e smoke test in CI |
-| macOS Apple Silicon (arm64), macOS 12+ | `.dmg` | Build e smoke test in CI (runner `macos-14`) |
+| macOS Apple Silicon (arm64), macOS 12+ | `.dmg` | Build e smoke test in CI (runner `macos-15`) |
 | macOS Intel (x86_64), macOS 12+ | `.dmg` | Build e smoke test in CI (runner `macos-15-intel`) |
 
 La compatibilità macOS va considerata confermata solo quando la pipeline CI corrispondente ha esito positivo. Windows non è supportato.
@@ -373,7 +373,7 @@ Il flusso di rilascio è questo:
    - verifica che il tag corrisponda a `.version`;
    - aspetta che tutti i pacchetti siano costruiti e superino lo smoke test;
    - crea la release su GitHub con AppImage, `.deb`, i due DMG, le licenze di terze parti dell'AppImage e il file `SHA256SUMS`;
-   - la segna come pre-release se il tag contiene un trattino (es. `v1.1.0-rc1`).
+   - la segna come pre-release se il tag contiene un trattino (es. `vX.Y.Z-rc1`).
 
 Per verificare un download: `sha256sum -c SHA256SUMS --ignore-missing`.
 
