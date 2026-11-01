@@ -19,7 +19,8 @@ SQL e una tabella di risultati copiabili.
 - Tabella dei risultati non modificabile:
   - `NULL` è distinto dalla stringa vuota;
   - colonne ridimensionabili;
-  - copia di celle o righe in formato tabulato, incollabile in Excel e LibreOffice Calc.
+  - copia di celle o righe in formato tabulato, incollabile in Excel e LibreOffice Calc;
+  - esportazione del risultato in Excel (`.xlsx`), CSV o JSON.
 - Il limite di righe (predefinito 1.000, massimo 10.000) è applicato durante il recupero dei dati.
 - Dimensioni della finestra e del divisore vengono ricordate tra una sessione e l'altra.
 - Nessuna telemetria, nessun servizio cloud, nessun database locale.
@@ -43,6 +44,7 @@ La compatibilità macOS va considerata confermata solo quando la pipeline CI cor
 | Driver | mysql-connector-python (implementazione pure Python) | Non richiede un client MySQL installato. Consente il controllo di multi-statement e LOCAL INFILE |
 | Parser SQL | sqlglot (dialetto MySQL) | Parser puro Python, usato come secondo livello del validatore |
 | Segreti | keyring | Secret Service su Linux, Keychain su macOS |
+| Export Excel | openpyxl | Scrive file `.xlsx` senza Excel né LibreOffice; puro Python, licenza MIT |
 | Packaging | PyInstaller → AppImage / `.deb` / `.app` + `.dmg` | L'utente finale non deve installare alcun runtime |
 | Test | pytest, pytest-qt | |
 
@@ -59,12 +61,13 @@ La compatibilità macOS va considerata confermata solo quando la pipeline CI cor
 
 ## Uso
 
-La barra in alto contiene, nell'ordine: **Esegui** (▶), **Interrompi** (attivo solo durante l'esecuzione), **Connetti**/**Disconnetti**, **Configurazione** e **Informazioni** (versione, autore, licenza). Lo stato della connessione è in basso a destra.
+La barra in alto contiene, nell'ordine: **Esegui** (▶), **Interrompi** (attivo solo durante l'esecuzione), **Esporta** (menu a tendina, attivo quando c'è un risultato), **Connetti**/**Disconnetti**, **Configurazione** e **Informazioni** (versione, autore, licenza). Lo stato della connessione è in basso a destra.
 
 1. **Configurazione**: compila host, porta, database, username, password e i timeout, poi usa **Test connessione** e **Salva configurazione**. Salvare non apre la connessione.
 2. **Connetti**: lo stato passa da *Disconnesso* a *Connessione in corso* e poi a *Connesso* o *Errore di connessione*. Se la password non è nel portachiavi, viene richiesta.
 3. Scrivi la query e premi **Esegui** oppure `Ctrl/Cmd+Invio`.
 4. Seleziona celle o righe e premi `Ctrl/Cmd+C`. Il menu contestuale offre anche le varianti "con intestazioni" e "righe intere".
+5. Per salvare il risultato su file apri il menu **Esporta** e scegli il formato (vedi [Esportazione](#esportazione)).
 
 ### Regole di esecuzione
 
@@ -76,6 +79,26 @@ La barra in alto contiene, nell'ordine: **Esegui** (▶), **Interrompi** (attivo
 ### Copia
 
 Le celle copiate sono separate da tabulazioni e le righe da a capo. La selezione viene copiata come rettangolo, e le celle non selezionate al suo interno restano vuote. Un `NULL` diventa una cella vuota, mentre tabulazioni e a capo dentro i valori diventano spazi, così la griglia resta allineata. I valori binari non UTF-8 sono mostrati in esadecimale (`0x…`, troncati a 64 byte).
+
+### Esportazione
+
+**Esporta** salva su file il risultato mostrato nella tabella, con le intestazioni delle colonne. Il pulsante apre un menu:
+
+- **Excel (.xlsx)**, **CSV (.csv)**, **JSON (.json)**: la finestra di salvataggio propone solo quel formato. Se il nome non ha la sua estensione, viene aggiunta.
+- **Esporta…**: la finestra di salvataggio propone tutti i formati. Decide l'estensione del nome (`.xlsx`, `.csv`, `.json`) oppure, se manca, il formato selezionato nella finestra.
+
+- Si esportano **le righe già caricate**, cioè al massimo il limite di righe impostato: la query non viene rieseguita. Se il risultato era troncato, il messaggio finale lo ricorda.
+- Il file viene scritto in un thread separato, quindi la finestra resta utilizzabile. Lo si scrive prima in un file temporaneo nella stessa cartella, poi lo si rinomina: un file esistente viene sostituito solo da un'esportazione completa.
+- Il file è leggibile solo dal tuo utente (permessi `0600`), perché può contenere dati riservati.
+- L'esportazione resta possibile anche dopo la disconnessione.
+
+| Formato | Contenuto |
+| --- | --- |
+| Excel (`.xlsx`) | Un foglio "Risultato" con la riga di intestazione in grassetto e bloccata. Numeri, booleani, date e date-ora sono valori nativi di Excel. Il testo non diventa mai una formula, anche se inizia con `=`. Restano testo i valori che Excel altererebbe: interi e DECIMAL con più di 15 cifre significative, date anteriori al 1900, valori `TIME`. `NULL` e stringa vuota sono entrambi celle vuote. I caratteri di controllo non ammessi da Excel diventano `�`; le celle oltre 32.767 caratteri vengono troncate e il messaggio finale le conta |
+| CSV (`.csv`) | UTF-8, separatore virgola, riga di intestazione. I campi sono tra virgolette solo quando serve, e gli a capo dentro i valori restano. `NULL` diventa un campo vuoto, come nella copia |
+| JSON (`.json`) | UTF-8, un array con un oggetto per riga, con chiave il nome della colonna. `NULL` diventa `null`, mentre interi, numeri a virgola mobile e booleani restano numeri e booleani. I DECIMAL diventano stringhe, per non perdere cifre. I nomi di colonna ripetuti ricevono un suffisso (`id`, `id_2`) |
+
+In tutti i formati i valori binari sono scritti per intero (testo UTF-8 o esadecimale `0x…`, senza il troncamento a 64 byte della tabella), le date in formato ISO e i `TIME` come `hh:mm:ss[.ffffff]`.
 
 ### Impostazioni
 
@@ -181,6 +204,7 @@ src/querylean/
   log/          logger dell'applicazione, log ruotato, redazione dei segreti
   config/       modello della configurazione e persistenza JSON
   security/     password nel portachiavi (SecretStore astratta, KeyringSecretStore)
+  export/       esportazione Excel/CSV/JSON (ResultExporter astratta)
   database/     errors/, connection/, execution/, validation/ (validatore a stadi)
   ui/           main/, dialogs/, editor/, icons/, results/, worker/ (thread QThread)
 tests/          una classe Test… per file; fakes/ (doppioni), support/ (basi), integration/
@@ -233,7 +257,9 @@ Lo spec (`BundleSlimmer`, in `packaging/bundle_slimmer.py`) toglie dal bundle qu
 
 Su Linux, dopo il filtro, le librerie di sistema che nessun binario rimasto usa più vengono eliminate in automatico (`readelf -d`).
 
-Risultato su Linux x86_64: bundle da 191 a 133 MB, AppImage da 70 a 50 MB, `.deb` da 54 a 39 MB.
+Risultato su Linux x86_64: bundle da 191 a 133 MB, AppImage da 70 a 50 MB, `.deb` da 54 a 39 MB. L'export Excel (openpyxl) aggiunge circa 0,5 MB.
+
+`numpy`, `pandas`, `PIL` e `lxml`, che openpyxl usa solo se presenti, sono esclusi dal bundle.
 
 Cosa resta e perché:
 
@@ -242,7 +268,7 @@ Cosa resta e perché:
 - **Qt Core/Gui/Widgets, Python, OpenSSL**: indispensabili.
 - **Strip dei simboli**: risparmierebbe solo ~3% e invaliderebbe la firma su macOS, quindi non è attivo.
 
-Lo smoke test verifica che `ssl`, `hashlib` e, su Linux, il backend Secret Service siano presenti nel pacchetto. Così un'esclusione di troppo fa fallire la CI invece di disattivare in silenzio TLS o il portachiavi.
+Lo smoke test verifica che `ssl`, `hashlib` e, su Linux, il backend Secret Service siano presenti nel pacchetto, e scrive un file di prova in ogni formato di esportazione. Così un'esclusione di troppo fa fallire la CI invece di disattivare in silenzio TLS o il portachiavi.
 
 ### Licenze di terze parti
 
@@ -354,7 +380,8 @@ Per verificare un download: `sha256sum -c SHA256SUMS --ignore-missing`.
 ## Limiti di questa versione
 
 - Una sola connessione e una sola query alla volta, una sola istruzione per esecuzione.
-- Non sono supportati: TLS/SSH tunnel configurabili da GUI, autocompletamento, cronologia, esportazione CSV/Excel, paginazione.
+- Non sono supportati: TLS/SSH tunnel configurabili da GUI, autocompletamento, cronologia, paginazione.
+- L'esportazione salva solo le righe caricate (al massimo 10.000): per esportarne di più serve uno strumento come `mysqldump` o `mysql --batch`.
 - `SHOW` è ammesso solo nelle forme riconosciute dal parser; le altre vengono rifiutate.
 - Le parole riservate di scrittura usate come nomi di colonna devono essere quotate (`` `update` ``) o qualificate (`t.update`), come richiede MySQL.
 - Sequenze `--` non seguite da spazio fuori dalle stringhe (es. `1--1`) vengono rifiutate per evitare ambiguità con i commenti: scrivi `1 - -1`.

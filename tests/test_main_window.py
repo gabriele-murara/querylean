@@ -31,6 +31,7 @@ class TestMainWindow(MainWindowTestBase):
         assert texts == [
             "Esegui",
             "Interrompi",
+            "Esporta",
             "Connetti",
             "Configurazione",
             "Informazioni",

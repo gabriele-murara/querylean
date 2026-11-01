@@ -55,3 +55,14 @@ class TestResultsTable:
             dt.datetime(2024, 1, 2, 3, 4, 5)
         ) == ("2024-01-02 03:04:05")
         assert ValueFormatter.copy_text(None) == ""
+
+    def test_full_text_is_lossless(self):
+        data = bytes([0xFF]) * (ValueFormatter.MAX_BINARY_PREVIEW + 1)
+        assert ValueFormatter.format_value(data).endswith("…")
+        assert ValueFormatter.full_text(data) == "0x{}".format(data.hex())
+        time = dt.timedelta(hours=1, microseconds=250)
+        assert ValueFormatter.format_value(time) == "01:00:00"
+        assert ValueFormatter.full_text(time) == "01:00:00.000250"
+        negative = -dt.timedelta(minutes=1, seconds=30)
+        assert ValueFormatter.format_value(negative) == "-00:01:30"
+        assert ValueFormatter.full_text(Decimal("1.50")) == "1.50"

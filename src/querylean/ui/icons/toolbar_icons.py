@@ -30,6 +30,7 @@ class ToolbarIcons:
     SIZE = 64
     __PLAY = "#2e7d32"
     __STOP = "#c62828"
+    __EXPORT = "#00897b"
     __CONNECT = "#1565c0"
     __DISCONNECT = "#6d4c41"
     __SETTINGS = "#546e7a"
@@ -44,6 +45,11 @@ class ToolbarIcons:
     def stop() -> QIcon:
         """Red rounded square ("Interrompi")."""
         return ToolbarIcons.__render(ToolbarIcons.__draw_stop)
+
+    @staticmethod
+    def export() -> QIcon:
+        """Arrow leaving a tray ("Esporta")."""
+        return ToolbarIcons.__render(ToolbarIcons.__draw_export)
 
     @staticmethod
     def connect() -> QIcon:
@@ -94,6 +100,32 @@ class ToolbarIcons:
     def __draw_stop(painter: QPainter) -> None:
         ToolbarIcons.__fill(painter, ToolbarIcons.__STOP)
         painter.drawRoundedRect(QRectF(12, 12, 40, 40), 6, 6)
+
+    @staticmethod
+    def __draw_export(painter: QPainter) -> None:
+        color = QColor(ToolbarIcons.__EXPORT)
+        pen = QPen(color, 7)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        # Tray.
+        painter.drawPolyline(
+            QPolygonF(
+                [
+                    QPointF(10, 38),
+                    QPointF(10, 54),
+                    QPointF(54, 54),
+                    QPointF(54, 38),
+                ]
+            )
+        )
+        # Arrow shaft and head.
+        painter.drawLine(QPointF(32, 42), QPointF(32, 18))
+        ToolbarIcons.__fill(painter, ToolbarIcons.__EXPORT)
+        painter.drawPolygon(
+            QPolygonF([QPointF(18, 22), QPointF(32, 4), QPointF(46, 22)])
+        )
 
     @staticmethod
     def __draw_connect(painter: QPainter) -> None:

@@ -3,20 +3,24 @@
 from __future__ import annotations
 
 import base64
+from pathlib import Path
 
 from PySide6.QtCore import QByteArray, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
+    QFileDialog,
     QHBoxLayout,
     QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QProgressBar,
     QSplitter,
     QStatusBar,
     QToolBar,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -30,6 +34,9 @@ from querylean.database.connection.connection_manager import (
 )
 from querylean.database.execution.query_executor import QueryExecutor
 from querylean.database.execution.query_result import QueryResult
+from querylean.export.export_report import ExportReport
+from querylean.export.result_exporter import ResultExporter
+from querylean.export.result_exporters import ResultExporters
 from querylean.log.log_manager import LogManager
 from querylean.security.keyring_secret_store import KeyringSecretStore
 from querylean.security.secret_storage_error import SecretStorageError
@@ -42,12 +49,13 @@ from querylean.ui.main.connection_state import ConnectionState
 from querylean.ui.results.results_table import ResultsTable
 from querylean.ui.worker.db_thread import DbThread
 from querylean.ui.worker.db_worker import DbWorker
+from querylean.ui.worker.export_thread import ExportThread
 
 
 class MainWindow(QMainWindow):
-    """Toolbar (run, stop, connect, configuration, about), editor and result
-    panel separated by a resizable splitter; connection state at the bottom
-    right."""
+    """Toolbar (run, stop, export, connect, configuration, about), editor and
+    result panel separated by a resizable splitter; connection state at the
+    bottom right."""
 
     # Delay after the query timeout before the watchdog sends KILL QUERY: lets
     # the server-side MAX_EXECUTION_TIME act first.
@@ -72,6 +80,13 @@ class MainWindow(QMainWindow):
         self.__state = ConnectionState.DISCONNECTED
         self.__running = False
         self.__closed = False
+        # Result shown in the table (exported by "Esporta").
+        self.__result: QueryResult | None = None
+        self.__export_thread: ExportThread | None = None
+        self.__export_source: QueryResult | None = None
+        # Remembered for the session only.
+        self.__export_dir = Path.home()
+        self.__export_filter = ResultExporters.all()[0].name_filter
 
         self.__build_toolbar()
         self.__build_body()
@@ -136,6 +151,11 @@ class MainWindow(QMainWindow):
         return self.__running
 
     @property
+    def exporting(self) -> bool:
+        """True while an export file is being written."""
+        return self.__export_thread is not None
+
+    @property
     def closed(self) -> bool:
         """True once the window has been closed and resources released."""
         return self.__closed
@@ -196,6 +216,16 @@ class MainWindow(QMainWindow):
         return self.__config_action
 
     @property
+    def export_action(self) -> QAction:
+        """ "Esporta" toolbar entry: opens the export menu."""
+        return self.__export_action
+
+    @property
+    def export_menu(self) -> QMenu:
+        """Export menu: one entry per format, then "Esporta…"."""
+        return self.__export_menu
+
+    @property
     def connect_action(self) -> QAction:
         """ "Connetti"/"Disconnetti" action."""
         return self.__connect_action
@@ -220,6 +250,7 @@ class MainWindow(QMainWindow):
         return (
             self.__execute_action,
             self.__stop_action,
+            self.__export_action,
             self.__connect_action,
             self.__config_action,
             self.__about_action,
@@ -342,6 +373,40 @@ class MainWindow(QMainWindow):
             self.__stop_action.setEnabled(False)
             self.worker.cancel_query(QueryExecutor.CANCEL_BY_USER)
 
+    def export_results(self, exporter: ResultExporter | None = None) -> None:
+        """Ask for a file name and export the displayed result.
+
+        With ``exporter`` the dialog offers only that format; without it
+        ("Esporta…") every format is offered and the extension decides."""
+        if not self.__can_export():
+            return
+        path = self.__ask_export_path(exporter)
+        if path is not None:
+            self.export_to(path, exporter)
+
+    def export_to(
+        self, path: Path, exporter: ResultExporter | None = None
+    ) -> None:
+        """Export the displayed result to ``path`` in a background thread.
+        The format follows the extension unless ``exporter`` is given."""
+        if not self.__can_export() or self.__result is None:
+            return
+        exporter = exporter or ResultExporters.for_path(path)
+        if exporter is None:
+            self.show_message(
+                "Formato non supportato: usa .xlsx, .csv o .json.", error=True
+            )
+            return
+        result = self.__result
+        thread = ExportThread(exporter, path, result.columns, result.rows, self)
+        thread.exported.connect(self.__on_exported)
+        thread.export_failed.connect(self.__on_export_failed)
+        self.__export_thread = thread
+        self.__export_source = result
+        self.__update_actions()
+        self.show_message("Esportazione in {} in corso…".format(path))
+        thread.start()
+
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         """Save window geometry and configuration, then release database
         resources."""
@@ -350,6 +415,10 @@ class MainWindow(QMainWindow):
             return
         self.__closed = True
         self.__watchdog.stop()
+        if self.__export_thread is not None:
+            # Let the file be completed: an interrupted export leaves only a
+            # temporary file behind.
+            self.__export_thread.wait()
         ui = self.__app_config.ui
         ui.window_geometry = MainWindow.__encode(self.saveGeometry())
         ui.splitter_state = MainWindow.__encode(self.__splitter.saveState())
@@ -380,8 +449,8 @@ class MainWindow(QMainWindow):
         status_bar.addPermanentWidget(self.__state_label)
         self.setStatusBar(status_bar)
 
-        # Order: Esegui, Interrompi, Connetti/Disconnetti, Configurazione,
-        # Informazioni.
+        # Order: Esegui, Interrompi, Esporta, Connetti/Disconnetti,
+        # Configurazione, Informazioni.
         self.__connect_icon = ToolbarIcons.connect()
         self.__disconnect_icon = ToolbarIcons.disconnect()
         self.__execute_action = QAction(ToolbarIcons.play(), "Esegui", self)
@@ -392,6 +461,22 @@ class MainWindow(QMainWindow):
         self.__stop_action = QAction(ToolbarIcons.stop(), "Interrompi", self)
         self.__stop_action.setToolTip("Interrompi la query in esecuzione")
         self.__stop_action.triggered.connect(self.stop_query)
+        self.__export_action = QAction(ToolbarIcons.export(), "Esporta", self)
+        self.__export_action.setToolTip(
+            "Esporta il risultato in Excel, CSV o JSON"
+        )
+        self.__export_menu = QMenu("Esporta", self)
+        for exporter in ResultExporters.all():
+            entry = self.__export_menu.addAction(
+                "{} ({})".format(exporter.label, exporter.extension)
+            )
+            entry.triggered.connect(
+                lambda _checked=False, e=exporter: self.export_results(e)
+            )
+        self.__export_menu.addSeparator()
+        export_any = self.__export_menu.addAction("Esporta…")
+        export_any.triggered.connect(lambda: self.export_results())
+        self.__export_action.setMenu(self.__export_menu)
         self.__connect_action = QAction(self.__connect_icon, "Connetti", self)
         self.__connect_action.triggered.connect(self.toggle_connection)
         self.__config_action = QAction(
@@ -409,6 +494,12 @@ class MainWindow(QMainWindow):
         self.__about_action.triggered.connect(self.show_about)
         for action in self.toolbar_actions():
             toolbar.addAction(action)
+        # A click on "Esporta" opens the menu directly.
+        export_button = toolbar.widgetForAction(self.__export_action)
+        if isinstance(export_button, QToolButton):
+            export_button.setPopupMode(
+                QToolButton.ToolButtonPopupMode.InstantPopup
+            )
 
         quit_action = QAction(self)
         quit_action.setShortcut(QKeySequence.StandardKey.Quit)
@@ -497,6 +588,16 @@ class MainWindow(QMainWindow):
         self.__config_action.setEnabled(not busy and not self.__running)
         self.__execute_action.setEnabled(connected and not self.__running)
         self.__stop_action.setEnabled(self.__running)
+        self.__export_action.setEnabled(
+            self.__can_export() and not self.__running
+        )
+
+    def __can_export(self) -> bool:
+        return (
+            self.__result is not None
+            and bool(self.__result.columns)
+            and self.__export_thread is None
+        )
 
     # ----------------------------------------------------------------- password
     def __secret_key(self) -> str:
@@ -567,6 +668,7 @@ class MainWindow(QMainWindow):
         self.__update_actions()
 
     def __on_query_finished(self, result: QueryResult) -> None:
+        self.__result = result
         self.__finish_run()
         self.__results.set_result(result.columns, result.rows)
         self.__rows_label.setText("{} righe".format(len(result.rows)))
@@ -589,6 +691,82 @@ class MainWindow(QMainWindow):
         elif kind == "connection_lost":
             self.__set_state(ConnectionState.ERROR)
             self.worker.disconnect_requested.emit()
+
+    # ------------------------------------------------------------------- export
+    def __ask_export_path(
+        self, fixed: ResultExporter | None = None
+    ) -> Path | None:
+        """File chosen in the save dialog, with the extension of the format
+        added when missing; None when cancelled. With ``fixed`` only that
+        format is offered and its extension is always enforced."""
+        exporters = [fixed] if fixed is not None else ResultExporters.all()
+        current = fixed or (
+            ResultExporters.for_name_filter(self.__export_filter)
+            or exporters[0]
+        )
+        start = self.__export_dir / "risultato{}".format(current.extension)
+        name, selected = QFileDialog.getSaveFileName(
+            self,
+            "Esporta risultato",
+            str(start),
+            ";;".join(e.name_filter for e in exporters),
+            current.name_filter,
+        )
+        if not name:
+            return None
+        path = Path(name)
+        chosen = fixed or ResultExporters.for_name_filter(selected) or current
+        if fixed is not None:
+            missing = path.suffix.lower() != fixed.extension
+        else:
+            missing = ResultExporters.for_path(path) is None
+        if missing:
+            path = path.with_name("{}{}".format(path.name, chosen.extension))
+            # The dialog confirmed the overwrite of the name without the
+            # extension only.
+            if path.exists() and not self.__confirm_overwrite(path):
+                return None
+        self.__export_filter = (
+            ResultExporters.for_path(path) or chosen
+        ).name_filter
+        self.__export_dir = path.parent
+        return path
+
+    def __confirm_overwrite(self, path: Path) -> bool:
+        answer = QMessageBox.question(
+            self,
+            "Esporta risultato",
+            "Il file {} esiste già. Vuoi sostituirlo?".format(path.name),
+        )
+        return answer == QMessageBox.StandardButton.Yes
+
+    def __finish_export(self) -> QueryResult | None:
+        thread = self.__export_thread
+        source = self.__export_source
+        self.__export_thread = None
+        self.__export_source = None
+        if thread is not None:
+            thread.wait()
+            thread.deleteLater()
+        self.__update_actions()
+        return source
+
+    def __on_exported(self, report: ExportReport) -> None:
+        source = self.__finish_export()
+        parts = ["Esportate {} righe in {}.".format(report.rows, report.path)]
+        if source is not None and source.truncated:
+            msg = "Il risultato era limitato alle prime {} righe: le altre "
+            msg += "non sono nel file."
+            parts.append(msg.format(source.row_limit))
+        if report.shortened_cells:
+            msg = "{} celle superavano il limite di Excel e sono state "
+            msg += "troncate."
+            parts.append(msg.format(report.shortened_cells))
+        self.show_message(" ".join(parts))
+
+    def __on_export_failed(self, message: str) -> None:
+        self.__finish_export()
+        self.show_message(message, error=True)
 
     # ----------------------------------------------------------------- geometry
     def __restore_geometry(self) -> None:

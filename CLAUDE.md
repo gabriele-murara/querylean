@@ -108,6 +108,8 @@ src/querylean/
   log/                 AppLogger, LogManager, SecretRedactor
   config/              ConnectionConfig, UiPreferences, AppConfig, ConfigManager (JSON atomico 0600), ConfigError
   security/            SecretStore (astratta), KeyringSecretStore, SecretStorageError
+  export/              ResultExporter (astratta: scrittura atomica, file 0600) → XlsxExporter, CsvExporter, JsonExporter;
+                       ResultExporters (elenco e ricerca per estensione/filtro), ExportReport, ExportError
   database/
     errors/            DatabaseError(message, kind), QueryCancelled, QueryTimeout, ErrorTranslator
     connection/        ConnectionParams (kwargs del driver, password mascherata), ConnectionManager
@@ -120,7 +122,7 @@ src/querylean/
     icons/             ToolbarIcons (icone disegnate con QPainter: nessun asset da impacchettare)
     editor/            SqlEditor, SqlHighlighter, LineNumberArea
     results/           ResultsTable, ResultsModel, ValueFormatter
-    worker/            DbWorker (QObject nel thread DB), DbThread (avvio/arresto)
+    worker/            DbWorker (QObject nel thread DB), DbThread (avvio/arresto), ExportThread (scrittura dell'export)
 tests/                 test_<classe>.py; fakes/; support/; integration/
 ```
 
@@ -177,6 +179,12 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
   - va applicato durante il fetch: cursore non bufferizzato, `fetchmany` fino a `limit+1`;
   - se le righe sono troncate, `abort_session()`; la riconnessione è trasparente.
   - Il massimo è 10.000.
+- **Export**:
+  - esporta solo le righe già caricate (`MainWindow.__result`), senza rieseguire la query e senza superare il limite di righe;
+  - il file si scrive in `ExportThread`, mai nel thread GUI;
+  - la scrittura è atomica (file temporaneo nella cartella di destinazione + `os.replace`) con permessi 0600;
+  - in Excel il testo è sempre una cella stringa, mai una formula (`data_type = "s"`);
+  - in tutti i formati i valori sono scritti senza perdite (`ValueFormatter.full_text`, non `format_value`).
 - **Errori**: all'utente solo messaggi comprensibili (`DatabaseError.message`), mai stack trace; i dettagli vanno nel log.
 - **Tabella risultati**: non modificabile. NULL è mostrato come `NULL` in corsivo e si distingue da `""`. Nella copia TSV il NULL diventa una cella vuota.
 
@@ -184,11 +192,12 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
 
 - Dipendenza **PySide6-Essentials**, non `PySide6`: evita WebEngine e gli addon pesanti.
 - `mysql-connector-python>=9.3`, necessario per `read_timeout`/`write_timeout`.
+- `openpyxl` per l'export Excel. Lo spec esclude `numpy`, `pandas`, `PIL` e `lxml`, che openpyxl usa solo se installati.
 - Nei test unitari il database è finto: `tests/fakes/` (`FakeConnector`, `FakeConnection`, `FakeCursor`), da iniettare con `ConnectionManager(connector)`.
   - Per simulare `KILL QUERY` si usa `FakeConnection.on_kill`.
   - Per il keyring ci sono `MemoryKeyring` e `LockedKeyring`.
 - I test GUI estendono `support/main_window_test_base.MainWindowTestBase`, che fornisce le fixture `connector`/`window` e gli helper `configure`/`connect`/`run`. Vanno attesi con `qtbot.waitUntil`.
-- **Non aggiungere funzionalità escluse** da `PROJECT.md` §16: multi-connessione, browser schemi, cronologia, export, autocomplete, plugin, telemetria, ecc.
+- **Non aggiungere funzionalità escluse** da `PROJECT.md` §16: multi-connessione, browser schemi, cronologia, autocomplete, plugin, telemetria, ecc. L'esportazione in Excel, CSV e JSON è stata richiesta dall'utente per la 1.1; altre forme di esportazione restano escluse.
 
 ## Packaging
 
@@ -200,7 +209,7 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
 - Gli script includono `packaging/common.sh` (versione da `.version`, funzione `querylean_pyinstaller`).
 - **Dimensione**: `BundleSlimmer` (`packaging/bundle_slimmer.py`, usato dallo spec) toglie estensione C di mysql-connector, tema GTK3, traduzioni Qt e plugin Qt inutili; su Linux toglie anche le librerie di sistema orfane.
   - Prima di escludere altro, verifica che il modulo o la libreria non venga caricato a runtime.
-  - Lo smoke test controlla `ssl`, `hashlib` e il backend Secret Service: un modulo critico che manca deve far fallire la CI.
+  - Lo smoke test controlla `ssl`, `hashlib` e il backend Secret Service e scrive un file per ogni formato di export: un modulo critico che manca deve far fallire la CI.
   - Non aggiungere `--strip` né UPX.
 - **Licenze di terze parti** (`packaging/third_party_licenses.py`, classe `ThirdPartyLicenses`, richiamata dallo spec dopo `BundleSlimmer`):
   - genera `licenses/THIRD_PARTY_LICENSES.txt` nel bundle, più lo zip dei sorgenti di mysql-connector-python (GPLv2 incluso solo come bytecode);
