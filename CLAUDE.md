@@ -236,7 +236,13 @@ Politica di rilascio decisa dall'utente:
 
 1. Da `develop` si crea il branch `release-X.Y.Z`, con `X.Y.Z` = versione attuale senza `-dev`.
 2. Nel branch si modifica `.version` (lo fa **l'utente**) e si pubblica il branch.
-3. Si fa merge di `release-X.Y.Z` in `main` e si tagga `main` con `vX.Y.Z`.
+3. Si fa merge di `release-X.Y.Z` in `main` e si tagga `main` con `vX.Y.Z`, con un tag annotato creato **dopo** il merge. Il messaggio del tag ha sempre questo formato, con il riepilogo in inglese:
+
+   ```
+   QueryLean - Release X.Y.Z - <riepilogo sintetico delle nuove funzionalità / bugfix>
+   ```
+
+   Esempio: `git tag -a vX.Y.Z -m "QueryLean - Release X.Y.Z - Table side bar with a one-click preview query; the status line shows the executed query"`.
 4. Sul tag la CI pubblica la release (pacchetti, licenze di terze parti, `SHA256SUMS`); il job verifica che il tag corrisponda a `.version`.
 
 Le correzioni alla build durante un rilascio si fanno su `develop` e si portano nel branch `release-X.Y.Z` con un merge: il merge non tocca `.version` del branch di rilascio. Non creare, spostare o cancellare tag e non fare merge in `main` senza richiesta esplicita.
