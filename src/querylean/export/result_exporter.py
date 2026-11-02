@@ -63,11 +63,11 @@ class ResultExporter(ABC):
             tmp_name = None
         except OSError as exc:
             self.__log.error("Export to {} failed: {}", path, exc)
-            msg = "Impossibile scrivere il file {}: {}"
+            msg = "Cannot write the file {}: {}"
             raise ExportError(msg.format(path, exc.strerror or exc)) from exc
         except Exception as exc:
             self.__log.exception("Export to {} failed", path)
-            msg = "Esportazione non riuscita: i dettagli sono nel file di log."
+            msg = "Export failed: the details are in the log file."
             raise ExportError(msg) from exc
         finally:
             if tmp_name is not None:

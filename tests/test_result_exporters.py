@@ -164,13 +164,13 @@ class TestResultExporters:
 
     def test_missing_directory_is_reported(self, tmp_path):
         path = tmp_path / "missing" / "r.csv"
-        with pytest.raises(ExportError, match="Impossibile scrivere"):
+        with pytest.raises(ExportError, match="Cannot write"):
             CsvExporter().export(path, ["a"], [(1,)])
 
     def test_failure_keeps_existing_file(self, tmp_path):
         path = tmp_path / "r.txt"
         path.write_text("old", encoding="utf-8")
-        with pytest.raises(ExportError, match="file di log"):
+        with pytest.raises(ExportError, match="log file"):
             FailingExporter(ValueError("boom")).export(path, ["a"], [])
         assert path.read_text(encoding="utf-8") == "old"
         assert [p.name for p in tmp_path.iterdir()] == ["r.txt"]

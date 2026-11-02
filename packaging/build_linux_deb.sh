@@ -90,10 +90,10 @@ Installed-Size: ${INSTALLED_SIZE}
 Depends: libc6 (>= 2.38), libegl1, libgl1, libxcb1
 Recommends: gnome-keyring | keepassxc, libwayland-client0,
  libwayland-cursor0, libwayland-egl1
-Description: client MySQL minimale per query di sola lettura
- QueryLean esegue solo istruzioni di lettura (SELECT, SHOW, DESCRIBE,
- EXPLAIN) su una singola connessione MySQL, con editor SQL, tabella dei
- risultati e password conservata nel portachiavi di sistema.
+Description: minimal MySQL client for read-only queries
+ QueryLean runs read statements only (SELECT, SHOW, DESCRIBE, EXPLAIN)
+ on MySQL, with saved connections (one open at a time), an SQL editor, a
+ results table and passwords kept in the system keyring.
 EOF
 chmod 0644 "$PKG/DEBIAN/control"
 

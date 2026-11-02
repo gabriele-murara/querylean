@@ -20,7 +20,7 @@ from querylean.ui.icons.toolbar_icons import ToolbarIcons
 
 
 class TableSidebar(QWidget):
-    """Title "Tabelle" with a refresh button, the list of tables and views
+    """Title "Tables" with a refresh button, the list of tables and views
     (views in italics) and a status line.
 
     A click on a table, or Enter on the current one, emits
@@ -31,9 +31,9 @@ class TableSidebar(QWidget):
     table_chosen = Signal(object)
     refresh_requested = Signal()
 
-    NOT_CONNECTED = "Connettiti per vedere le tabelle."
-    LOADING = "Caricamento delle tabelle…"
-    NO_TABLES = "Nessuna tabella disponibile."
+    NOT_CONNECTED = "Connect to see the tables."
+    LOADING = "Loading the tables…"
+    NO_TABLES = "No tables available."
     __TABLE_ROLE = Qt.ItemDataRole.UserRole
     __MIN_WIDTH = 160
     __ICON_SIZE = 16
@@ -43,7 +43,7 @@ class TableSidebar(QWidget):
         self.setObjectName("table-sidebar")
         self.setMinimumWidth(TableSidebar.__MIN_WIDTH)
 
-        title = QLabel("Tabelle")
+        title = QLabel("Tables")
         bold = QFont(title.font())
         bold.setBold(True)
         title.setFont(bold)
@@ -52,7 +52,7 @@ class TableSidebar(QWidget):
         size = TableSidebar.__ICON_SIZE
         self.__refresh_button.setIconSize(QSize(size, size))
         self.__refresh_button.setAutoRaise(True)
-        self.__refresh_button.setToolTip("Aggiorna l'elenco delle tabelle")
+        self.__refresh_button.setToolTip("Refresh the list of tables")
         self.__refresh_button.clicked.connect(self.refresh_requested)
 
         header = QHBoxLayout()
@@ -83,7 +83,7 @@ class TableSidebar(QWidget):
 
     @property
     def refresh_button(self) -> QToolButton:
-        """ "Aggiorna" button."""
+        """ "Refresh" button."""
         return self.__refresh_button
 
     @property
@@ -113,18 +113,18 @@ class TableSidebar(QWidget):
             item.setData(TableSidebar.__TABLE_ROLE, table)
             if table.is_view:
                 item.setFont(italic)
-                item.setToolTip("Vista {}".format(table.name))
+                item.setToolTip("View {}".format(table.name))
             else:
-                item.setToolTip("Tabella {}".format(table.name))
+                item.setToolTip("Table {}".format(table.name))
             self.__list.addItem(item)
         self.__refresh_button.setEnabled(True)
         if not tables:
             self.__set_status(TableSidebar.NO_TABLES)
         elif len(tables) >= TableCatalog.MAX_TABLES:
-            msg = "Mostrate solo le prime {} tabelle."
+            msg = "Showing only the first {} tables."
             self.__set_status(msg.format(TableCatalog.MAX_TABLES))
         else:
-            self.__set_status("{} tabelle".format(len(tables)))
+            self.__set_status("{} tables".format(len(tables)))
 
     def set_error(self, message: str) -> None:
         """Show a loading error; the refresh button stays available."""

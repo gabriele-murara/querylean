@@ -37,7 +37,7 @@ class ResultsTable(QTableView):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self.__show_menu)
 
-        self.__copy_action = QAction("Copia", self)
+        self.__copy_action = QAction("Copy", self)
         self.__copy_action.setShortcut(QKeySequence.StandardKey.Copy)
         self.__copy_action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
         self.__copy_action.triggered.connect(lambda: self.copy_selection())
@@ -115,17 +115,17 @@ class ResultsTable(QTableView):
         if not self.selectionModel().selectedIndexes():
             return
         menu = QMenu(self)
-        menu.addAction("Copia celle", lambda: self.copy_selection())
+        menu.addAction("Copy cells", lambda: self.copy_selection())
         menu.addAction(
-            "Copia celle con intestazioni",
+            "Copy cells with headers",
             lambda: self.copy_selection(headers=True),
         )
         menu.addSeparator()
         menu.addAction(
-            "Copia righe", lambda: self.copy_selection(whole_rows=True)
+            "Copy rows", lambda: self.copy_selection(whole_rows=True)
         )
         menu.addAction(
-            "Copia righe con intestazioni",
+            "Copy rows with headers",
             lambda: self.copy_selection(whole_rows=True, headers=True),
         )
         menu.exec(self.viewport().mapToGlobal(pos))

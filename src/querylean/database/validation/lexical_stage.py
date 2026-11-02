@@ -14,9 +14,9 @@ class LexicalStage(ValidationStage):
 
     def apply(self, context: ValidationContext) -> None:
         if not context.sql.strip():
-            raise ValidationRejected("La query è vuota.")
+            raise ValidationRejected("The query is empty.")
         lexed = MySqlLexer.tokenize(context.sql)
         if not lexed.statement or not lexed.tokens:
-            raise ValidationRejected("La query è vuota.")
+            raise ValidationRejected("The query is empty.")
         context.tokens = lexed.tokens
         context.statement = lexed.statement

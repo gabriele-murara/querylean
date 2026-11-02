@@ -171,7 +171,9 @@ class TestReadOnlyValidator:
         assert validator.validate("SELECT `a;b` FROM t").ok
 
     def test_reject_message_is_user_friendly(self, validator):
-        assert "lettura" in validator.validate("DELETE FROM users").reason
+        assert (
+            "read operations" in validator.validate("DELETE FROM users").reason
+        )
 
     def test_pipeline_has_three_independent_stages(self, validator):
         names = [stage.name for stage in validator.stages]

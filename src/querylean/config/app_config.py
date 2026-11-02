@@ -2,29 +2,27 @@
 
 from __future__ import annotations
 
-from querylean.config.connection_config import ConnectionConfig
 from querylean.config.ui_preferences import UiPreferences
 
 
 class AppConfig:
-    """Connection settings plus UI preferences."""
+    """Active connection identifier plus UI preferences. The connections
+    themselves live in ``ConnectionStore``."""
 
     def __init__(
-        self,
-        connection: ConnectionConfig | None = None,
-        ui: UiPreferences | None = None,
+        self, active_connection: str = "", ui: UiPreferences | None = None
     ) -> None:
-        self.__connection = connection or ConnectionConfig()
+        self.__active_connection = active_connection
         self.__ui = ui or UiPreferences()
 
     @property
-    def connection(self) -> ConnectionConfig:
-        """Connection settings."""
-        return self.__connection
+    def active_connection(self) -> str:
+        """Identifier of the connection in use ("" when none)."""
+        return self.__active_connection
 
-    @connection.setter
-    def connection(self, value: ConnectionConfig) -> None:
-        self.__connection = value
+    @active_connection.setter
+    def active_connection(self, value: str) -> None:
+        self.__active_connection = str(value)
 
     @property
     def ui(self) -> UiPreferences:

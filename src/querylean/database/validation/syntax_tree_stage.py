@@ -31,8 +31,8 @@ class SyntaxTreeStage(ValidationStage):
             expressions = sqlglot.parse(statement, read="mysql")
         except SqlglotError as exc:
             self.__log.info("SQL parsing failed: {}", exc)
-            msg = "Impossibile analizzare la query in modo sicuro: verifica "
-            msg += "la sintassi. Le query non riconosciute vengono rifiutate."
+            msg = "The query could not be parsed safely: check the "
+            msg += "syntax. Queries that are not recognised are rejected."
             raise ValidationRejected(msg) from None
         expressions = [e for e in expressions if e is not None]
         if len(expressions) != 1:
@@ -43,17 +43,17 @@ class SyntaxTreeStage(ValidationStage):
     def __check_root(root: exp.Expression, first_word: str) -> None:
         if first_word == ReadOnlyRules.SHOW_FIRST_WORD:
             if not isinstance(root, exp.Show):
-                msg = "{} Forma di SHOW non riconosciuta."
+                msg = "{} Unrecognised form of SHOW."
                 raise ValidationRejected(msg.format(ReadOnlyRules.NOT_ALLOWED))
         elif first_word in ReadOnlyRules.DESCRIBE_FIRST_WORDS:
             if not isinstance(root, exp.Describe):
-                msg = "{} Forma di {} non riconosciuta."
+                msg = "{} Unrecognised form of {}."
                 msg = msg.format(ReadOnlyRules.NOT_ALLOWED, first_word)
                 raise ValidationRejected(msg)
             if not isinstance(
                 root.this, (exp.Table, *ReadOnlyRules.SELECT_ROOTS)
             ):
-                msg = "{} {} è ammesso solo su tabelle o SELECT."
+                msg = "{} {} is allowed only on tables or SELECT."
                 msg = msg.format(ReadOnlyRules.NOT_ALLOWED, first_word)
                 raise ValidationRejected(msg)
         elif first_word in ReadOnlyRules.SELECT_FIRST_WORDS:
@@ -66,13 +66,13 @@ class SyntaxTreeStage(ValidationStage):
     def __check_nodes(root: exp.Expression) -> None:
         for node in root.walk():
             if isinstance(node, ReadOnlyRules.FORBIDDEN_NODES):
-                msg = "{} Costrutto non ammesso: {}."
+                msg = "{} Construct not allowed: {}."
                 msg = msg.format(ReadOnlyRules.NOT_ALLOWED, type(node).__name__)
                 raise ValidationRejected(msg)
             if isinstance(node, exp.Select) and (
                 node.args.get("locks") or node.args.get("into")
             ):
-                msg = "{} SELECT … INTO e i lock non sono consentiti."
+                msg = "{} SELECT … INTO and locking reads are not allowed."
                 raise ValidationRejected(msg.format(ReadOnlyRules.NOT_ALLOWED))
             if isinstance(node, exp.Func):
                 name = (
@@ -81,6 +81,6 @@ class SyntaxTreeStage(ValidationStage):
                     else node.sql_name()
                 ).upper()
                 if name in ReadOnlyRules.FORBIDDEN_FUNCTIONS:
-                    msg = "La funzione {}() non è consentita in modalità "
-                    msg += "sola lettura."
+                    msg = "The function {}() is not allowed in read-only "
+                    msg += "mode."
                     raise ValidationRejected(msg.format(name))

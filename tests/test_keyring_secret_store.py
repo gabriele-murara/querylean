@@ -49,6 +49,6 @@ class TestKeyringSecretStore:
         store = KeyringSecretStore(LockedKeyring())
         with pytest.raises(SecretStorageError) as info:
             store.get_password("k")
-        assert "Reinserisci" in str(info.value)
+        assert "Enter the password again" in str(info.value)
         with pytest.raises(SecretStorageError):
             store.set_password("k", "pw")

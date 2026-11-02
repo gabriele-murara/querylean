@@ -3,12 +3,12 @@
 *English · [Italiano](README_ITA.md)*
 
 A minimal desktop client for **running read-only queries** against a MySQL database.
-It is inspired by DBeaver, but deliberately reduced to the essentials: one connection, a SQL
-editor and a table of copyable results.
+It is inspired by DBeaver, but deliberately reduced to the essentials: saved connections, one
+at a time, a SQL editor and a table of copyable results.
 
 ## Features
 
-- A single MySQL connection, configured from the GUI. The connection can be tested before saving it.
+- Several saved MySQL connections, each with an optional name, managed from the **Connections** menu. One is used at a time, and the connection can be tested before saving it.
 - The password is kept in the operating system keychain, never in plain text.
 - SQL editor with:
   - line numbers;
@@ -62,17 +62,31 @@ macOS compatibility should be considered confirmed only once the corresponding C
 
 ## Usage
 
-The toolbar contains, in order: **Esegui** (Run, ▶), **Interrompi** (Stop, enabled only while a query runs), **Esporta** (Export, drop-down menu, enabled when there is a result), **Connetti**/**Disconnetti** (Connect/Disconnect), **Configurazione** (Configuration) and **Informazioni** (About: version, author, license). The connection state is shown at the bottom right. The user interface is in Italian. On the left, for the whole height of the window, there is the **Tabelle** (Tables) side bar.
+The toolbar contains, in order: **Run** (▶), **Stop** (enabled only while a query runs), **Export** (drop-down menu, enabled when there is a result), **Connect**/**Disconnect**, **Connections** (drop-down menu) and **About** (version, author, license). The connection state is shown at the bottom right. The user interface is in English. On the left, for the whole height of the window, there is the **Tables** side bar.
 
-1. **Configuration**: fill in host, port, database, username, password and timeouts, then use **Test connessione** (Test connection) and **Salva configurazione** (Save configuration). Saving does not open the connection.
-2. **Connect**: the state goes from *Disconnesso* (Disconnected) to *Connessione in corso* (Connecting) and then to *Connesso* (Connected) or *Errore di connessione* (Connection error). If the password is not in the keychain, it is asked for.
-3. Write the query and press **Run** or `Ctrl/Cmd+Enter`. Alternatively choose a table in the side bar (see [Table side bar](#table-side-bar)). Below the results you see rows and time, then "Query eseguita:" (Query executed:) followed by the query just executed, on one line. Beyond 160 characters the query is cut with "…"; the full text is in the message tooltip.
+1. **Connections** → **New connection…**: fill in name (optional), host, port, database, username, password and timeouts, then use **Test connection** and **Save**. Saving does not open the connection (see [Connections](#connections)).
+2. **Connect** opens the active connection, the one checked in the **Connections** menu: the state goes from *Disconnected* to *Connecting* and then to *Connected* or *Connection error*. If the password is not in the keychain, it is asked for.
+3. Write the query and press **Run** or `Ctrl/Cmd+Enter`. Alternatively choose a table in the side bar (see [Table side bar](#table-side-bar)). Below the results you see rows and time, then "Query executed:" followed by the query just executed, on one line. Beyond 160 characters the query is cut with "…"; the full text is in the message tooltip.
 4. Select cells or rows and press `Ctrl/Cmd+C`. The context menu also offers the "with headers" and "whole rows" variants.
 5. To save the result to a file open the **Export** menu and choose the format (see [Export](#export)).
 
+### Connections
+
+The **Connections** button opens a menu with **New connection…** and, below it, the saved connections in alphabetical order. Each connection is shown with its name or, when the name is empty, as `<user>@<host>/<database>`. The active connection is checked.
+
+Each item has a sub-menu:
+
+- **Connect**: makes it active and connects. If another connection is open, it is closed first.
+- **Edit…**: opens the form with the saved values. If it is the connection in use, the changes apply from the next connection.
+- **Delete…**: asks for confirmation, then deletes the connection file. If it is the one in use, it is closed.
+
+The toolbar **Connect** button uses the active connection; if none exists, it opens **New connection…**. A connection that has just been saved becomes active if you are not connected at that moment.
+
+Each connection is a JSON file of its own (see [Local files](#local-files)) and never contains the password.
+
 ### Table side bar
 
-After connecting, the **Tabelle** (Tables) side bar lists the tables and views of the configured database (`SHOW FULL TABLES`), that is only those the account can access. Views are in italics and the number of items is shown at the bottom.
+After connecting, the **Tables** side bar lists the tables and views of the configured database (`SHOW FULL TABLES`), that is only those the account can access. Views are in italics and the number of items is shown at the bottom.
 
 - A click on an item, or `Enter` on the selected one, replaces the editor content with `SELECT * FROM <table> LIMIT 1;`. The query is **not executed**: press **Run** to start it. The previous text can be restored with `Ctrl/Cmd+Z`.
 - The table name is always between backticks, with any inner backticks doubled, so names with spaces or reserved words work too.
@@ -92,10 +106,10 @@ Copied cells are separated by tabs and rows by newlines. The selection is copied
 
 ### Export
 
-**Esporta** (Export) saves the result shown in the table to a file, with the column headers. The button opens a menu:
+**Export** saves the result shown in the table to a file, with the column headers. The button opens a menu:
 
 - **Excel (.xlsx)**, **CSV (.csv)**, **JSON (.json)**: the save dialog offers only that format. If the name lacks its extension, it is added.
-- **Esporta…** (Export…): the save dialog offers every format. The extension of the name (`.xlsx`, `.csv`, `.json`) decides or, when missing, the format selected in the dialog.
+- **Export…**: the save dialog offers every format. The extension of the name (`.xlsx`, `.csv`, `.json`) decides or, when missing, the format selected in the dialog.
 
 - **The rows already loaded** are exported, that is at most the configured row limit: the query is not run again. If the result was truncated, the final message says so.
 - The file is written in a separate thread, so the window stays usable. It is first written to a temporary file in the same folder and then renamed: an existing file is replaced only by a complete export.
@@ -104,7 +118,7 @@ Copied cells are separated by tabs and rows by newlines. The selection is copied
 
 | Format | Content |
 | --- | --- |
-| Excel (`.xlsx`) | One sheet, "Risultato" (Result), with a bold, frozen header row. Numbers, booleans, dates and date-times are native Excel values. Text never becomes a formula, even when it starts with `=`. Values Excel would alter stay text: integers and DECIMAL values with more than 15 significant digits, dates before 1900, `TIME` values. `NULL` and the empty string are both empty cells. Control characters Excel does not allow become `�`; cells longer than 32,767 characters are cut and the final message counts them |
+| Excel (`.xlsx`) | One sheet, "Result", with a bold, frozen header row. Numbers, booleans, dates and date-times are native Excel values. Text never becomes a formula, even when it starts with `=`. Values Excel would alter stay text: integers and DECIMAL values with more than 15 significant digits, dates before 1900, `TIME` values. `NULL` and the empty string are both empty cells. Control characters Excel does not allow become `�`; cells longer than 32,767 characters are cut and the final message counts them |
 | CSV (`.csv`) | UTF-8, comma separator, header row. Fields are quoted only when needed, and newlines inside values are kept. `NULL` becomes an empty field, as in the copy |
 | JSON (`.json`) | UTF-8, an array with one object per row, keyed by column name. `NULL` becomes `null`, while integers, floating-point numbers and booleans stay numbers and booleans. DECIMAL values become strings, so that no digit is lost. Repeated column names get a suffix (`id`, `id_2`) |
 
@@ -164,7 +178,9 @@ Recommendations:
 ### Password
 
 - It is stored in the operating system keychain under the service `querylean` with the key `user@host:port`. On Linux you can check it with `secret-tool search service querylean`.
-- It **never** appears in the configuration file or in the logs, which go through a redaction filter.
+- The key belongs to the MySQL account, not to the connection: several connections to the same account (for example to different databases) share the password. When the last connection using an account is deleted, its password is removed from the keychain.
+- It is read from the keychain only when needed, that is when connecting or editing.
+- It **never** appears in the configuration or connection files, or in the logs, which go through a redaction filter.
 - Plain-text (`keyrings.alt`) or "fail" keyring backends are treated as unavailable. In that case the password is kept in memory only, for the session.
 - If the keychain is locked or denies access, a message is shown and the password is asked for when connecting.
 
@@ -172,8 +188,11 @@ Recommendations:
 
 | File | Linux | macOS |
 | --- | --- | --- |
-| Configuration (permissions 0600) | `~/.config/querylean/config.json` | `~/Library/Application Support/querylean/config.json` |
+| Configuration: active connection, window (permissions 0600) | `~/.config/querylean/config.json` | `~/Library/Application Support/querylean/config.json` |
+| Saved connections, one `<id>.json` file each (permissions 0600) | `~/.config/querylean/connections/` | `~/Library/Application Support/querylean/connections/` |
 | Log (rotation 1 MB × 3) | `~/.local/state/querylean/log/` | `~/Library/Logs/querylean/` |
+
+Versions up to 1.2 had a single connection inside `config.json`. On the first start of the new version it is saved as the first connection, and its password in the keychain stays valid.
 
 Users are never shown stack traces: technical details go to the log, without secrets.
 
@@ -389,7 +408,7 @@ To verify a download: `sha256sum -c SHA256SUMS --ignore-missing`.
 
 ## Limitations of this version
 
-- One connection and one query at a time, one statement per execution.
+- One open connection and one query at a time, one statement per execution.
 - Not supported: TLS/SSH tunnels configurable from the GUI, autocompletion, history, pagination.
 - The export saves only the loaded rows (at most 10,000): to export more, use a tool such as `mysqldump` or `mysql --batch`.
 - `SHOW` is allowed only in the forms recognized by the parser; the others are rejected.

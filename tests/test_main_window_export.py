@@ -11,7 +11,7 @@ from support.main_window_test_base import MainWindowTestBase
 
 
 class TestMainWindowExport(MainWindowTestBase):
-    """ "Esporta" action: availability, formats, truncation notice, errors."""
+    """ "Export" action: availability, formats, truncation notice, errors."""
 
     @classmethod
     def export(cls, qtbot, window, path) -> None:
@@ -41,7 +41,7 @@ class TestMainWindowExport(MainWindowTestBase):
         self.run(qtbot, window, "SELECT n FROM t")
 
         self.export(qtbot, window, tmp_path / "r.csv")
-        assert "Esportate 3 righe" in window.message_label.text()
+        assert "Exported 3 rows" in window.message_label.text()
         with (tmp_path / "r.csv").open(encoding="utf-8", newline="") as f:
             assert list(csv.reader(f)) == [["n"], ["0"], ["1"], ["2"]]
 
@@ -58,13 +58,13 @@ class TestMainWindowExport(MainWindowTestBase):
         self, qtbot, window, connector, tmp_path
     ):
         self.connect(qtbot, window)
-        window.app_config.connection.row_limit = 100
+        window.active_connection.config.row_limit = 100
         connector.connections[0].row_count = 5000
         self.run(qtbot, window, "SELECT n FROM t")
         self.export(qtbot, window, tmp_path / "r.csv")
         text = window.message_label.text()
-        assert "Esportate 100 righe" in text
-        assert "limitato alle prime 100 righe" in text
+        assert "Exported 100 rows" in text
+        assert "limited to the first 100 rows" in text
 
     def test_export_still_possible_after_disconnect(
         self, qtbot, window, tmp_path
@@ -73,7 +73,7 @@ class TestMainWindowExport(MainWindowTestBase):
         self.run(qtbot, window, "SELECT n FROM t")
         window.toggle_connection()
         qtbot.waitUntil(
-            lambda: window.connect_action.text() == "Connetti",
+            lambda: window.connect_action.text() == "Connect",
             timeout=self.WAIT_MS,
         )
         assert window.export_action.isEnabled()
@@ -85,14 +85,14 @@ class TestMainWindowExport(MainWindowTestBase):
         self.run(qtbot, window, "SELECT n FROM t")
         window.export_to(tmp_path / "r.txt")
         assert not window.exporting
-        assert "Formato non supportato" in window.message_label.text()
+        assert "Unsupported format" in window.message_label.text()
         assert not (tmp_path / "r.txt").exists()
 
     def test_write_error_is_shown(self, qtbot, window, tmp_path):
         self.connect(qtbot, window)
         self.run(qtbot, window, "SELECT n FROM t")
         self.export(qtbot, window, tmp_path / "missing" / "r.csv")
-        assert "Impossibile scrivere" in window.message_label.text()
+        assert "Cannot write" in window.message_label.text()
         assert window.export_action.isEnabled()
 
     def test_dialog_adds_extension_of_selected_format(
@@ -126,7 +126,7 @@ class TestMainWindowExport(MainWindowTestBase):
             "CSV (.csv)",
             "JSON (.json)",
             "",
-            "Esporta…",
+            "Export…",
         ]
         assert window.export_menu.actions()[3].isSeparator()
         toolbar = window.findChild(QToolBar, "main-toolbar")
@@ -151,7 +151,7 @@ class TestMainWindowExport(MainWindowTestBase):
         csv_entry = window.export_menu.actions()[1]
         csv_entry.trigger()
         qtbot.waitUntil(lambda: not window.exporting, timeout=self.WAIT_MS)
-        assert offered == [("risultato.csv", "CSV (*.csv)")]
+        assert offered == [("result.csv", "CSV (*.csv)")]
         # The chosen format wins over a different typed extension.
         written = tmp_path / "r.json.csv"
         with written.open(encoding="utf-8", newline="") as f:

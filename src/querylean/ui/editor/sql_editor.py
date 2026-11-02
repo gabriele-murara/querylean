@@ -35,7 +35,7 @@ class SqlEditor(QPlainTextEdit):
             self.fontMetrics().horizontalAdvance(" ") * SqlEditor.__TAB_WIDTH
         )
         self.setPlaceholderText(
-            "Scrivi una query SELECT e premi Ctrl+Invio (Cmd+Invio su macOS)"
+            "Write a SELECT query and press Ctrl+Enter (Cmd+Enter on macOS)"
         )
         self.__highlighter = SqlHighlighter(self.document())
         self.__line_area = LineNumberArea(self)

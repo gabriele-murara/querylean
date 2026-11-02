@@ -34,7 +34,7 @@ class XlsxExporter(ResultExporter):
       Excel cell allows is cut (counted in the report).
     """
 
-    SHEET_TITLE = "Risultato"
+    SHEET_TITLE = "Result"
     MAX_CELL_CHARS = 32767
     MAX_EXACT_DIGITS = 15
     __MIN_YEAR = 1900

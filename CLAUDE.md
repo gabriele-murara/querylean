@@ -11,7 +11,7 @@
 
 Fanno eccezione le variabili d'ambiente, che per convenzione sono maiuscole (`QUERYLEAN_TEST_*`). "QueryLean" (`AppInfo.DISPLAY_NAME`) è solo il nome visibile all'utente: titolo della finestra, `QueryLean.app`, voce del menu.
 
-Client desktop minimale (Linux/macOS, **no Windows**) per eseguire **solo query MySQL di lettura**. Le specifiche complete sono in `PROJECT.md`, la documentazione utente e di build in `README.md` (inglese) e `README_ITA.md` (italiano).
+Client desktop minimale (Linux/macOS, **no Windows**) per eseguire **solo query MySQL di lettura**, con più connessioni salvate e una sola aperta alla volta. Le specifiche complete sono in `PROJECT.md`, la documentazione utente e di build in `README.md` (inglese) e `README_ITA.md` (italiano).
 
 **I due README vanno tenuti allineati.** Ogni modifica che tocca la documentazione si applica a **entrambi** i file nella stessa modifica, con lo stesso contenuto e la stessa struttura delle sezioni. Riguarda funzionalità, comandi, packaging, dimensioni, limiti e CI. Non si aggiorna mai uno solo dei due.
 
@@ -51,9 +51,9 @@ Test d'integrazione (`tests/integration/`): vengono saltati se mancano le variab
 
   Non creare astrazioni senza un secondo uso plausibile.
 - **Lingua**:
-  - in **inglese**: docstring (modulo, classe, metodi pubblici), commenti nel codice, messaggi di log;
-  - in **italiano**: testi rivolti all'utente (GUI, `DatabaseError.message`, motivi di rifiuto del validatore) e documentazione (`README_ITA.md`, questo file);
-  - in **inglese**, come traduzione fedele di `README_ITA.md`: `README.md`. Nel README inglese i testi della GUI restano in italiano, seguiti dalla traduzione tra parentesi alla prima occorrenza, ad esempio **Esegui** (Run).
+  - in **inglese**: docstring (modulo, classe, metodi pubblici), commenti nel codice, messaggi di log e **tutti i testi rivolti all'utente** (GUI, finestra About, `DatabaseError.message`, motivi di rifiuto del validatore, descrizioni dei pacchetti). Dalla 1.3 l'interfaccia è in inglese, per scelta dell'utente;
+  - in **italiano**: documentazione (`README_ITA.md`, questo file). Nel README italiano i testi della GUI restano in inglese, seguiti dalla traduzione tra parentesi alla prima occorrenza, ad esempio **Run** (Esegui);
+  - in **inglese**, come traduzione fedele di `README_ITA.md`: `README.md`.
 - **Logging**:
   - usare il logger del progetto: `__log = LogManager.get_logger(__name__)` come attributo privato di classe, poi `self.__log.info(...)` o `NomeClasse.__log.info(...)` nei metodi statici;
   - anche i messaggi di log seguono le regole delle "Stringhe": segnaposto di `.format()` e argomenti passati al logger, `self.__log.info("Connected to {}:{}", host, port)`. Il logger chiama `.format()` solo se il livello è attivo, quindi non si formatta prima la stringa. Niente `%s`;
@@ -106,7 +106,8 @@ Il logger è implementato **nel progetto** (`querylean/log/`) e non importato da
 src/querylean/
   app/                 AppInfo (NAME, DISPLAY_NAME, AUTHOR, …, version()), VersionFile, BundleResources (percorsi nel bundle: `_MEIPASS` o radice), Application.run() (entry point, excepthook), SmokeTest
   log/                 AppLogger, LogManager, SecretRedactor
-  config/              ConnectionConfig, UiPreferences, AppConfig, ConfigManager (JSON atomico 0600), ConfigError
+  config/              ConnectionConfig (anche name, display_name), ConnectionProfile (id + config), ConnectionStore (connections/<id>.json),
+                       UiPreferences, AppConfig (active_connection + ui), ConfigManager (config.json + migrazione), PrivateJsonFile (JSON atomico 0600), ConfigError
   security/            SecretStore (astratta), KeyringSecretStore, SecretStorageError
   export/              ResultExporter (astratta: scrittura atomica, file 0600) → XlsxExporter, CsvExporter, JsonExporter;
                        ResultExporters (elenco e ricerca per estensione/filtro), ExportReport, ExportError
@@ -118,7 +119,7 @@ src/querylean/
     validation/        ReadOnlyValidator → stadi ValidationStage su ValidationContext;
                        MySqlLexer, SqlToken, LexedStatement, ReadOnlyRules, ValidationResult
   ui/
-    main/              MainWindow, ConnectionState
+    main/              MainWindow, ConnectionState, ConnectionsMenu (menu "Connections": New connection…, Connect/Edit…/Delete… per connessione)
     dialogs/           ConnectionDialog, AboutDialog (versione/autore da AppInfo)
     icons/             ToolbarIcons (icone disegnate con QPainter: nessun asset da impacchettare)
     editor/            SqlEditor, SqlHighlighter, LineNumberArea
@@ -169,9 +170,14 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
   - `SET SESSION TRANSACTION READ ONLY`;
   - rimozione di `NO_BACKSLASH_ESCAPES` dal `sql_mode`.
 - **Sola lettura**: la garanzia primaria è l'account MySQL con solo SELECT. L'app non deve mai creare utenti né modificare privilegi.
+- **Connessioni salvate**:
+  - una connessione = un file `connections/<id>.json` (0600) scritto con `PrivateJsonFile`; `config.json` tiene solo `active_connection` e le preferenze;
+  - un file illeggibile viene saltato (con log), non deve impedire il caricamento delle altre;
+  - la migrazione del vecchio `config.json` a connessione singola avviene una sola volta e non tocca il portachiavi;
+  - la password è indicizzata per account (`SecretStore.account_key`): si toglie dal portachiavi solo quando nessuna connessione salvata usa più quell'account.
 - **Password**:
   - mai su file di configurazione, log o messaggi;
-  - registrarla con `LogManager.register_secret()` appena è nota (il setter `MainWindow.password` lo fa già);
+  - registrarla con `LogManager.register_secret()` appena è nota (in `MainWindow` lo fa `__remember_session`, usato da ogni percorso che riceve una password);
   - `ConnectionParams.__repr__` la maschera.
 - **Thread**:
   - nessuna operazione di database nel thread GUI;
@@ -205,7 +211,8 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
 - I test GUI estendono `support/main_window_test_base.MainWindowTestBase`, che fornisce le fixture `connector`/`window` e gli helper `configure`/`connect`/`run`. Vanno attesi con `qtbot.waitUntil`.
 - **Non aggiungere funzionalità escluse** da `PROJECT.md` §16: multi-connessione, browser schemi, cronologia, autocomplete, plugin, telemetria, ecc. Eccezioni richieste dall'utente:
   - 1.1: esportazione in Excel, CSV e JSON; altre forme di esportazione restano escluse;
-  - 1.2: barra laterale con l'elenco delle tabelle del database configurato, che prepara `SELECT * FROM <tabella> LIMIT 1;`. Niente albero di colonne, indici o altri database, niente esecuzione automatica.
+  - 1.2: barra laterale con l'elenco delle tabelle del database configurato, che prepara `SELECT * FROM <tabella> LIMIT 1;`. Niente albero di colonne, indici o altri database, niente esecuzione automatica;
+  - 1.3: più connessioni salvate (profili), ma **una sola connessione aperta alla volta**. Niente connessioni simultanee, schede o finestre multiple.
 
 ## Packaging
 
@@ -223,7 +230,7 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
   - genera `licenses/THIRD_PARTY_LICENSES.txt` nel bundle, più lo zip dei sorgenti di mysql-connector-python (GPLv2 incluso solo come bytecode);
   - attribuisce ogni file del bundle al pacchetto Python, al pacchetto Ubuntu (`dpkg`) o all'interprete. Un file senza origine nota fa **fallire la build**: non aggirare l'errore, ma aggiungi l'origine o il testo della licenza;
   - `packaging/licenses/` contiene i testi ufficiali per i componenti che non li includono (LGPL-3.0, GPL-3.0, ICU 73, Apache-2.0). Non vanno modificati; se Qt aggiorna ICU, va aggiunto il testo della nuova versione;
-  - il `.deb` collega il file in `/usr/share/doc/querylean/` e ha un `copyright` DEP-5; il DMG lo mette accanto all'app; la finestra Informazioni vi rimanda (`AboutDialog.third_party_html`);
+  - il `.deb` collega il file in `/usr/share/doc/querylean/` e ha un `copyright` DEP-5; il DMG lo mette accanto all'app; la finestra About vi rimanda (`AboutDialog.third_party_html`);
   - nei pacchetti lo smoke test fallisce se il file manca.
 - Le dipendenze del `.deb` (`Depends`) vanno ricavate dalle librerie che il bundle carica dal sistema (`readelf -d`, con `LC_ALL=C`), non scritte a intuito.
 - **Librerie xcb**: su Linux `BundleSlimmer.check_required_libraries` fa fallire la build se mancano le librerie del plugin xcb di Qt (`REQUIRED_LINUX_LIBRARIES`). Vanno installate sulla macchina di build (in CI: `QT_XCB_PACKAGES`); non togliere il controllo.

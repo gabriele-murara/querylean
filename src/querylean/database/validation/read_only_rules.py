@@ -8,11 +8,11 @@ from sqlglot import exp
 class ReadOnlyRules:
     """Allowed statements, forbidden words, functions and syntax-tree nodes."""
 
-    NOT_ALLOWED = "Query non consentita: questa applicazione supporta "
-    NOT_ALLOWED += "esclusivamente operazioni di lettura (SELECT, SHOW, "
+    NOT_ALLOWED = "Query not allowed: this application supports "
+    NOT_ALLOWED += "read operations only (SELECT, SHOW, "
     NOT_ALLOWED += "DESCRIBE, EXPLAIN)."
-    MULTIPLE_STATEMENTS = "Sono presenti più istruzioni SQL: questa versione "
-    MULTIPLE_STATEMENTS += "ne esegue una sola per volta."
+    MULTIPLE_STATEMENTS = "The text contains more than one SQL statement: "
+    MULTIPLE_STATEMENTS += "this version runs one at a time."
 
     # First word of every accepted statement.
     SELECT_FIRST_WORDS = frozenset({"SELECT", "WITH"})

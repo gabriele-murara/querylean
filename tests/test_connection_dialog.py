@@ -46,7 +46,7 @@ class TestConnectionDialog(MainWindowTestBase):
         qtbot.waitUntil(
             lambda: dialog.test_button.isEnabled(), timeout=self.WAIT_MS
         )
-        assert "riuscita" in dialog.status.text()
+        assert "succeeded" in dialog.status.text()
         connector.error = mysql_errors.ProgrammingError(
             msg="denied", errno=1045
         )
@@ -54,4 +54,4 @@ class TestConnectionDialog(MainWindowTestBase):
         qtbot.waitUntil(
             lambda: dialog.test_button.isEnabled(), timeout=self.WAIT_MS
         )
-        assert "Autenticazione fallita" in dialog.status.text()
+        assert "Authentication failed" in dialog.status.text()

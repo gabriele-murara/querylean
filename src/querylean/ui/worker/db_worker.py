@@ -19,7 +19,7 @@ class DbWorker(QObject):
     therefore processed one at a time, in order."""
 
     UNEXPECTED_ERROR = (
-        "Errore imprevisto. I dettagli tecnici sono stati registrati nel log."
+        "Unexpected error. The technical details were written to the log."
     )
 
     # Requests (GUI -> worker)
@@ -103,8 +103,8 @@ class DbWorker(QObject):
             )
             self.test_finished.emit(False, DbWorker.UNEXPECTED_ERROR)
         else:
-            suffix = " (server MySQL {})".format(version) if version else ""
-            msg = "Connessione riuscita{}.".format(suffix)
+            suffix = " (MySQL server {})".format(version) if version else ""
+            msg = "Connection succeeded{}.".format(suffix)
             self.test_finished.emit(True, msg)
 
     @Slot(str, int, int)

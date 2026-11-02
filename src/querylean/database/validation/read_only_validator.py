@@ -49,7 +49,7 @@ class ReadOnlyValidator:
             return ValidationResult.reject(str(rejection))
         except Exception:
             self.__log.exception("Unexpected error in the validator")
-            reason = "Impossibile verificare la query in modo sicuro: la "
-            reason += "query è stata rifiutata."
+            reason = "The query could not be checked safely, so it was "
+            reason += "rejected."
             return ValidationResult.reject(reason)
         return ValidationResult.accept(context.statement)

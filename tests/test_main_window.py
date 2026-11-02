@@ -7,6 +7,7 @@ from PySide6.QtGui import QTextCursor
 
 from fakes.fake_connector import FakeConnector
 from querylean.config.config_manager import ConfigManager
+from querylean.config.connection_config import ConnectionConfig
 from querylean.database.connection.connection_manager import ConnectionManager
 from querylean.security.keyring_secret_store import KeyringSecretStore
 from querylean.ui.main.connection_state import ConnectionState
@@ -22,19 +23,19 @@ class TestMainWindow(MainWindowTestBase):
     def test_opens_disconnected(self, window):
         assert window.isVisible()
         assert window.state == ConnectionState.DISCONNECTED
-        assert "Disconnesso" in window.state_label.text()
+        assert "Disconnected" in window.state_label.text()
         assert not window.execute_action.isEnabled()
         assert not window.stop_action.isEnabled()
 
     def test_toolbar_order_and_icons(self, window):
         texts = [action.text() for action in window.toolbar_actions()]
         assert texts == [
-            "Esegui",
-            "Interrompi",
-            "Esporta",
-            "Connetti",
-            "Configurazione",
-            "Informazioni",
+            "Run",
+            "Stop",
+            "Export",
+            "Connect",
+            "Connections",
+            "About",
         ]
         for action in window.toolbar_actions():
             assert not action.icon().isNull()
@@ -53,12 +54,12 @@ class TestMainWindow(MainWindowTestBase):
         qtbot.waitUntil(
             lambda: window.state == ConnectionState.ERROR, timeout=self.WAIT_MS
         )
-        assert "Impossibile raggiungere" in window.message_label.text()
+        assert "Cannot reach" in window.message_label.text()
         assert not window.execute_action.isEnabled()
 
     def test_connect_disconnect_reconnect(self, qtbot, window):
         self.connect(qtbot, window)
-        assert window.connect_action.text() == "Disconnetti"
+        assert window.connect_action.text() == "Disconnect"
         window.toggle_connection()
         qtbot.waitUntil(
             lambda: window.state == ConnectionState.DISCONNECTED,
@@ -74,23 +75,23 @@ class TestMainWindow(MainWindowTestBase):
         self.connect(qtbot, window)
         self.run(qtbot, window, "SELECT n FROM t")
         assert window.results.results_model.rowCount() == 3
-        assert window.rows_label.text() == "3 righe"
+        assert window.rows_label.text() == "3 rows"
         assert "ms" in window.time_label.text()
         assert window.limit_label.text() == ""
         assert window.running_label.isHidden()
 
     def test_truncation_is_signalled(self, qtbot, window, connector):
         self.connect(qtbot, window)
-        window.app_config.connection.row_limit = 100
+        window.active_connection.config.row_limit = 100
         connector.connections[0].row_count = 5000
         self.run(qtbot, window, "SELECT n FROM t")
         assert window.results.results_model.rowCount() == 100
-        assert "limitati alle prime 100" in window.limit_label.text()
+        assert "limited to the first 100" in window.limit_label.text()
 
     def test_rejected_query_shows_error(self, qtbot, window):
         self.connect(qtbot, window)
         self.run(qtbot, window, "DROP TABLE users")
-        assert "Query non consentita" in window.message_label.text()
+        assert "Query not allowed" in window.message_label.text()
 
     def test_timeout_is_shown(self, qtbot, window, connector):
         self.connect(qtbot, window)
@@ -121,13 +122,13 @@ class TestMainWindow(MainWindowTestBase):
         assert not window.execute_action.isEnabled()
         assert window.stop_action.isEnabled()
         assert window.progress.isVisible()
-        assert "In esecuzione: SELECT n FROM t" in window.running_label.text()
+        assert "Running: SELECT n FROM t" in window.running_label.text()
         # The GUI thread keeps processing events while the worker is blocked.
         qtbot.wait(100)
         window.editor.insertPlainText(" ")
         window.stop_query()
         qtbot.waitUntil(lambda: not window.running, timeout=self.WAIT_MS)
-        assert "interrotta" in window.message_label.text()
+        assert "stopped" in window.message_label.text()
         assert window.execute_action.isEnabled()
 
     def test_execute_uses_selection(self, qtbot, window):
@@ -141,7 +142,7 @@ class TestMainWindow(MainWindowTestBase):
         window.editor.setTextCursor(cursor)
         window.execute_query()
         qtbot.waitUntil(lambda: not window.running, timeout=self.WAIT_MS)
-        assert window.rows_label.text() == "3 righe"
+        assert window.rows_label.text() == "3 rows"
 
     def test_empty_editor_does_nothing(self, qtbot, window):
         self.connect(qtbot, window)
@@ -153,22 +154,30 @@ class TestMainWindow(MainWindowTestBase):
         self, qtbot, window, tmp_path
     ):
         backend = window.secrets.backend
-        self.configure(window, password="pw-123")
+        window.save_connection(
+            ConnectionConfig(host="db", database="app", username="ro"),
+            "pw-123",
+            remember=True,
+        )
+        profile_id = window.active_connection.profile_id
         window.close()
         assert window.closed
         assert window.db.thread.isFinished()
         data = (tmp_path / "config.json").read_text()
         assert "pw-123" not in data
-        assert '"username": "ro"' in data
-        # Restart: configuration and password are restored.
-        window.secrets.set_password("ro@db:3306", "pw-123")
+        assert profile_id in data
+        saved = tmp_path / "connections" / "{}.json".format(profile_id)
+        assert "pw-123" not in saved.read_text()
+        assert '"username": "ro"' in saved.read_text()
+        # Restart: connection and password (from the keychain) are restored.
         restarted = MainWindow(
             ConfigManager(tmp_path / "config.json"),
             KeyringSecretStore(backend),
             DbThread(ConnectionManager(FakeConnector())),
         )
         qtbot.addWidget(restarted)
-        assert restarted.app_config.connection.host == "db"
+        assert restarted.active_connection.profile_id == profile_id
+        assert restarted.active_connection.config.host == "db"
         assert restarted.password == "pw-123"
         restarted.close()
 
@@ -176,7 +185,7 @@ class TestMainWindow(MainWindowTestBase):
         self.connect(qtbot, window)
         self.run(qtbot, window, "SELECT n\n  FROM t;")
         text = window.message_label.text()
-        assert text == "Query eseguita: SELECT n FROM t"
+        assert text == "Query executed: SELECT n FROM t"
         assert window.message_label.toolTip() == ""
 
     def test_long_executed_query_is_cut(self, qtbot, window):
@@ -185,7 +194,7 @@ class TestMainWindow(MainWindowTestBase):
         sql = "SELECT {} FROM t WHERE a < b".format(columns)
         self.run(qtbot, window, sql)
         text = window.message_label.text()
-        assert text.startswith("Query eseguita: SELECT c0, c1")
+        assert text.startswith("Query executed: SELECT c0, c1")
         assert text.endswith("…")
         assert window.message_label.toolTip() == sql
 
@@ -196,7 +205,7 @@ class TestMainWindow(MainWindowTestBase):
         connector.connections[0].handler = lambda sql: ([], [])
         self.run(qtbot, window, "SHOW WARNINGS")
         assert window.message_label.text() == (
-            "Query eseguita (nessun risultato tabellare): SHOW WARNINGS"
+            "Query executed (no tabular result): SHOW WARNINGS"
         )
 
     def test_query_preview(self):

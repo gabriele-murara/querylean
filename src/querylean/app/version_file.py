@@ -18,8 +18,8 @@ class VersionFile:
     """
 
     FILE_NAME = ".version"
-    # Shown when the file is missing or malformed (user facing, Italian).
-    UNKNOWN = "sconosciuta"
+    # Shown when the file is missing or malformed (user facing).
+    UNKNOWN = "unknown"
     __PATTERN = re.compile(r"^\d+\.\d+\.\d+(?:[-.+][0-9A-Za-z.-]+)?$")
     __cache: str | None = None
 

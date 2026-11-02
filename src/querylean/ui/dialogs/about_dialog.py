@@ -1,4 +1,4 @@
-"""The "Informazioni su QueryLean" dialog."""
+"""The "About QueryLean" dialog."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ class AboutDialog(QDialog):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Informazioni su {}".format(AppInfo.DISPLAY_NAME))
+        self.setWindowTitle("About {}".format(AppInfo.DISPLAY_NAME))
         self.setMinimumHeight(AboutDialog.__MIN_HEIGHT)
 
         icon = QLabel()
@@ -76,13 +76,13 @@ class AboutDialog(QDialog):
             platform.python_version(), qVersion(), PySide6.__version__
         )
         text = "<h2>{name}</h2>"
-        text += "<p><b>Versione {version}</b></p>"
+        text += "<p><b>Version {version}</b></p>"
         text += "<p>{description}</p>"
-        text += "<p>Esegue solo istruzioni di lettura (SELECT, SHOW, "
-        text += "DESCRIBE, EXPLAIN). La password è conservata nel portachiavi "
-        text += "di sistema.</p>"
-        text += "<p>Autore: {author}<br>"
-        text += "© {year} {author} · Licenza {license}</p>"
+        text += "<p>Runs read statements only (SELECT, SHOW, "
+        text += "DESCRIBE, EXPLAIN). Passwords are kept in the system "
+        text += "keyring.</p>"
+        text += "<p>Author: {author}<br>"
+        text += "© {year} {author} · {license} License</p>"
         text += "<p>{third_party}</p>"
         text += "<p><small>{runtime}</small></p>"
         e = html.escape
@@ -101,13 +101,13 @@ class AboutDialog(QDialog):
     def third_party_html() -> str:
         """Note on the bundled third-party components, with a link to their
         licenses when the file is available (packaged builds)."""
-        text = "Include componenti di terze parti (Qt, PySide6, "
-        text += "mysql-connector-python e altri), ciascuno distribuito con "
-        text += "la propria licenza: {}."
+        text = "Includes third-party components (Qt, PySide6, "
+        text += "mysql-connector-python and others), each distributed "
+        text += "under its own license: {}."
         notices = BundleResources.third_party_licenses()
         if not notices.is_file():
             name = html.escape(BundleResources.THIRD_PARTY_LICENSES)
-            return text.format("vedi {} nei pacchetti".format(name))
+            return text.format("see {} in the packages".format(name))
         url = html.escape(QUrl.fromLocalFile(str(notices)).toString())
-        link = '<a href="{}">licenze di terze parti</a>'.format(url)
+        link = '<a href="{}">third-party licenses</a>'.format(url)
         return text.format(link)

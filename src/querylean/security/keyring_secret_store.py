@@ -51,8 +51,8 @@ class KeyringSecretStore(SecretStore):
             return backend.get_password(SecretStore.SERVICE_NAME, key)
         except keyring.errors.KeyringError as exc:
             self.__log.warning("Keychain read failed: {}", type(exc).__name__)
-            msg = "Impossibile leggere la password dal portachiavi "
-            msg += "(bloccato o accesso negato). Reinserisci la password."
+            msg = "Cannot read the password from the keyring "
+            msg += "(locked or access denied). Enter the password again."
             raise SecretStorageError(msg) from exc
 
     def set_password(self, key: str, password: str) -> None:
@@ -61,9 +61,9 @@ class KeyringSecretStore(SecretStore):
             backend.set_password(SecretStore.SERVICE_NAME, key, password)
         except keyring.errors.KeyringError as exc:
             self.__log.warning("Keychain write failed: {}", type(exc).__name__)
-            msg = "Impossibile salvare la password nel portachiavi "
-            msg += "(bloccato o accesso negato). La password resterà valida "
-            msg += "solo per questa sessione."
+            msg = "Cannot save the password in the keyring "
+            msg += "(locked or access denied). The password will be kept "
+            msg += "for this session only."
             raise SecretStorageError(msg) from exc
 
     def delete_password(self, key: str) -> None:
@@ -75,16 +75,16 @@ class KeyringSecretStore(SecretStore):
         except keyring.errors.KeyringError as exc:
             self.__log.warning("Keychain delete failed: {}", type(exc).__name__)
             raise SecretStorageError(
-                "Impossibile rimuovere la password dal portachiavi."
+                "Cannot remove the password from the keyring."
             ) from exc
 
     def __require_backend(self) -> KeyringBackend:
         backend = self.backend
         if not KeyringSecretStore.__is_secure(backend):
-            msg = "Nessun portachiavi sicuro disponibile. Su Linux è "
-            msg += "necessario un servizio compatibile con Secret Service "
-            msg += "(es. GNOME Keyring o KWallet). La password non verrà "
-            msg += "salvata e andrà reinserita."
+            msg = "No secure keyring is available. On Linux a service "
+            msg += "compatible with Secret Service is required "
+            msg += "(e.g. GNOME Keyring or KWallet). The password will not "
+            msg += "be saved and must be entered again."
             raise SecretStorageError(msg)
         return backend
 

@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "querylean"
 # The version is read only from the .version file.
 dynamic = ["version"]
-description = "Client desktop minimale per eseguire query MySQL di sola lettura"
+description = "Minimal desktop client for read-only MySQL queries"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Gabriele Murara" }]

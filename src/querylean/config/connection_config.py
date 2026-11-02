@@ -1,4 +1,4 @@
-"""Parameters of the single MySQL connection (never the password)."""
+"""Parameters of one saved MySQL connection (never the password)."""
 
 from __future__ import annotations
 
@@ -28,7 +28,9 @@ class ConnectionConfig:
         connect_timeout: int = DEFAULT_CONNECT_TIMEOUT,
         query_timeout: int = DEFAULT_QUERY_TIMEOUT,
         row_limit: int = DEFAULT_ROW_LIMIT,
+        name: str = "",
     ) -> None:
+        self.__name = ""
         self.__host = ""
         self.__port = ConnectionConfig.DEFAULT_PORT
         self.__database = ""
@@ -43,8 +45,18 @@ class ConnectionConfig:
         self.connect_timeout = connect_timeout
         self.query_timeout = query_timeout
         self.row_limit = row_limit
+        self.name = name
 
     # --------------------------------------------------------------- properties
+    @property
+    def name(self) -> str:
+        """Optional name shown in the connection list."""
+        return self.__name
+
+    @name.setter
+    def name(self, value: str) -> None:
+        self.__name = str(value).strip()
+
     @property
     def host(self) -> str:
         """Server host name or address."""
@@ -126,6 +138,14 @@ class ConnectionConfig:
         )
 
     # ---------------------------------------------------------------- behaviour
+    def default_name(self) -> str:
+        """``<user>@<host>/<database>``: the name used when none is set."""
+        return "{}@{}/{}".format(self.__username, self.__host, self.__database)
+
+    def display_name(self) -> str:
+        """The configured name, or ``default_name()`` when it is empty."""
+        return self.__name or self.default_name()
+
     def missing_fields(self) -> list[str]:
         """Labels (shown to the user) of required fields that are empty."""
         missing = []
@@ -148,6 +168,7 @@ class ConnectionConfig:
     def to_dict(self) -> dict[str, Any]:
         """Serializable representation."""
         return {
+            "name": self.__name,
             "host": self.__host,
             "port": self.__port,
             "database": self.__database,

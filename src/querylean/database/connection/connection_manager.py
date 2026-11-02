@@ -33,7 +33,7 @@ class ConnectionManager:
         __SQL_MODE,
     )
     # User-facing message shown when a query is requested without a session.
-    NOT_CONNECTED = "Non connesso: premi «Connetti» prima di eseguire una "
+    NOT_CONNECTED = "Not connected: press “Connect” before running a "
     NOT_CONNECTED += "query."
     __log = LogManager.get_logger(__name__)
 
@@ -176,8 +176,8 @@ class ConnectionManager:
         except Exception as exc:
             self.__log.warning("Session initialisation failed: {!r}", exc)
             ConnectionManager.__close_quietly(conn)
-            msg = "Connessione aperta ma impossibile impostare la sessione "
-            msg += "in sola lettura. Vedi il log per i dettagli."
+            msg = "Connection opened, but the session could not be made "
+            msg += "read-only. See the log for details."
             raise DatabaseError(msg) from None
         return conn
 

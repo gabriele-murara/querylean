@@ -3,12 +3,12 @@
 *[English](README.md) · Italiano*
 
 Client desktop minimale per **eseguire query di sola lettura** su un database MySQL.
-È ispirato a DBeaver, ma volutamente ridotto all'essenziale: una connessione, un editor
-SQL e una tabella di risultati copiabili.
+È ispirato a DBeaver, ma volutamente ridotto all'essenziale: connessioni salvate, una alla
+volta, un editor SQL e una tabella di risultati copiabili.
 
 ## Funzionalità
 
-- Una sola connessione MySQL, configurabile dalla GUI. Si può testare la connessione prima di salvarla.
+- Più connessioni MySQL salvate, ciascuna con un nome facoltativo, gestite dal menu **Connections** (Connessioni). Se ne usa una alla volta e si può testare la connessione prima di salvarla.
 - La password è conservata nel portachiavi del sistema operativo, mai in chiaro.
 - Editor SQL con:
   - numeri di riga;
@@ -16,7 +16,7 @@ SQL e una tabella di risultati copiabili.
   - esecuzione con `Ctrl+Invio` (Linux) o `Cmd+Invio` (macOS).
 - Barra laterale con le tabelle e le viste del database a cui si ha accesso: un clic su una tabella prepara nell'editor `SELECT * FROM <tabella> LIMIT 1;`.
 - Sono ammesse solo istruzioni di lettura (`SELECT`, `WITH … SELECT`, `UNION`, `SHOW`, `DESCRIBE`/`DESC`, `EXPLAIN SELECT`). Ogni query passa da un validatore basato sul parsing.
-- L'esecuzione avviene fuori dal thread della GUI, con indicatore di attività, pulsante **Interrompi** e timeout.
+- L'esecuzione avviene fuori dal thread della GUI, con indicatore di attività, pulsante **Stop** (Interrompi) e timeout.
 - Tabella dei risultati non modificabile:
   - `NULL` è distinto dalla stringa vuota;
   - colonne ridimensionabili;
@@ -62,19 +62,33 @@ La compatibilità macOS va considerata confermata solo quando la pipeline CI cor
 
 ## Uso
 
-La barra in alto contiene, nell'ordine: **Esegui** (▶), **Interrompi** (attivo solo durante l'esecuzione), **Esporta** (menu a tendina, attivo quando c'è un risultato), **Connetti**/**Disconnetti**, **Configurazione** e **Informazioni** (versione, autore, licenza). Lo stato della connessione è in basso a destra. A sinistra, per tutta l'altezza della finestra, c'è la barra **Tabelle**.
+La barra in alto contiene, nell'ordine: **Run** (Esegui, ▶), **Stop** (Interrompi, attivo solo durante l'esecuzione), **Export** (Esporta, menu a tendina, attivo quando c'è un risultato), **Connect**/**Disconnect** (Connetti/Disconnetti), **Connections** (Connessioni, menu a tendina) e **About** (Informazioni: versione, autore, licenza). Lo stato della connessione è in basso a destra. L'interfaccia è in inglese. A sinistra, per tutta l'altezza della finestra, c'è la barra **Tables** (Tabelle).
 
-1. **Configurazione**: compila host, porta, database, username, password e i timeout, poi usa **Test connessione** e **Salva configurazione**. Salvare non apre la connessione.
-2. **Connetti**: lo stato passa da *Disconnesso* a *Connessione in corso* e poi a *Connesso* o *Errore di connessione*. Se la password non è nel portachiavi, viene richiesta.
-3. Scrivi la query e premi **Esegui** oppure `Ctrl/Cmd+Invio`. In alternativa scegli una tabella nella barra laterale (vedi [Barra delle tabelle](#barra-delle-tabelle)). Sotto i risultati compaiono righe e tempo, poi "Query eseguita:" seguito dalla query appena eseguita, su una riga. Oltre i 160 caratteri la query è troncata con "…"; il testo completo è nel tooltip del messaggio.
+1. **Connections** → **New connection…** (Connessioni → Nuova connessione…): compila nome (facoltativo), host, porta, database, username, password e i timeout, poi usa **Test connection** (Test connessione) e **Save** (Salva). Salvare non apre la connessione (vedi [Connessioni](#connessioni)).
+2. **Connect** apre la connessione attiva, quella con la spunta nel menu **Connections**: lo stato passa da *Disconnected* (Disconnesso) a *Connecting* (Connessione in corso) e poi a *Connected* (Connesso) o *Connection error* (Errore di connessione). Se la password non è nel portachiavi, viene richiesta.
+3. Scrivi la query e premi **Run** oppure `Ctrl/Cmd+Invio`. In alternativa scegli una tabella nella barra laterale (vedi [Barra delle tabelle](#barra-delle-tabelle)). Sotto i risultati compaiono righe e tempo, poi "Query executed:" (Query eseguita:) seguito dalla query appena eseguita, su una riga. Oltre i 160 caratteri la query è troncata con "…"; il testo completo è nel tooltip del messaggio.
 4. Seleziona celle o righe e premi `Ctrl/Cmd+C`. Il menu contestuale offre anche le varianti "con intestazioni" e "righe intere".
-5. Per salvare il risultato su file apri il menu **Esporta** e scegli il formato (vedi [Esportazione](#esportazione)).
+5. Per salvare il risultato su file apri il menu **Export** e scegli il formato (vedi [Esportazione](#esportazione)).
+
+### Connessioni
+
+Il pulsante **Connections** (Connessioni) apre un menu con **New connection…** (Nuova connessione…) e, sotto, le connessioni salvate in ordine alfabetico. Ogni connessione è mostrata con il suo nome oppure, se il nome è vuoto, come `<utente>@<host>/<database>`. La connessione attiva ha la spunta.
+
+Ogni voce ha un sottomenu:
+
+- **Connect** (Connetti): la rende attiva e si connette. Se si è già connessi a un'altra, quella viene chiusa prima.
+- **Edit…** (Modifica…): apre la finestra di compilazione con i valori salvati. Se è la connessione in uso, le modifiche valgono dalla prossima connessione.
+- **Delete…** (Elimina…): chiede conferma, poi cancella il file della connessione. Se è quella in uso, la chiude.
+
+Il pulsante **Connect** (Connetti) della barra usa la connessione attiva; se non ne esiste nessuna, apre **New connection…**. Una connessione appena salvata diventa attiva se in quel momento non si è connessi.
+
+Ogni connessione è un file JSON a sé (vedi [File locali](#file-locali)) e non contiene mai la password.
 
 ### Barra delle tabelle
 
-Dopo la connessione la barra **Tabelle** elenca tabelle e viste del database configurato (`SHOW FULL TABLES`), cioè solo quelle a cui l'account ha accesso. Le viste sono in corsivo e in fondo c'è il numero di elementi.
+Dopo la connessione la barra **Tables** (Tabelle) elenca tabelle e viste del database configurato (`SHOW FULL TABLES`), cioè solo quelle a cui l'account ha accesso. Le viste sono in corsivo e in fondo c'è il numero di elementi.
 
-- Un clic su una voce, oppure `Invio` sulla voce selezionata, sostituisce il contenuto dell'editor con `SELECT * FROM <tabella> LIMIT 1;`. La query **non viene eseguita**: premi **Esegui** per lanciarla. Il testo precedente si recupera con `Ctrl/Cmd+Z`.
+- Un clic su una voce, oppure `Invio` sulla voce selezionata, sostituisce il contenuto dell'editor con `SELECT * FROM <tabella> LIMIT 1;`. La query **non viene eseguita**: premi **Run** per lanciarla. Il testo precedente si recupera con `Ctrl/Cmd+Z`.
 - Il nome della tabella è sempre tra backtick, con gli eventuali backtick interni raddoppiati, quindi funzionano anche nomi con spazi o parole riservate.
 - Il pulsante ⟳ ricarica l'elenco, per esempio dopo la creazione di una tabella. Alla disconnessione l'elenco si svuota.
 - La lettura dell'elenco passa dal validatore, rispetta il timeout delle query e mostra al massimo 10.000 voci. Un errore (per esempio permessi insufficienti) viene mostrato nella barra, senza chiudere la connessione.
@@ -92,10 +106,10 @@ Le celle copiate sono separate da tabulazioni e le righe da a capo. La selezione
 
 ### Esportazione
 
-**Esporta** salva su file il risultato mostrato nella tabella, con le intestazioni delle colonne. Il pulsante apre un menu:
+**Export** (Esporta) salva su file il risultato mostrato nella tabella, con le intestazioni delle colonne. Il pulsante apre un menu:
 
 - **Excel (.xlsx)**, **CSV (.csv)**, **JSON (.json)**: la finestra di salvataggio propone solo quel formato. Se il nome non ha la sua estensione, viene aggiunta.
-- **Esporta…**: la finestra di salvataggio propone tutti i formati. Decide l'estensione del nome (`.xlsx`, `.csv`, `.json`) oppure, se manca, il formato selezionato nella finestra.
+- **Export…** (Esporta…): la finestra di salvataggio propone tutti i formati. Decide l'estensione del nome (`.xlsx`, `.csv`, `.json`) oppure, se manca, il formato selezionato nella finestra.
 
 - Si esportano **le righe già caricate**, cioè al massimo il limite di righe impostato: la query non viene rieseguita. Se il risultato era troncato, il messaggio finale lo ricorda.
 - Il file viene scritto in un thread separato, quindi la finestra resta utilizzabile. Lo si scrive prima in un file temporaneo nella stessa cartella, poi lo si rinomina: un file esistente viene sostituito solo da un'esportazione completa.
@@ -104,7 +118,7 @@ Le celle copiate sono separate da tabulazioni e le righe da a capo. La selezione
 
 | Formato | Contenuto |
 | --- | --- |
-| Excel (`.xlsx`) | Un foglio "Risultato" con la riga di intestazione in grassetto e bloccata. Numeri, booleani, date e date-ora sono valori nativi di Excel. Il testo non diventa mai una formula, anche se inizia con `=`. Restano testo i valori che Excel altererebbe: interi e DECIMAL con più di 15 cifre significative, date anteriori al 1900, valori `TIME`. `NULL` e stringa vuota sono entrambi celle vuote. I caratteri di controllo non ammessi da Excel diventano `�`; le celle oltre 32.767 caratteri vengono troncate e il messaggio finale le conta |
+| Excel (`.xlsx`) | Un foglio "Result" con la riga di intestazione in grassetto e bloccata. Numeri, booleani, date e date-ora sono valori nativi di Excel. Il testo non diventa mai una formula, anche se inizia con `=`. Restano testo i valori che Excel altererebbe: interi e DECIMAL con più di 15 cifre significative, date anteriori al 1900, valori `TIME`. `NULL` e stringa vuota sono entrambi celle vuote. I caratteri di controllo non ammessi da Excel diventano `�`; le celle oltre 32.767 caratteri vengono troncate e il messaggio finale le conta |
 | CSV (`.csv`) | UTF-8, separatore virgola, riga di intestazione. I campi sono tra virgolette solo quando serve, e gli a capo dentro i valori restano. `NULL` diventa un campo vuoto, come nella copia |
 | JSON (`.json`) | UTF-8, un array con un oggetto per riga, con chiave il nome della colonna. `NULL` diventa `null`, mentre interi, numeri a virgola mobile e booleani restano numeri e booleani. I DECIMAL diventano stringhe, per non perdere cifre. I nomi di colonna ripetuti ricevono un suffisso (`id`, `id_2`) |
 
@@ -164,7 +178,9 @@ Raccomandazioni:
 ### Password
 
 - È salvata nel portachiavi del sistema operativo con il servizio `querylean` e la chiave `utente@host:porta`. Su Linux si può verificare con `secret-tool search service querylean`.
-- **Non** compare mai nel file di configurazione né nei log, che passano da un filtro di redazione.
+- La chiave è quella dell'account MySQL, non della connessione: più connessioni allo stesso account (per esempio su database diversi) condividono la password. Quando si elimina l'ultima connessione che usa un account, la sua password viene tolta dal portachiavi.
+- Si legge dal portachiavi solo quando serve, cioè alla connessione o alla modifica.
+- **Non** compare mai nei file di configurazione o delle connessioni, né nei log, che passano da un filtro di redazione.
 - I backend di keyring in chiaro (`keyrings.alt`) o "fail" sono considerati non disponibili. In quel caso la password resta solo in memoria per la sessione.
 - Se il portachiavi è bloccato o nega l'accesso, viene mostrato un messaggio e la password viene richiesta al momento della connessione.
 
@@ -172,8 +188,11 @@ Raccomandazioni:
 
 | File | Linux | macOS |
 | --- | --- | --- |
-| Configurazione (permessi 0600) | `~/.config/querylean/config.json` | `~/Library/Application Support/querylean/config.json` |
+| Configurazione: connessione attiva, finestra (permessi 0600) | `~/.config/querylean/config.json` | `~/Library/Application Support/querylean/config.json` |
+| Connessioni salvate, un file `<id>.json` ciascuna (permessi 0600) | `~/.config/querylean/connections/` | `~/Library/Application Support/querylean/connections/` |
 | Log (rotazione 1 MB × 3) | `~/.local/state/querylean/log/` | `~/Library/Logs/querylean/` |
+
+Le versioni fino alla 1.2 avevano una sola connessione dentro `config.json`. Al primo avvio della nuova versione viene salvata come prima connessione, e la sua password nel portachiavi resta valida.
 
 Agli utenti non vengono mai mostrati stack trace: i dettagli tecnici finiscono nel log, senza segreti.
 
@@ -183,7 +202,7 @@ Agli utenti non vengono mai mostrati stack trace: i dettagli tecnici finiscono n
 - Il **timeout di esecuzione** funziona così:
   - prima di ogni query viene impostato `MAX_EXECUTION_TIME` di sessione, che il server applica alle `SELECT`;
   - un watchdog lato client, scaduto il timeout più 2 secondi, invia `KILL QUERY` da una connessione separata. Questo copre anche `SHOW`/`EXPLAIN` e i server che non supportano `MAX_EXECUTION_TIME`, come MariaDB.
-- **Interrompi** invia `KILL QUERY` sulla stessa connessione separata.
+- **Stop** invia `KILL QUERY` sulla stessa connessione separata.
 - Limiti noti:
   - `KILL QUERY` richiede che l'utente possa terminare le proprie query, cosa sempre consentita sulle proprie sessioni;
   - se il server non è raggiungibile, la richiesta di interruzione fallisce dopo il timeout di connessione. La GUI resta comunque reattiva perché la query gira in un thread separato;
@@ -246,7 +265,7 @@ La versione di QueryLean si legge **solo** dal file `.version` nella radice del 
 - `pyproject.toml`, come versione dinamica;
 - gli script di build, per il nome degli artefatti;
 - lo spec PyInstaller, che lo include nel pacchetto e lo usa per `Info.plist` su macOS;
-- l'applicazione a runtime, per la finestra **Informazioni** e il log.
+- l'applicazione a runtime, per la finestra **About** e il log.
 
 Dopo una modifica, dai sorgenti va rieseguito `pip install -e .` perché anche i metadati del pacchetto riportino la nuova versione.
 
@@ -299,7 +318,7 @@ Dove trovare le licenze:
 - DMG: accanto all'applicazione, insieme a `LICENSE.txt`;
 - AppImage: dentro il bundle (`usr/lib/querylean/_internal/licenses/`).
 
-La finestra **Informazioni** rimanda al file. Nei pacchetti, lo smoke test fallisce se il file manca.
+La finestra **About** rimanda al file. Nei pacchetti, lo smoke test fallisce se il file manca.
 
 ### Linux (AppImage)
 
@@ -389,7 +408,7 @@ Per verificare un download: `sha256sum -c SHA256SUMS --ignore-missing`.
 
 ## Limiti di questa versione
 
-- Una sola connessione e una sola query alla volta, una sola istruzione per esecuzione.
+- Una sola connessione aperta e una sola query alla volta, una sola istruzione per esecuzione.
 - Non sono supportati: TLS/SSH tunnel configurabili da GUI, autocompletamento, cronologia, paginazione.
 - L'esportazione salva solo le righe caricate (al massimo 10.000): per esportarne di più serve uno strumento come `mysqldump` o `mysql --batch`.
 - `SHOW` è ammesso solo nelle forme riconosciute dal parser; le altre vengono rifiutate.

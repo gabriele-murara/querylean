@@ -1,4 +1,4 @@
-"""Configuration dialog of the single connection."""
+"""Dialog to create or edit a saved connection."""
 
 from __future__ import annotations
 
@@ -22,9 +22,13 @@ from querylean.ui.worker.db_worker import DbWorker
 
 
 class ConnectionDialog(QDialog):
-    """Edits host, port, database, credentials, timeouts and row limit; offers
-    "Test connessione" (asynchronous, through the worker) and "Salva
-    configurazione"."""
+    """Edits name, host, port, database, credentials, timeouts and row
+    limit; offers "Test connection" (asynchronous, through the worker) and
+    "Save". The name is optional: when empty the connection is listed as
+    ``<user>@<host>/<database>``, shown as placeholder."""
+
+    NEW_TITLE = "New connection"
+    EDIT_TITLE = "Edit connection"
 
     __OK_COLOR = "#1a7f37"
     __ERROR_COLOR = "#c62828"
@@ -37,13 +41,15 @@ class ConnectionDialog(QDialog):
         worker: DbWorker,
         *,
         keyring_available: bool,
+        title: str = NEW_TITLE,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Configurazione connessione")
+        self.setWindowTitle(title)
         self.setMinimumWidth(440)
         self.__worker = worker
 
+        self.__name = QLineEdit(config.name)
         self.__host = QLineEdit(config.host)
         self.__port = ConnectionDialog.__spin(
             1, ConnectionConfig.MAX_PORT, config.port
@@ -52,17 +58,17 @@ class ConnectionDialog(QDialog):
         self.__username = QLineEdit(config.username)
         self.__password = QLineEdit(password)
         self.__password.setEchoMode(QLineEdit.EchoMode.Password)
-        self.__show_password = QCheckBox("Mostra password")
+        self.__show_password = QCheckBox("Show password")
         self.__show_password.toggled.connect(self.__on_toggle_password)
 
         self.__remember_password = QCheckBox(
-            "Salva la password nel portachiavi di sistema"
+            "Save the password in the system keyring"
         )
         self.__remember_password.setChecked(keyring_available)
         self.__remember_password.setEnabled(keyring_available)
         if not keyring_available:
-            tip = "Portachiavi non disponibile: la password resterà in "
-            tip += "memoria solo per questa sessione."
+            tip = "Keyring not available: the password will be kept in "
+            tip += "memory for this session only."
             self.__remember_password.setToolTip(tip)
 
         max_timeout = ConnectionConfig.MAX_TIMEOUT_SECONDS
@@ -78,20 +84,21 @@ class ConnectionDialog(QDialog):
         self.__row_limit.setSingleStep(ConnectionDialog.__ROW_LIMIT_STEP)
 
         form = QFormLayout()
+        form.addRow("Name", self.__name)
         form.addRow("Host *", self.__host)
-        form.addRow("Porta *", self.__port)
+        form.addRow("Port *", self.__port)
         form.addRow("Database *", self.__database)
         form.addRow("Username *", self.__username)
         form.addRow("Password *", self.__password)
         form.addRow("", self.__show_password)
         form.addRow("", self.__remember_password)
-        form.addRow("Timeout connessione", self.__connect_timeout)
-        form.addRow("Timeout query", self.__query_timeout)
-        form.addRow("Righe massime", self.__row_limit)
+        form.addRow("Connection timeout", self.__connect_timeout)
+        form.addRow("Query timeout", self.__query_timeout)
+        form.addRow("Maximum rows", self.__row_limit)
 
-        hint_text = "Usa un account MySQL con soli privilegi SELECT: la "
-        hint_text += "modalità di sola lettura è garantita principalmente dai "
-        hint_text += "privilegi dell'account."
+        hint_text = "Use a MySQL account with SELECT privileges only: "
+        hint_text += "read-only mode is guaranteed mainly by the account "
+        hint_text += "privileges."
         hint = QLabel(hint_text)
         hint.setWordWrap(True)
         hint.setStyleSheet("color: palette(placeholder-text);")
@@ -102,11 +109,11 @@ class ConnectionDialog(QDialog):
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
 
-        self.__test_button = QPushButton("Test connessione")
+        self.__test_button = QPushButton("Test connection")
         self.__test_button.clicked.connect(self.test_connection)
         buttons = QDialogButtonBox()
         self.__save_button = buttons.addButton(
-            "Salva configurazione", QDialogButtonBox.ButtonRole.AcceptRole
+            "Save", QDialogButtonBox.ButtonRole.AcceptRole
         )
         buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.save)
@@ -124,8 +131,16 @@ class ConnectionDialog(QDialog):
         layout.addLayout(bottom)
 
         worker.test_finished.connect(self.__on_test_finished)
+        for field in (self.__host, self.__database, self.__username):
+            field.textChanged.connect(self.__update_name_placeholder)
+        self.__update_name_placeholder()
 
     # ------------------------------------------------------------------ widgets
+    @property
+    def name(self) -> QLineEdit:
+        """Optional name field."""
+        return self.__name
+
     @property
     def host(self) -> QLineEdit:
         """Host field."""
@@ -183,18 +198,19 @@ class ConnectionDialog(QDialog):
 
     @property
     def test_button(self) -> QPushButton:
-        """ "Test connessione" button."""
+        """ "Test connection" button."""
         return self.__test_button
 
     @property
     def save_button(self) -> QPushButton:
-        """ "Salva configurazione" button."""
+        """ "Save" button."""
         return self.__save_button
 
     # ------------------------------------------------------------------ values
     def config(self) -> ConnectionConfig:
         """Configuration currently entered in the form."""
         return ConnectionConfig(
+            name=self.__name.text(),
             host=self.__host.text(),
             port=self.__port.value(),
             database=self.__database.text(),
@@ -222,7 +238,7 @@ class ConnectionDialog(QDialog):
             return
         self.__test_button.setEnabled(False)
         self.__status.setStyleSheet("")
-        self.__status.setText("Test della connessione in corso…")
+        self.__status.setText("Testing the connection…")
         self.__worker.test_requested.emit(self.config(), self.password_value())
 
     def save(self) -> None:
@@ -242,10 +258,14 @@ class ConnectionDialog(QDialog):
     def __check_required(self) -> bool:
         missing = self.missing_fields()
         if missing:
-            msg = "Campi obbligatori mancanti: {}."
+            msg = "Missing required fields: {}."
             self.__set_status(False, msg.format(", ".join(missing)))
             return False
         return True
+
+    def __update_name_placeholder(self, *_: object) -> None:
+        msg = "Optional, default: {}"
+        self.__name.setPlaceholderText(msg.format(self.config().default_name()))
 
     def __on_test_finished(self, ok: bool, message: str) -> None:
         self.__test_button.setEnabled(True)

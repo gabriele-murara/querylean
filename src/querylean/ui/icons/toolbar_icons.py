@@ -39,17 +39,17 @@ class ToolbarIcons:
 
     @staticmethod
     def play() -> QIcon:
-        """Green right-pointing triangle ("Esegui")."""
+        """Green right-pointing triangle ("Run")."""
         return ToolbarIcons.__render(ToolbarIcons.__draw_play)
 
     @staticmethod
     def stop() -> QIcon:
-        """Red rounded square ("Interrompi")."""
+        """Red rounded square ("Stop")."""
         return ToolbarIcons.__render(ToolbarIcons.__draw_stop)
 
     @staticmethod
     def export() -> QIcon:
-        """Arrow leaving a tray ("Esporta")."""
+        """Arrow leaving a tray ("Export")."""
         return ToolbarIcons.__render(ToolbarIcons.__draw_export)
 
     @staticmethod
@@ -59,22 +59,22 @@ class ToolbarIcons:
 
     @staticmethod
     def connect() -> QIcon:
-        """Plug and socket joined together ("Connetti")."""
+        """Plug and socket joined together ("Connect")."""
         return ToolbarIcons.__render(ToolbarIcons.__draw_connect)
 
     @staticmethod
     def disconnect() -> QIcon:
-        """Plug pulled away from its socket ("Disconnetti")."""
+        """Plug pulled away from its socket ("Disconnect")."""
         return ToolbarIcons.__render(ToolbarIcons.__draw_disconnect)
 
     @staticmethod
     def settings() -> QIcon:
-        """Gear ("Configurazione")."""
+        """Gear ("Connections")."""
         return ToolbarIcons.__render(ToolbarIcons.__draw_settings)
 
     @staticmethod
     def about() -> QIcon:
-        """Circle with an "i" ("Informazioni")."""
+        """Circle with an "i" ("About")."""
         return ToolbarIcons.__render(ToolbarIcons.__draw_about)
 
     # ---------------------------------------------------------------- internals

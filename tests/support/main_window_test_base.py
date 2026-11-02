@@ -43,11 +43,13 @@ class MainWindowTestBase(ABC):  # noqa: B024 (fixture holder, no abstract method
 
     @staticmethod
     def configure(window: MainWindow, password: str = "pw") -> None:
-        """Give the window a complete configuration and a password."""
-        window.app_config.connection = ConnectionConfig(
-            host="db", database="app", username="ro"
+        """Save a complete connection (password kept for the session only)
+        and make it active."""
+        window.save_connection(
+            ConnectionConfig(host="db", database="app", username="ro"),
+            password,
+            remember=False,
         )
-        window.password = password
 
     @staticmethod
     def connect(qtbot, window: MainWindow) -> None:

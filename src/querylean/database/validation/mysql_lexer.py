@@ -17,12 +17,12 @@ class MySqlLexer:
     and unterminated strings or comments.
     """
 
-    __AMBIGUOUS_DASHES = "Sequenza «--» ambigua: in MySQL è un commento "
-    __AMBIGUOUS_DASHES += "solo se seguita da uno spazio. Aggiungi uno "
-    __AMBIGUOUS_DASHES += "spazio o riformula l'espressione."
-    __EXECUTABLE_COMMENT = "I commenti eseguibili MySQL (/*! … */) e gli "
-    __EXECUTABLE_COMMENT += "hint dell'ottimizzatore (/*+ … */) non sono "
-    __EXECUTABLE_COMMENT += "consentiti."
+    __AMBIGUOUS_DASHES = "Ambiguous “--” sequence: in MySQL it starts a "
+    __AMBIGUOUS_DASHES += "comment only when followed by a space. Add a "
+    __AMBIGUOUS_DASHES += "space or rewrite the expression."
+    __EXECUTABLE_COMMENT = "MySQL executable comments (/*! … */) and "
+    __EXECUTABLE_COMMENT += "optimizer hints (/*+ … */) are not "
+    __EXECUTABLE_COMMENT += "allowed."
 
     @staticmethod
     def tokenize(sql: str) -> LexedStatement:
@@ -61,7 +61,7 @@ class MySqlLexer:
                     raise ValidationRejected(MySqlLexer.__EXECUTABLE_COMMENT)
                 end = sql.find("*/", i + 2)
                 if end < 0:
-                    raise ValidationRejected("Commento /* … */ non chiuso.")
+                    raise ValidationRejected("Unterminated /* … */ comment.")
                 i = end + 2
             elif ch in ("'", '"'):
                 end = MySqlLexer.__scan_quoted(sql, i, ch, backslash=True)
@@ -78,7 +78,7 @@ class MySqlLexer:
                 i += 1
             elif ch == ":" and nxt == "=":
                 raise ValidationRejected(
-                    "L'assegnazione di variabili (:=) non è consentita."
+                    "Variable assignment (:=) is not allowed."
                 )
             elif MySqlLexer.__is_word_char(ch) and not ch.isdigit():
                 j = i + 1
@@ -137,6 +137,4 @@ class MySqlLexer:
                     continue
                 return i + 1
             i += 1
-        raise ValidationRejected(
-            "Stringa o identificatore tra virgolette non chiuso."
-        )
+        raise ValidationRejected("Unterminated string or quoted identifier.")

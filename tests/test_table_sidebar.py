@@ -28,7 +28,7 @@ class TestTableSidebar:
         assert [i.text() for i in items] == ["customers", "v_totals"]
         assert not items[0].font().italic()
         assert items[1].font().italic()
-        assert sidebar.status_label.text() == "2 tabelle"
+        assert sidebar.status_label.text() == "2 tables"
         assert sidebar.refresh_button.isEnabled()
 
     def test_click_and_enter_choose_the_table(self, qtbot):
@@ -58,9 +58,9 @@ class TestTableSidebar:
         assert sidebar.list_widget.count() == 2
         assert sidebar.status_label.text() == TableSidebar.LOADING
         assert not sidebar.refresh_button.isEnabled()
-        sidebar.set_error("Accesso negato")
+        sidebar.set_error("Access denied")
         assert sidebar.list_widget.count() == 0
-        assert sidebar.status_label.text() == "Accesso negato"
+        assert sidebar.status_label.text() == "Access denied"
         assert sidebar.refresh_button.isEnabled()
         sidebar.show_message(TableSidebar.NOT_CONNECTED)
         assert not sidebar.refresh_button.isEnabled()
@@ -72,4 +72,4 @@ class TestTableSidebar:
             TableInfo("t{}".format(i)) for i in range(TableCatalog.MAX_TABLES)
         ]
         sidebar.set_tables(tables)
-        assert "Mostrate solo le prime" in sidebar.status_label.text()
+        assert "Showing only the first" in sidebar.status_label.text()
