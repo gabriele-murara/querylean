@@ -1,40 +1,60 @@
-"""Side bar with the tables available to the connected user."""
+"""Side bar with the tables available to the connected user and their
+columns."""
 
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtCore import QPoint, QSize, Qt, Signal
+from PySide6.QtGui import QFont, QGuiApplication, QPalette
 from PySide6.QtWidgets import (
     QHBoxLayout,
+    QHeaderView,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
+    QLineEdit,
+    QMenu,
     QToolButton,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
+from querylean.completion.completion_kind import CompletionKind
+from querylean.completion.schema_model import SchemaModel
+from querylean.database.schema.column_info import ColumnInfo
 from querylean.database.schema.table_catalog import TableCatalog
 from querylean.database.schema.table_info import TableInfo
+from querylean.ui.icons.completion_icons import CompletionIcons
 from querylean.ui.icons.toolbar_icons import ToolbarIcons
 
 
 class TableSidebar(QWidget):
-    """Title "Tables" with a refresh button, the list of tables and views
-    (views in italics) and a status line.
+    """Title "Tables" with a refresh button, a filter, the tree of tables
+    and views (views in italics) and a status line.
 
-    A click on a table, or Enter on the current one, emits
-    ``table_chosen(TableInfo)``; the refresh button emits
-    ``refresh_requested``.
+    Expanding a table shows its columns with type, keys and a tooltip with
+    the full definition; columns not loaded yet are requested with
+    ``columns_requested(table)``. A single click on a table expands it.
+    Double click (or Enter) on a table emits ``table_chosen(TableInfo)``,
+    on a column ``column_chosen(name)``. The context menu offers the same
+    actions and the copy of the name.
     """
 
     table_chosen = Signal(object)
+    column_chosen = Signal(str)
+    columns_requested = Signal(str)
     refresh_requested = Signal()
 
     NOT_CONNECTED = "Connect to see the tables."
     LOADING = "Loading the tables…"
     NO_TABLES = "No tables available."
+    LOADING_COLUMNS = "Loading the columns…"
+    NO_COLUMNS = "No columns available."
+    FILTER_PLACEHOLDER = "Filter tables…"
+    PREPARE_TEXT = "Prepare SELECT"
+    INSERT_TEXT = "Insert in the editor"
+    COPY_TEXT = "Copy name"
     __TABLE_ROLE = Qt.ItemDataRole.UserRole
+    __COLUMN_ROLE = Qt.ItemDataRole.UserRole + 1
     __MIN_WIDTH = 160
     __ICON_SIZE = 16
 
@@ -42,6 +62,10 @@ class TableSidebar(QWidget):
         super().__init__(parent)
         self.setObjectName("table-sidebar")
         self.setMinimumWidth(TableSidebar.__MIN_WIDTH)
+        self.__schema: SchemaModel | None = None
+        self.__table_count = 0
+        self.__status_text = ""
+        self.__status_error = False
 
         title = QLabel("Tables")
         bold = QFont(title.font())
@@ -60,10 +84,28 @@ class TableSidebar(QWidget):
         header.addWidget(title, 1)
         header.addWidget(self.__refresh_button)
 
-        self.__list = QListWidget()
-        self.__list.setUniformItemSizes(True)
-        self.__list.itemClicked.connect(self.__on_item)
-        self.__list.itemActivated.connect(self.__on_item)
+        self.__filter = QLineEdit()
+        self.__filter.setPlaceholderText(TableSidebar.FILTER_PLACEHOLDER)
+        self.__filter.setClearButtonEnabled(True)
+        self.__filter.textChanged.connect(self.__apply_filter)
+
+        self.__tree = QTreeWidget()
+        self.__tree.setColumnCount(2)
+        self.__tree.setHeaderHidden(True)
+        self.__tree.setUniformRowHeights(True)
+        self.__tree.setExpandsOnDoubleClick(False)
+        self.__tree.setIconSize(QSize(size - 2, size - 2))
+        self.__tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        tree_header = self.__tree.header()
+        tree_header.setStretchLastSection(False)
+        tree_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        tree_header.setSectionResizeMode(
+            1, QHeaderView.ResizeMode.ResizeToContents
+        )
+        self.__tree.itemActivated.connect(self.__on_activated)
+        self.__tree.itemClicked.connect(self.__on_clicked)
+        self.__tree.itemExpanded.connect(self.__on_expanded)
+        self.__tree.customContextMenuRequested.connect(self.__on_menu)
 
         self.__status_label = QLabel()
         self.__status_label.setWordWrap(True)
@@ -72,14 +114,20 @@ class TableSidebar(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addLayout(header)
-        layout.addWidget(self.__list, 1)
+        layout.addWidget(self.__filter)
+        layout.addWidget(self.__tree, 1)
         layout.addWidget(self.__status_label)
         self.show_message(TableSidebar.NOT_CONNECTED)
 
     @property
-    def list_widget(self) -> QListWidget:
-        """List of tables."""
-        return self.__list
+    def tree_widget(self) -> QTreeWidget:
+        """Tree of tables (top level) and columns (children)."""
+        return self.__tree
+
+    @property
+    def filter_edit(self) -> QLineEdit:
+        """Filter of the table names."""
+        return self.__filter
 
     @property
     def refresh_button(self) -> QToolButton:
@@ -91,11 +139,42 @@ class TableSidebar(QWidget):
         """Status line (loading, errors, counts)."""
         return self.__status_label
 
+    def set_schema(self, schema: SchemaModel | None) -> None:
+        """Model the columns are read from when a table is expanded."""
+        self.__schema = schema
+
     def tables(self) -> list[TableInfo]:
-        """Listed tables, in display order."""
+        """Listed tables, in display order (filtered ones included)."""
         return [
-            self.__list.item(i).data(TableSidebar.__TABLE_ROLE)
-            for i in range(self.__list.count())
+            self.__tree.topLevelItem(i).data(0, TableSidebar.__TABLE_ROLE)
+            for i in range(self.__tree.topLevelItemCount())
+        ]
+
+    def table_item(self, name: str) -> QTreeWidgetItem | None:
+        """Item of the table ``name``, if listed."""
+        for i in range(self.__tree.topLevelItemCount()):
+            item = self.__tree.topLevelItem(i)
+            if item.data(0, TableSidebar.__TABLE_ROLE).name == name:
+                return item
+        return None
+
+    def visible_tables(self) -> list[str]:
+        """Names of the tables not hidden by the filter."""
+        return [
+            self.__tree.topLevelItem(i).text(0)
+            for i in range(self.__tree.topLevelItemCount())
+            if not self.__tree.topLevelItem(i).isHidden()
+        ]
+
+    def column_names(self, table: str) -> list[str]:
+        """Columns shown under ``table`` (empty while not loaded)."""
+        item = self.table_item(table)
+        if item is None:
+            return []
+        return [
+            item.child(i).text(0)
+            for i in range(item.childCount())
+            if item.child(i).data(0, TableSidebar.__COLUMN_ROLE) is not None
         ]
 
     def set_loading(self) -> None:
@@ -104,19 +183,32 @@ class TableSidebar(QWidget):
         self.__set_status(TableSidebar.LOADING)
 
     def set_tables(self, tables: list[TableInfo]) -> None:
-        """Show ``tables``."""
-        self.__list.clear()
-        italic = QFont(self.__list.font())
+        """Show ``tables``; tables that were expanded stay expanded."""
+        expanded = {
+            self.__tree.topLevelItem(i).text(0)
+            for i in range(self.__tree.topLevelItemCount())
+            if self.__tree.topLevelItem(i).isExpanded()
+        }
+        self.__tree.clear()
+        italic = QFont(self.__tree.font())
         italic.setItalic(True)
         for table in tables:
-            item = QListWidgetItem(table.name)
-            item.setData(TableSidebar.__TABLE_ROLE, table)
+            item = QTreeWidgetItem([table.name, ""])
+            item.setData(0, TableSidebar.__TABLE_ROLE, table)
+            item.setChildIndicatorPolicy(
+                QTreeWidgetItem.ChildIndicatorPolicy.ShowIndicator
+            )
+            kind = (
+                CompletionKind.VIEW if table.is_view else CompletionKind.TABLE
+            )
+            item.setIcon(0, CompletionIcons.icon(kind))
             if table.is_view:
-                item.setFont(italic)
-                item.setToolTip("View {}".format(table.name))
+                item.setFont(0, italic)
+                item.setToolTip(0, "View {}".format(table.name))
             else:
-                item.setToolTip("Table {}".format(table.name))
-            self.__list.addItem(item)
+                item.setToolTip(0, "Table {}".format(table.name))
+            self.__tree.addTopLevelItem(item)
+        self.__table_count = len(tables)
         self.__refresh_button.setEnabled(True)
         if not tables:
             self.__set_status(TableSidebar.NO_TABLES)
@@ -125,26 +217,177 @@ class TableSidebar(QWidget):
             self.__set_status(msg.format(TableCatalog.MAX_TABLES))
         else:
             self.__set_status("{} tables".format(len(tables)))
+        self.__apply_filter()
+        for name in expanded:
+            item = self.table_item(name)
+            if item is not None:
+                item.setExpanded(True)
+
+    def refresh_columns(self) -> None:
+        """Update the expanded tables (and those waiting for columns) from
+        the schema model."""
+        for i in range(self.__tree.topLevelItemCount()):
+            item = self.__tree.topLevelItem(i)
+            if item.isExpanded() or item.childCount():
+                self.__fill_columns(item, request=False)
+
+    def set_columns_error(self, table: str, message: str) -> None:
+        """Show that the columns of ``table`` could not be read."""
+        item = self.table_item(table)
+        if item is None:
+            return
+        TableSidebar.__clear_children(item)
+        child = QTreeWidgetItem([TableSidebar.NO_COLUMNS, ""])
+        child.setToolTip(0, message)
+        child.setFlags(Qt.ItemFlag.NoItemFlags)
+        item.addChild(child)
 
     def set_error(self, message: str) -> None:
         """Show a loading error; the refresh button stays available."""
-        self.__list.clear()
+        self.__tree.clear()
+        self.__table_count = 0
         self.__refresh_button.setEnabled(True)
         self.__set_status(message, error=True)
 
     def show_message(self, message: str) -> None:
         """Empty the list and show ``message`` (e.g. when disconnected)."""
-        self.__list.clear()
+        self.__tree.clear()
+        self.__table_count = 0
         self.__refresh_button.setEnabled(False)
         self.__set_status(message)
 
+    # ------------------------------------------------------------ internals
     def __set_status(self, text: str, *, error: bool = False) -> None:
+        self.__status_text = text
+        self.__status_error = error
+        self.__show_status()
+
+    def __show_status(self) -> None:
+        text = self.__status_text
+        shown = len(self.visible_tables())
+        if (
+            not self.__status_error
+            and self.__filter.text().strip()
+            and self.__table_count
+        ):
+            text = "{} of {} tables".format(shown, self.__table_count)
         self.__status_label.setStyleSheet(
-            "color: #c62828;" if error else "color: palette(placeholder-text);"
+            "color: #c62828;"
+            if self.__status_error
+            else "color: palette(placeholder-text);"
         )
         self.__status_label.setText(text)
 
-    def __on_item(self, item: QListWidgetItem) -> None:
-        table = item.data(TableSidebar.__TABLE_ROLE)
+    def __apply_filter(self, *_: object) -> None:
+        wanted = self.__filter.text().strip().casefold()
+        for i in range(self.__tree.topLevelItemCount()):
+            item = self.__tree.topLevelItem(i)
+            item.setHidden(
+                bool(wanted) and wanted not in item.text(0).casefold()
+            )
+        self.__show_status()
+
+    def __fill_columns(self, item: QTreeWidgetItem, *, request: bool) -> None:
+        """Show the columns of the table ``item`` from the schema model, or
+        a placeholder while they are loaded."""
+        table = item.data(0, TableSidebar.__TABLE_ROLE)
+        columns = (
+            self.__schema.columns_of(table.name)
+            if self.__schema is not None
+            else None
+        )
+        if columns is None:
+            if not item.childCount():
+                child = QTreeWidgetItem([TableSidebar.LOADING_COLUMNS, ""])
+                child.setFlags(Qt.ItemFlag.NoItemFlags)
+                item.addChild(child)
+            if request:
+                self.columns_requested.emit(table.name)
+            return
+        TableSidebar.__clear_children(item)
+        if not columns:
+            child = QTreeWidgetItem([TableSidebar.NO_COLUMNS, ""])
+            child.setFlags(Qt.ItemFlag.NoItemFlags)
+            item.addChild(child)
+            return
+        bold = QFont(self.__tree.font())
+        bold.setBold(True)
+        for column in columns:
+            item.addChild(TableSidebar.__column_item(column, table, bold))
+
+    @staticmethod
+    def __column_item(
+        column: ColumnInfo, table: TableInfo, bold: QFont
+    ) -> QTreeWidgetItem:
+        child = QTreeWidgetItem([column.name, column.data_type])
+        child.setData(0, TableSidebar.__COLUMN_ROLE, column)
+        kind = (
+            CompletionKind.KEY_COLUMN
+            if column.is_primary
+            else CompletionKind.COLUMN
+        )
+        child.setIcon(0, CompletionIcons.icon(kind))
+        if column.is_primary:
+            child.setFont(0, bold)
+        tooltip = "{}\ntable: {}".format(column.describe(), table.name)
+        child.setToolTip(0, tooltip)
+        child.setToolTip(1, tooltip)
+        child.setForeground(
+            1,
+            QGuiApplication.palette().brush(QPalette.ColorRole.PlaceholderText),
+        )
+        return child
+
+    @staticmethod
+    def __clear_children(item: QTreeWidgetItem) -> None:
+        for child in item.takeChildren():
+            del child
+
+    def __on_expanded(self, item: QTreeWidgetItem) -> None:
+        if item.data(0, TableSidebar.__TABLE_ROLE) is not None:
+            self.__fill_columns(item, request=True)
+
+    def __on_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
+        if item.data(0, TableSidebar.__TABLE_ROLE) is not None:
+            item.setExpanded(True)
+
+    def __on_activated(self, item: QTreeWidgetItem, _column: int) -> None:
+        table = item.data(0, TableSidebar.__TABLE_ROLE)
         if isinstance(table, TableInfo):
             self.table_chosen.emit(table)
+            return
+        column = item.data(0, TableSidebar.__COLUMN_ROLE)
+        if isinstance(column, ColumnInfo):
+            self.column_chosen.emit(column.name)
+
+    def __on_menu(self, pos: QPoint) -> None:
+        item = self.__tree.itemAt(pos)
+        if item is None:
+            return
+        menu = self.context_menu(item)
+        if menu is not None:
+            menu.exec(self.__tree.viewport().mapToGlobal(pos))
+
+    def context_menu(self, item: QTreeWidgetItem) -> QMenu | None:
+        """Menu for ``item``: prepare the SELECT (tables) or insert the
+        name (columns), and copy the name."""
+        table = item.data(0, TableSidebar.__TABLE_ROLE)
+        column = item.data(0, TableSidebar.__COLUMN_ROLE)
+        menu = QMenu(self)
+        if isinstance(table, TableInfo):
+            prepare = menu.addAction(TableSidebar.PREPARE_TEXT)
+            prepare.triggered.connect(lambda: self.table_chosen.emit(table))
+            name = table.name
+        elif isinstance(column, ColumnInfo):
+            insert = menu.addAction(TableSidebar.INSERT_TEXT)
+            insert.triggered.connect(
+                lambda: self.column_chosen.emit(column.name)
+            )
+            name = column.name
+        else:
+            return None
+        copy = menu.addAction(TableSidebar.COPY_TEXT)
+        copy.triggered.connect(
+            lambda: QGuiApplication.clipboard().setText(name)
+        )
+        return menu

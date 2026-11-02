@@ -13,8 +13,9 @@ volta, un editor SQL e una tabella di risultati copiabili.
 - Editor SQL con:
   - numeri di riga;
   - evidenziazione di keyword, stringhe, numeri e commenti;
-  - esecuzione con `Ctrl+Invio` (Linux) o `Cmd+Invio` (macOS).
-- Barra laterale con le tabelle e le viste del database a cui si ha accesso: un clic su una tabella prepara nell'editor `SELECT * FROM <tabella> LIMIT 1;`.
+  - esecuzione con `Ctrl+Invio` (Linux) o `Cmd+Invio` (macOS);
+  - [autocompletamento](#autocompletamento) di tabelle, colonne, alias, parole chiave e funzioni con `Ctrl+Spazio`, che si apre anche da solo mentre si scrive.
+- Barra laterale con le tabelle e le viste del database a cui si ha accesso: un clic mostra le colonne di una tabella (tipo, chiavi, commenti), un doppio clic prepara nell'editor `SELECT * FROM <tabella> LIMIT 1;`.
 - Query nei segnalibri: una query salvata con un nome per una connessione si riesegue dal menu **Bookmarked queries**, solo su quella connessione.
 - Sono ammesse solo istruzioni di lettura (`SELECT`, `WITH … SELECT`, `UNION`, `SHOW`, `DESCRIBE`/`DESC`, `EXPLAIN SELECT`). Ogni query passa da un validatore basato sul parsing.
 - Alla connessione vengono controllati i privilegi dell'account: un account che può modificare i dati viene rifiutato, a meno che la connessione sia in [modalità attenzione](#modalità-attenzione).
@@ -68,7 +69,7 @@ La barra in alto contiene, nell'ordine: **Run** (Esegui, ▶), **Stop** (Interro
 
 1. **Connections** → **New connection…** (Connessioni → Nuova connessione…): compila nome (facoltativo), host, porta, database, username, password e i timeout, poi usa **Test connection** (Test connessione) e **Save** (Salva). Salvare non apre la connessione (vedi [Connessioni](#connessioni)).
 2. **Connect** apre la connessione attiva, quella con la spunta nel menu **Connections**: lo stato passa da *Disconnected* (Disconnesso) a *Connecting* (Connessione in corso) e poi a *Connected* (Connesso) o *Connection error* (Errore di connessione). Se la password non è nel portachiavi, viene richiesta.
-3. Scrivi la query e premi **Run** oppure `Ctrl/Cmd+Invio`. In alternativa scegli una tabella nella barra laterale (vedi [Barra delle tabelle](#barra-delle-tabelle)). Sotto i risultati compaiono righe e tempo, poi "Query executed:" (Query eseguita:) seguito dalla query appena eseguita, su una riga. Oltre i 160 caratteri la query è troncata con "…"; il testo completo è nel tooltip del messaggio.
+3. Scrivi la query, aiutato dall'[autocompletamento](#autocompletamento), e premi **Run** oppure `Ctrl/Cmd+Invio`. In alternativa fai doppio clic su una tabella nella barra laterale (vedi [Barra delle tabelle](#barra-delle-tabelle)). Sotto i risultati compaiono righe e tempo, poi "Query executed:" (Query eseguita:) seguito dalla query appena eseguita, su una riga. Oltre i 160 caratteri la query è troncata con "…"; il testo completo è nel tooltip del messaggio.
 4. Seleziona celle o righe e premi `Ctrl/Cmd+C`. Il menu contestuale offre anche le varianti "con intestazioni" e "righe intere".
 5. Per salvare il risultato su file apri il menu **Export** e scegli il formato (vedi [Esportazione](#esportazione)).
 
@@ -92,10 +93,35 @@ Una connessione con la **Caution mode** (modalità attenzione) attiva compare ne
 
 Dopo la connessione la barra **Tables** (Tabelle) elenca tabelle e viste del database configurato (`SHOW FULL TABLES`), cioè solo quelle a cui l'account ha accesso. Le viste sono in corsivo e in fondo c'è il numero di elementi.
 
-- Un clic su una voce, oppure `Invio` sulla voce selezionata, sostituisce il contenuto dell'editor con `SELECT * FROM <tabella> LIMIT 1;`. La query **non viene eseguita**: premi **Run** per lanciarla. Il testo precedente si recupera con `Ctrl/Cmd+Z`.
+- **Colonne**: un clic su una tabella (o sulla sua freccia) la espande e ne mostra le colonne in ordine, con il tipo a destra. Le colonne della chiave primaria sono in grassetto con un'etichetta gialla "P"; il tooltip mostra la definizione completa (tipo, `NULL`/`NOT NULL`, chiave, default, extra, commento).
+- Un **doppio clic** su una tabella, oppure `Invio` sulla voce selezionata, sostituisce il contenuto dell'editor con `SELECT * FROM <tabella> LIMIT 1;`. La query **non viene eseguita**: premi **Run** per lanciarla. Il testo precedente si recupera con `Ctrl/Cmd+Z`.
+- Un doppio clic su una colonna, oppure `Invio`, ne inserisce il nome nel punto del cursore dell'editor (tra backtick quando serve).
+- Il menu contestuale (clic destro) offre **Prepare SELECT** (Prepara la SELECT, sulle tabelle), **Insert in the editor** (Inserisci nell'editor, sulle colonne) e **Copy name** (Copia il nome).
+- **Filter tables…** (Filtra le tabelle…) in alto mostra solo le tabelle il cui nome contiene il testo (senza distinzione tra maiuscole e minuscole); la riga in fondo indica allora "N of M tables" (N di M tabelle).
 - Il nome della tabella è sempre tra backtick, con gli eventuali backtick interni raddoppiati, quindi funzionano anche nomi con spazi o parole riservate.
 - Il pulsante ⟳ ricarica l'elenco, per esempio dopo la creazione di una tabella. Alla disconnessione l'elenco si svuota.
 - La lettura dell'elenco passa dal validatore, rispetta il timeout delle query e mostra al massimo 10.000 voci. Un errore (per esempio permessi insufficienti) viene mostrato nella barra, senza chiudere la connessione.
+- Le colonne di tutto il database vengono lette una volta dopo la connessione, con una sola query su `information_schema.COLUMNS` (passando dal validatore, al massimo 10.000 colonne); le tabelle rimaste fuori, o il cui elenco non è riuscito, vengono lette su richiesta con `SHOW FULL COLUMNS FROM <tabella>` quando si espandono o servono all'autocompletamento. Una tabella di cui non si possono leggere le colonne mostra "No columns available." (Nessuna colonna disponibile; il motivo è nel tooltip).
+
+### Autocompletamento
+
+L'editor propone ciò che ha senso nel punto del cursore, come i principali strumenti per database:
+
+- `Ctrl+Spazio` apre le proposte (su macOS con il tasto fisico **Control**: `Cmd+Spazio` è di Spotlight). Se c'è una sola proposta, viene inserita subito. `Ctrl/Cmd+Invio` continua a eseguire la query.
+- L'elenco si apre anche da solo mentre si scrive: subito dopo un `.` e dopo la prima lettera del nome di una tabella o di una colonna (due lettere dove sono possibili solo parole chiave). Si chiude quando la parola è completa, quando si scrive uno spazio o un segno di punteggiatura, oppure con `Esc`.
+- `Invio` o `Tab` inseriscono la proposta selezionata, le frecce e `PagSu`/`PagGiù` si muovono nell'elenco, anche un clic inserisce. L'inserimento sostituisce tutta la parola sotto il cursore e si annulla con un solo `Ctrl/Cmd+Z`.
+- Cosa viene proposto dipende dalla posizione:
+  - all'inizio: `SELECT`, `WITH`, `SHOW`, `DESCRIBE`, `EXPLAIN`;
+  - dopo `FROM`/`JOIN`, `DESCRIBE` e `SHOW COLUMNS FROM`: tabelle, viste e le query `WITH` dello statement;
+  - dopo una tabella: le varianti di `JOIN`, `ON`, `WHERE`, `GROUP BY`, `ORDER BY`, `LIMIT`…;
+  - in `SELECT`, `WHERE`, `ON`, `GROUP BY`, `ORDER BY`, `HAVING` e negli argomenti delle funzioni: le colonne delle tabelle dello statement (anche quelle scritte dopo il cursore, quindi `SELECT | FROM users u` funziona), gli alias, poi funzioni e parole chiave;
+  - dopo `alias.` o `tabella.`: solo le colonne di quella tabella; dopo `database.`: le sue tabelle;
+  - dopo un valore o una colonna: operatori e clausole (`AND`, `OR`, `IN`, `LIKE`, `IS NULL`, `AS`, `ORDER BY`…).
+- Ogni proposta ha un'etichetta con il tipo (`P` chiave primaria, `c` colonna, `T` tabella, `V` vista, `a` alias, `f` funzione, `k` parola chiave) e, a destra, il tipo e la tabella di una colonna. Il tooltip di una colonna ne mostra la definizione completa.
+- Il confronto ignora maiuscole e minuscole: prima i nomi che iniziano con il testo scritto, poi quelli con una parola (dopo `_`) che inizia con esso, poi tabelle e colonne che lo contengono.
+- Il nome di una colonna presente in più tabelle dello statement viene inserito qualificato (`u.id`). I nomi con spazi, parole riservate o caratteri speciali vengono inseriti tra backtick; le parole chiave seguono il maiuscolo/minuscolo del testo scritto (`sel` → `select`, `SEL` → `SELECT`); le funzioni vengono inserite con le parentesi e il cursore all'interno.
+- Non viene proposto nulla dentro stringhe, commenti, numeri, dopo `AS` e dopo `LIMIT`. Le parole che il validatore rifiuta (`INSERT`, `UPDATE`, `DELETE`, …) e le funzioni vietate non vengono mai proposte.
+- Le colonne delle sottoquery nel `FROM` e delle query `WITH` non sono note, quindi dopo il loro alias non viene proposto nulla.
 
 ### Query nei segnalibri
 
@@ -272,9 +298,10 @@ src/querylean/
   log/          logger dell'applicazione, log ruotato, redazione dei segreti
   config/       modello della configurazione e persistenza JSON
   bookmarks/    query nei segnalibri per connessione (QueryBookmark, BookmarkStore)
+  completion/   autocompletamento: scanner tollerante, analisi dello statement, proposte (CompletionEngine)
   security/     password nel portachiavi (SecretStore astratta, KeyringSecretStore)
   export/       esportazione Excel/CSV/JSON (ResultExporter astratta)
-  database/     errors/, connection/, execution/, schema/ (elenco tabelle), privileges/ (controllo SHOW GRANTS), validation/ (validatore a stadi)
+  database/     errors/, connection/, execution/, schema/ (tabelle e colonne), privileges/ (controllo SHOW GRANTS), validation/ (validatore a stadi)
   ui/           main/, dialogs/, editor/, icons/, results/, sidebar/, worker/ (thread QThread)
 tests/          una classe Test… per file; fakes/ (doppioni), support/ (basi), integration/
 packaging/      spec PyInstaller, script AppImage/.deb/DMG, desktop file, icona,
@@ -449,7 +476,7 @@ Per verificare un download: `sha256sum -c SHA256SUMS --ignore-missing`.
 ## Limiti di questa versione
 
 - Una sola connessione aperta e una sola query alla volta, una sola istruzione per esecuzione.
-- Non sono supportati: TLS/SSH tunnel configurabili da GUI, autocompletamento, cronologia, paginazione.
+- Non sono supportati: TLS/SSH tunnel configurabili da GUI, cronologia, paginazione.
 - L'esportazione salva solo le righe caricate (al massimo 10.000): per esportarne di più serve uno strumento come `mysqldump` o `mysql --batch`.
 - `SHOW` è ammesso solo nelle forme riconosciute dal parser; le altre vengono rifiutate.
 - Colonne, tabelle e alias il cui nome è una parola di scrittura (`update`, `delete`, `insert`, …) vengono rifiutati anche se quotati o qualificati; i nomi che contengono soltanto una di queste parole (`updated_at`, `delete_flag`) sono ammessi. Viene rifiutata anche la funzione di stringa `INSERT()`. Le parole dentro stringhe e commenti non vengono controllate.

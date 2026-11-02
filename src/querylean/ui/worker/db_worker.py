@@ -11,6 +11,7 @@ from querylean.config.connection_config import ConnectionConfig
 from querylean.database.connection.connection_manager import ConnectionManager
 from querylean.database.errors.database_error import DatabaseError
 from querylean.database.execution.query_executor import QueryExecutor
+from querylean.database.schema.column_catalog import ColumnCatalog
 from querylean.database.schema.table_catalog import TableCatalog
 from querylean.log.log_manager import LogManager
 
@@ -34,6 +35,8 @@ class DbWorker(QObject):
     # Bookmarked query: sql, target it was saved for, row limit, timeout.
     bookmark_requested = Signal(str, str, int, int)
     tables_requested = Signal(int)  # timeout in seconds
+    columns_requested = Signal(int)  # all the columns; timeout in seconds
+    table_columns_requested = Signal(str, int)  # table, timeout in seconds
 
     # Responses (worker -> GUI)
     connected = Signal(object)  # AccountPrivileges of the account
@@ -44,6 +47,10 @@ class DbWorker(QObject):
     query_failed = Signal(str, str)  # message, error kind
     tables_loaded = Signal(object)  # list[TableInfo]
     tables_failed = Signal(str)
+    columns_loaded = Signal(object)  # dict[str, tuple[ColumnInfo, ...]]
+    columns_failed = Signal(str)
+    table_columns_loaded = Signal(str, object)  # table, tuple[ColumnInfo]
+    table_columns_failed = Signal(str, str)  # table, message
 
     __log = LogManager.get_logger(__name__)
 
@@ -52,12 +59,15 @@ class DbWorker(QObject):
         self.__manager = manager or ConnectionManager()
         self.__executor = QueryExecutor(self.__manager)
         self.__catalog = TableCatalog(self.__executor)
+        self.__columns = ColumnCatalog(self.__executor)
         self.connect_requested.connect(self.__on_connect)
         self.disconnect_requested.connect(self.__on_disconnect)
         self.test_requested.connect(self.__on_test)
         self.query_requested.connect(self.__on_query)
         self.bookmark_requested.connect(self.__on_bookmark)
         self.tables_requested.connect(self.__on_tables)
+        self.columns_requested.connect(self.__on_columns)
+        self.table_columns_requested.connect(self.__on_table_columns)
 
     @property
     def manager(self) -> ConnectionManager:
@@ -159,3 +169,29 @@ class DbWorker(QObject):
             self.tables_failed.emit(DbWorker.UNEXPECTED_ERROR)
         else:
             self.tables_loaded.emit(tables)
+
+    @Slot(int)
+    def __on_columns(self, timeout: int) -> None:
+        try:
+            columns = self.__columns.list_all(timeout)
+        except DatabaseError as exc:
+            self.columns_failed.emit(exc.message)
+        except Exception:
+            self.__log.exception("Unexpected error while listing the columns")
+            self.columns_failed.emit(DbWorker.UNEXPECTED_ERROR)
+        else:
+            self.columns_loaded.emit(columns)
+
+    @Slot(str, int)
+    def __on_table_columns(self, table: str, timeout: int) -> None:
+        try:
+            columns = self.__columns.list_for(table, timeout)
+        except DatabaseError as exc:
+            self.table_columns_failed.emit(table, exc.message)
+        except Exception:
+            self.__log.exception(
+                "Unexpected error while listing the columns of a table"
+            )
+            self.table_columns_failed.emit(table, DbWorker.UNEXPECTED_ERROR)
+        else:
+            self.table_columns_loaded.emit(table, columns)

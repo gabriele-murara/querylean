@@ -29,6 +29,9 @@ from PySide6.QtWidgets import (
 
 from querylean.app.app_info import AppInfo
 from querylean.bookmarks.query_bookmark import QueryBookmark
+from querylean.completion.completion_engine import CompletionEngine
+from querylean.completion.schema_model import SchemaModel
+from querylean.completion.sql_vocabulary import SqlVocabulary
 from querylean.config.app_config import AppConfig
 from querylean.config.config_error import ConfigError
 from querylean.config.config_manager import ConfigManager
@@ -41,6 +44,7 @@ from querylean.database.connection.connection_manager import (
 from querylean.database.execution.query_executor import QueryExecutor
 from querylean.database.execution.query_result import QueryResult
 from querylean.database.privileges.account_privileges import AccountPrivileges
+from querylean.database.schema.column_info import ColumnInfo
 from querylean.database.schema.table_info import TableInfo
 from querylean.database.validation.read_only_validator import (
     ReadOnlyValidator,
@@ -126,6 +130,10 @@ class MainWindow(QMainWindow):
         self.__session_config: ConnectionConfig | None = None
         self.__bookmarks: list[QueryBookmark] = []
         self.__validator = ReadOnlyValidator()
+        # Tables and columns of the open session (side bar, completion) and
+        # the tables whose columns are being read.
+        self.__schema = SchemaModel()
+        self.__pending_columns: set[str] = set()
         self.__running = False
         self.__closed = False
         # Result shown in the table (exported by "Export").
@@ -225,6 +233,11 @@ class MainWindow(QMainWindow):
         if self.__session_config is None:
             return ""
         return QueryBookmark.target_of(self.__session_config)
+
+    @property
+    def schema(self) -> SchemaModel:
+        """Tables and columns of the open session."""
+        return self.__schema
 
     @property
     def bookmarks(self) -> list[QueryBookmark]:
@@ -696,6 +709,23 @@ class MainWindow(QMainWindow):
         self.__sidebar.set_loading()
         timeout = self.__active_config().query_timeout
         self.worker.tables_requested.emit(timeout)
+        self.worker.columns_requested.emit(timeout)
+
+    def load_columns(self, table: str) -> None:
+        """Read the columns of ``table`` (for the side bar and the
+        completion) unless they are known or already being read."""
+        if self.__state != ConnectionState.CONNECTED:
+            return
+        if table in self.__pending_columns or self.__schema.has_columns(table):
+            return
+        self.__pending_columns.add(table)
+        timeout = self.__active_config().query_timeout
+        self.worker.table_columns_requested.emit(table, timeout)
+
+    def insert_column(self, name: str) -> None:
+        """Insert the column ``name`` (quoted when needed) at the editor
+        cursor."""
+        self.__editor.insert_text(SqlVocabulary.identifier(name))
 
     def use_table(self, table: TableInfo) -> None:
         """Put the preview query of ``table`` in the editor, replacing its
@@ -870,6 +900,8 @@ class MainWindow(QMainWindow):
     def __build_body(self) -> None:
         self.__editor = SqlEditor()
         self.__editor.execute_requested.connect(self.execute_query)
+        self.__editor.completion_engine = CompletionEngine(self.__schema)
+        self.__editor.columns_needed.connect(self.load_columns)
 
         self.__results = ResultsTable()
         self.__rows_label = QLabel()
@@ -920,6 +952,9 @@ class MainWindow(QMainWindow):
         self.__sidebar = TableSidebar()
         self.__sidebar.table_chosen.connect(self.use_table)
         self.__sidebar.refresh_requested.connect(self.refresh_tables)
+        self.__sidebar.set_schema(self.__schema)
+        self.__sidebar.columns_requested.connect(self.load_columns)
+        self.__sidebar.column_chosen.connect(self.insert_column)
 
         # Side bar on the left, for the whole height below the toolbar.
         self.__sidebar_splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -949,12 +984,19 @@ class MainWindow(QMainWindow):
         worker.query_failed.connect(self.__on_query_failed)
         worker.tables_loaded.connect(self.__on_tables_loaded)
         worker.tables_failed.connect(self.__on_tables_failed)
+        worker.columns_loaded.connect(self.__on_columns_loaded)
+        worker.columns_failed.connect(self.__on_columns_failed)
+        worker.table_columns_loaded.connect(self.__on_table_columns_loaded)
+        worker.table_columns_failed.connect(self.__on_table_columns_failed)
 
     # ------------------------------------------------------------------ state
     def __set_state(self, state: ConnectionState) -> None:
         self.__state = state
         if state != ConnectionState.CONNECTED:
             self.__privileges = None
+            self.__schema.clear()
+            self.__pending_columns.clear()
+            self.__editor.hide_completion()
         if state in (ConnectionState.DISCONNECTED, ConnectionState.ERROR):
             self.__session_id = ""
             self.__session_config = None
@@ -1201,6 +1243,9 @@ class MainWindow(QMainWindow):
         else:
             self.show_message(msg)
         self.__reload_bookmarks()
+        self.__schema.clear()
+        session = self.__session_config or cfg
+        self.__schema.database = session.database
         self.__editor.setFocus()
         self.refresh_tables()
 
@@ -1258,11 +1303,44 @@ class MainWindow(QMainWindow):
     def __on_tables_loaded(self, tables: list[TableInfo]) -> None:
         # A response that arrives after a disconnection is stale.
         if self.__state == ConnectionState.CONNECTED:
+            self.__schema.set_tables(tables)
             self.__sidebar.set_tables(tables)
+            self.__editor.refresh_completion()
 
     def __on_tables_failed(self, message: str) -> None:
         if self.__state == ConnectionState.CONNECTED:
             self.__sidebar.set_error(message)
+
+    def __on_columns_loaded(
+        self, columns: dict[str, tuple[ColumnInfo, ...]]
+    ) -> None:
+        if self.__state != ConnectionState.CONNECTED:
+            return  # stale: the session was closed meanwhile
+        self.__schema.set_all_columns(columns)
+        self.__sidebar.refresh_columns()
+        self.__editor.refresh_completion()
+
+    def __on_columns_failed(self, message: str) -> None:
+        # Columns are then read table by table, when needed.
+        self.__log.info("Columns not listed at once: {}", message)
+
+    def __on_table_columns_loaded(
+        self, table: str, columns: tuple[ColumnInfo, ...]
+    ) -> None:
+        self.__pending_columns.discard(table)
+        if self.__state != ConnectionState.CONNECTED:
+            return
+        self.__schema.set_columns(table, columns)
+        self.__sidebar.refresh_columns()
+        self.__editor.refresh_completion()
+
+    def __on_table_columns_failed(self, table: str, message: str) -> None:
+        self.__pending_columns.discard(table)
+        if self.__state != ConnectionState.CONNECTED:
+            return
+        # Remembered as empty, so they are not requested again and again.
+        self.__schema.set_columns(table, ())
+        self.__sidebar.set_columns_error(table, message)
 
     # ------------------------------------------------------------------- export
     def __ask_export_path(

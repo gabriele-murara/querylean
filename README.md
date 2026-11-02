@@ -13,8 +13,9 @@ at a time, a SQL editor and a table of copyable results.
 - SQL editor with:
   - line numbers;
   - highlighting of keywords, strings, numbers and comments;
-  - execution with `Ctrl+Enter` (Linux) or `Cmd+Enter` (macOS).
-- Side bar with the tables and views of the database you have access to: a click on a table prepares `SELECT * FROM <table> LIMIT 1;` in the editor.
+  - execution with `Ctrl+Enter` (Linux) or `Cmd+Enter` (macOS);
+  - [autocompletion](#autocompletion) of tables, columns, aliases, keywords and functions with `Ctrl+Space`, also opening by itself while typing.
+- Side bar with the tables and views of the database you have access to: a click shows the columns of a table (type, keys, comments), a double click prepares `SELECT * FROM <table> LIMIT 1;` in the editor.
 - Bookmarked queries: a query saved with a name for one connection can be run again from the **Bookmarked queries** menu, only on that connection.
 - Only read statements are allowed (`SELECT`, `WITH … SELECT`, `UNION`, `SHOW`, `DESCRIBE`/`DESC`, `EXPLAIN SELECT`). Every query goes through a parser-based validator.
 - On connection the account privileges are checked: an account that can change data is refused, unless the connection is in [caution mode](#caution-mode).
@@ -68,7 +69,7 @@ The toolbar contains, in order: **Run** (▶), **Stop** (enabled only while a qu
 
 1. **Connections** → **New connection…**: fill in name (optional), host, port, database, username, password and timeouts, then use **Test connection** and **Save**. Saving does not open the connection (see [Connections](#connections)).
 2. **Connect** opens the active connection, the one checked in the **Connections** menu: the state goes from *Disconnected* to *Connecting* and then to *Connected* or *Connection error*. If the password is not in the keychain, it is asked for.
-3. Write the query and press **Run** or `Ctrl/Cmd+Enter`. Alternatively choose a table in the side bar (see [Table side bar](#table-side-bar)). Below the results you see rows and time, then "Query executed:" followed by the query just executed, on one line. Beyond 160 characters the query is cut with "…"; the full text is in the message tooltip.
+3. Write the query, helped by the [autocompletion](#autocompletion), and press **Run** or `Ctrl/Cmd+Enter`. Alternatively double-click a table in the side bar (see [Table side bar](#table-side-bar)). Below the results you see rows and time, then "Query executed:" followed by the query just executed, on one line. Beyond 160 characters the query is cut with "…"; the full text is in the message tooltip.
 4. Select cells or rows and press `Ctrl/Cmd+C`. The context menu also offers the "with headers" and "whole rows" variants.
 5. To save the result to a file open the **Export** menu and choose the format (see [Export](#export)).
 
@@ -92,10 +93,35 @@ A connection with **Caution mode** enabled is shown in the menu as "<name> (caut
 
 After connecting, the **Tables** side bar lists the tables and views of the configured database (`SHOW FULL TABLES`), that is only those the account can access. Views are in italics and the number of items is shown at the bottom.
 
-- A click on an item, or `Enter` on the selected one, replaces the editor content with `SELECT * FROM <table> LIMIT 1;`. The query is **not executed**: press **Run** to start it. The previous text can be restored with `Ctrl/Cmd+Z`.
+- **Columns**: a click on a table (or on its arrow) expands it and shows its columns in order, with the type on the right. Primary key columns are in bold with a yellow "P" badge; the tooltip shows the full definition (type, `NULL`/`NOT NULL`, key, default, extra, comment).
+- A **double click** on a table, or `Enter` on the selected one, replaces the editor content with `SELECT * FROM <table> LIMIT 1;`. The query is **not executed**: press **Run** to start it. The previous text can be restored with `Ctrl/Cmd+Z`.
+- A double click on a column, or `Enter`, inserts its name at the editor cursor (between backticks when needed).
+- The context menu (right click) offers **Prepare SELECT** (tables), **Insert in the editor** (columns) and **Copy name**.
+- **Filter tables…** at the top shows only the tables whose name contains the text (case insensitive); the bottom line then shows "N of M tables".
 - The table name is always between backticks, with any inner backticks doubled, so names with spaces or reserved words work too.
 - The ⟳ button reloads the list, for example after a table has been created. On disconnection the list is emptied.
 - Reading the list goes through the validator, respects the query timeout and shows at most 10,000 items. An error (for example missing privileges) is shown in the side bar, without closing the connection.
+- The columns of the whole database are read once after connecting, with a single query on `information_schema.COLUMNS` (through the validator, at most 10,000 columns); the tables left out, or whose listing failed, are read on demand with `SHOW FULL COLUMNS FROM <table>` when they are expanded or needed by the completion. A table whose columns cannot be read shows "No columns available." (the reason is in the tooltip).
+
+### Autocompletion
+
+The editor proposes what fits at the cursor, as in the major database tools:
+
+- `Ctrl+Space` opens the proposals (on macOS with the physical **Control** key: `Cmd+Space` belongs to Spotlight). If only one proposal fits, it is inserted at once. `Ctrl/Cmd+Enter` still runs the query.
+- The list also opens by itself while typing: right after a `.` and after the first letter of a table or column name (two letters where only keywords fit). It closes when the word is complete, when a space or punctuation is typed, or with `Esc`.
+- `Enter` or `Tab` insert the selected proposal, the arrows and `PageUp`/`PageDown` move in the list, a click also inserts. The insertion replaces the whole word under the cursor and is undone with a single `Ctrl/Cmd+Z`.
+- What is proposed depends on the position:
+  - at the start: `SELECT`, `WITH`, `SHOW`, `DESCRIBE`, `EXPLAIN`;
+  - after `FROM`/`JOIN`, `DESCRIBE` and `SHOW COLUMNS FROM`: tables, views and the `WITH` queries of the statement;
+  - after a table: `JOIN` variants, `ON`, `WHERE`, `GROUP BY`, `ORDER BY`, `LIMIT`…;
+  - in `SELECT`, `WHERE`, `ON`, `GROUP BY`, `ORDER BY`, `HAVING` and in function arguments: the columns of the tables of the statement (also those written after the cursor, so `SELECT | FROM users u` works), the aliases, then functions and keywords;
+  - after `alias.` or `table.`: only the columns of that table; after `database.`: its tables;
+  - after a value or a column: operators and clauses (`AND`, `OR`, `IN`, `LIKE`, `IS NULL`, `AS`, `ORDER BY`…).
+- Each proposal shows a badge with its kind (`P` primary key, `c` column, `T` table, `V` view, `a` alias, `f` function, `k` keyword) and, on the right, the type and the table of a column. The tooltip of a column shows its full definition.
+- Matching ignores case: first the names that start with the typed text, then those with a word (after `_`) that starts with it, then tables and columns that contain it.
+- A column name present in more than one table of the statement is inserted qualified (`u.id`). Names with spaces, reserved words or special characters are inserted between backticks; keywords follow the case of the typed text (`sel` → `select`, `SEL` → `SELECT`); functions are inserted with their parentheses and the cursor inside.
+- Nothing is proposed inside strings, comments, numbers, after `AS` and after `LIMIT`. Words that the validator rejects (`INSERT`, `UPDATE`, `DELETE`, …) and forbidden functions are never proposed.
+- The columns of subqueries in `FROM` and of `WITH` queries are not known, so after their alias nothing is proposed.
 
 ### Bookmarked queries
 
@@ -272,9 +298,10 @@ src/querylean/
   log/          application logger, rotating log, secret redaction
   config/       configuration model and JSON persistence
   bookmarks/    bookmarked queries per connection (QueryBookmark, BookmarkStore)
+  completion/   autocompletion: tolerant scanner, statement analysis, proposals (CompletionEngine)
   security/     password in the keychain (abstract SecretStore, KeyringSecretStore)
   export/       Excel/CSV/JSON export (abstract ResultExporter)
-  database/     errors/, connection/, execution/, schema/ (table list), privileges/ (SHOW GRANTS check), validation/ (staged validator)
+  database/     errors/, connection/, execution/, schema/ (tables and columns), privileges/ (SHOW GRANTS check), validation/ (staged validator)
   ui/           main/, dialogs/, editor/, icons/, results/, sidebar/, worker/ (QThread thread)
 tests/          one Test… class per file; fakes/ (test doubles), support/ (bases), integration/
 packaging/      PyInstaller spec, AppImage/.deb/DMG scripts, desktop file, icon,
@@ -449,7 +476,7 @@ To verify a download: `sha256sum -c SHA256SUMS --ignore-missing`.
 ## Limitations of this version
 
 - One open connection and one query at a time, one statement per execution.
-- Not supported: TLS/SSH tunnels configurable from the GUI, autocompletion, history, pagination.
+- Not supported: TLS/SSH tunnels configurable from the GUI, history, pagination.
 - The export saves only the loaded rows (at most 10,000): to export more, use a tool such as `mysqldump` or `mysql --batch`.
 - `SHOW` is allowed only in the forms recognized by the parser; the others are rejected.
 - Columns, tables and aliases whose name is a write word (`update`, `delete`, `insert`, …) are rejected even when quoted or qualified; names that only contain such a word (`updated_at`, `delete_flag`) are allowed. The `INSERT()` string function is rejected too. Words inside strings and comments are not checked.

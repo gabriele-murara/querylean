@@ -109,6 +109,8 @@ src/querylean/
   config/              ConnectionConfig (anche name, display_name, caution_mode), ConnectionProfile (id + config), ConnectionStore (connections/<id>.json),
                        UiPreferences, AppConfig (active_connection + ui), ConfigManager (config.json + migrazione; espone connections e bookmarks), ConfigError
   bookmarks/           QueryBookmark (nome, sql, target `user@host:port/database`), BookmarkStore (bookmarks/<id connessione>.json)
+  completion/          SqlScanner/ScanToken (tokenizer tollerante), StatementAnalyzer → StatementContext (+ TableReference),
+                       SchemaModel (tabelle/colonne della sessione), SqlVocabulary, CompletionEngine → CompletionResult/CompletionItem/CompletionKind
   files/               PrivateFile (sostituzione atomica di un file 0600: temporaneo + os.replace), PrivateJsonFile (JSON tramite PrivateFile)
   security/            SecretStore (astratta), KeyringSecretStore, SecretStorageError
   export/              ResultExporter (astratta: scrittura tramite PrivateFile) → XlsxExporter, CsvExporter, JsonExporter;
@@ -118,16 +120,17 @@ src/querylean/
     connection/        ConnectionParams (kwargs del driver, password mascherata), ConnectionManager (sessione READ ONLY verificata, controllo dei grant, config della sessione)
     privileges/        GrantAnalyzer (analisi fail-closed di SHOW GRANTS), AccountPrivileges (esito: read_only, write_privileges, verified)
     execution/         QueryExecutor (execute/cancel), QueryResult
-    schema/            TableCatalog (SHOW FULL TABLES tramite QueryExecutor), TableInfo (select_statement), MySqlIdentifier (quoting con backtick)
+    schema/            TableCatalog (SHOW FULL TABLES tramite QueryExecutor), TableInfo (select_statement), MySqlIdentifier (quoting con backtick),
+                       ColumnCatalog (information_schema.COLUMNS e SHOW FULL COLUMNS tramite QueryExecutor), ColumnInfo
     validation/        ReadOnlyValidator → stadi ValidationStage su ValidationContext;
                        MySqlLexer, SqlToken, LexedStatement, ReadOnlyRules, ValidationResult
   ui/
     main/              MainWindow, ConnectionState, CautionPalette (sfondo rosa in modalità attenzione), ConnectionsMenu, BookmarksMenu ("Bookmarked queries") (menu "Connections": New connection…, Connect/Edit…/Delete… per connessione)
     dialogs/           ConnectionDialog, AboutDialog (versione/autore da AppInfo)
-    icons/             ToolbarIcons (icone disegnate con QPainter: nessun asset da impacchettare)
-    editor/            SqlEditor, SqlHighlighter, LineNumberArea
+    icons/             ToolbarIcons, CompletionIcons (icone disegnate con QPainter: nessun asset da impacchettare)
+    editor/            SqlEditor (autocompletamento), SqlCompleter (popup), CompletionDelegate, SqlHighlighter, LineNumberArea
     results/           ResultsTable, ResultsModel, ValueFormatter
-    sidebar/           TableSidebar (elenco tabelle a sinistra; table_chosen → MainWindow.use_table)
+    sidebar/           TableSidebar (albero tabelle → colonne con filtro; table_chosen → MainWindow.use_table, column_chosen → insert_column)
     worker/            DbWorker (QObject nel thread DB), DbThread (avvio/arresto), ExportThread (scrittura dell'export)
 tests/                 test_<classe>.py; fakes/; support/; integration/
 ```
@@ -212,7 +215,15 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
 - **Barra delle tabelle**:
   - l'elenco si legge con `TableCatalog` tramite `QueryExecutor` (validatore, timeout, limite di righe), nel thread del worker (`tables_requested` → `tables_loaded`/`tables_failed`), mai con SQL fuori dal validatore;
   - i nomi entrano nella query solo tramite `MySqlIdentifier.quote`;
-  - scegliere una tabella sostituisce il testo dell'editor in modo annullabile (`SqlEditor.replace_query`) e non esegue la query.
+  - un clic espande la tabella e ne mostra le colonne; doppio clic/`Invio` sulla tabella sostituisce il testo dell'editor in modo annullabile (`SqlEditor.replace_query`) e non esegue la query; doppio clic/`Invio` su una colonna ne inserisce il nome (`SqlVocabulary.identifier`) al cursore;
+  - le colonne si leggono con `ColumnCatalog` tramite `QueryExecutor`, nel thread del worker: tutte insieme alla connessione (`columns_requested`, una query su `information_schema.COLUMNS`, al massimo 10.000 righe; la tabella troncata si scarta), poi su richiesta tabella per tabella (`table_columns_requested`, `SHOW FULL COLUMNS FROM` con `MySqlIdentifier.quote`). `MainWindow.load_columns` evita richieste doppie; un errore memorizza le colonne come vuote (nessun nuovo tentativo fino al refresh o alla riconnessione);
+  - `SchemaModel` vive in `MainWindow`, è condiviso da barra e autocompletamento e si svuota quando la sessione non è più `CONNECTED`; le risposte arrivate dopo la chiusura vanno ignorate.
+- **Autocompletamento** (1.7):
+  - `Ctrl+Spazio` (su macOS il Control fisico, che Qt riporta come `MetaModifier`) apre le proposte; `Ctrl/Cmd+Invio` resta l'esecuzione e chiude l'elenco;
+  - l'analisi usa `SqlScanner`, tollerante e separato dal lexer del validatore: non va mai usato per validare, e il validatore non va mai rilassato per l'autocompletamento;
+  - non si propongono mai parole di `ReadOnlyRules.FORBIDDEN_WORDS` né funzioni vietate (`SqlVocabulary`); ogni nuova parola chiave o funzione proposta deve passare il validatore (`tests/test_sql_vocabulary.py`);
+  - l'inserimento sostituisce la parola sotto il cursore in un solo passo annullabile; nessuna query viene eseguita dall'autocompletamento;
+  - le colonne mancanti si chiedono con `SqlEditor.columns_needed` → `MainWindow.load_columns`; quando arrivano, `refresh_completion` aggiorna l'elenco.
 - **Errori**: all'utente solo messaggi comprensibili (`DatabaseError.message`), mai stack trace; i dettagli vanno nel log.
 - **Tabella risultati**: non modificabile. NULL è mostrato come `NULL` in corsivo e si distingue da `""`. Nella copia TSV il NULL diventa una cella vuota.
 
@@ -224,14 +235,16 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
 - Nei test unitari il database è finto: `tests/fakes/` (`FakeConnector`, `FakeConnection`, `FakeCursor`), da iniettare con `ConnectionManager(connector)`.
   - Per simulare `KILL QUERY` si usa `FakeConnection.on_kill`.
   - I controlli di sessione rispondono da `FakeConnection.session_variables` e `FakeConnection.grants` (default: sessione READ ONLY e account con solo SELECT), senza passare dall'`handler`.
+  - `SchemaHandler` risponde a `SHOW FULL TABLES` e alle due letture delle colonne (`tables`, `columns`, `error`, `columns_error`, `statements`).
   - Per il keyring ci sono `MemoryKeyring` e `LockedKeyring`.
 - I test GUI estendono `support/main_window_test_base.MainWindowTestBase`, che fornisce le fixture `connector`/`window` e gli helper `configure`/`connect`/`run`. Vanno attesi con `qtbot.waitUntil`.
 - **Non aggiungere funzionalità escluse** da `PROJECT.md` §16: multi-connessione, browser schemi, cronologia, autocomplete, plugin, telemetria, ecc. Eccezioni richieste dall'utente:
   - 1.1: esportazione in Excel, CSV e JSON; altre forme di esportazione restano escluse;
-  - 1.2: barra laterale con l'elenco delle tabelle del database configurato, che prepara `SELECT * FROM <tabella> LIMIT 1;`. Niente albero di colonne, indici o altri database, niente esecuzione automatica;
+  - 1.2: barra laterale con l'elenco delle tabelle del database configurato, che prepara `SELECT * FROM <tabella> LIMIT 1;`. Niente indici o altri database, niente esecuzione automatica;
   - 1.3: più connessioni salvate (profili), ma **una sola connessione aperta alla volta**. Niente connessioni simultanee, schede o finestre multiple.
   - 1.4: modalità attenzione per account con privilegi di scrittura (sempre e solo query di lettura) e validatore più severo.
-  - 1.6: query nei segnalibri per connessione (salva con nome, menu "Bookmarked queries" che le esegue). Niente cronologia automatica, cartelle, import/export o condivisione tra connessioni.
+  - 1.6: query nei segnalibri per connessione (salva con nome, menu "Bookmarked queries" che le esegue). Niente cronologia automatica, cartelle, import/export o condivisione tra connessioni;
+  - 1.7: colonne delle tabelle nella barra laterale (albero tabella → colonne, filtro, menu contestuale) e autocompletamento SQL nell'editor (tabelle, colonne, alias, parole chiave, funzioni). Niente indici, chiavi esterne, altri database, snippet o formattazione automatica del codice.
 
 ## Packaging
 

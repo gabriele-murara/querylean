@@ -25,7 +25,7 @@ class TestMainWindowSidebar(MainWindowTestBase):
     @classmethod
     def wait_tables(cls, qtbot, window, count) -> None:
         qtbot.waitUntil(
-            lambda: window.sidebar.list_widget.count() == count,
+            lambda: window.sidebar.tree_widget.topLevelItemCount() == count,
             timeout=cls.WAIT_MS,
         )
 
@@ -79,7 +79,7 @@ class TestMainWindowSidebar(MainWindowTestBase):
             lambda: window.state == ConnectionState.DISCONNECTED,
             timeout=self.WAIT_MS,
         )
-        assert window.sidebar.list_widget.count() == 0
+        assert window.sidebar.tree_widget.topLevelItemCount() == 0
         assert window.sidebar.status_label.text() == TableSidebar.NOT_CONNECTED
         window.refresh_tables()  # ignored when disconnected
         assert window.sidebar.status_label.text() == TableSidebar.NOT_CONNECTED
@@ -96,7 +96,7 @@ class TestMainWindowSidebar(MainWindowTestBase):
             ),
             timeout=self.WAIT_MS,
         )
-        assert window.sidebar.list_widget.count() == 0
+        assert window.sidebar.tree_widget.topLevelItemCount() == 0
         assert window.sidebar.refresh_button.isEnabled()
         assert window.state == ConnectionState.CONNECTED
 

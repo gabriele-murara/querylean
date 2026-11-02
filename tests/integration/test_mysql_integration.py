@@ -19,6 +19,7 @@ from querylean.database.errors.database_error import DatabaseError
 from querylean.database.errors.query_cancelled import QueryCancelled
 from querylean.database.errors.query_timeout import QueryTimeout
 from querylean.database.execution.query_executor import QueryExecutor
+from querylean.database.schema.column_catalog import ColumnCatalog
 from querylean.database.schema.table_catalog import TableCatalog
 
 
@@ -80,6 +81,28 @@ class TestMysqlIntegration:
         assert not by_name["people"].is_view
         result = executor.execute(by_name["people"].select_statement, 100, 10)
         assert len(result.rows) == 1
+
+    def test_column_catalog(self, executor):
+        catalog = ColumnCatalog(executor)
+        everything = catalog.list_all(10)
+        people = everything["people"]
+        assert [c.name for c in people] == [
+            "id",
+            "name",
+            "note",
+            "born",
+            "amount",
+            "active",
+            "payload",
+        ]
+        assert people[0].is_primary and not people[0].nullable
+        assert people[1].nullable
+        assert people[4].data_type.startswith("decimal(10,2)")
+        assert people[2].default == ""
+        # The table listing reads the same definitions.
+        single = catalog.list_for("people", 10)
+        assert [c.name for c in single] == [c.name for c in people]
+        assert [c.data_type for c in single] == [c.data_type for c in people]
 
     def test_row_limit_is_applied_and_session_recovers(self, executor):
         result = executor.execute(
