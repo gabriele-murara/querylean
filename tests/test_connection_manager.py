@@ -94,6 +94,19 @@ class TestConnectionManager:
         manager.connect(self.CFG, "pw")
         assert manager.is_connected and len(connector.connections) == 2
 
+    def test_config_of_the_session(self, manager):
+        assert manager.config is None
+        manager.connect(self.CFG, "pw")
+        config = manager.config
+        assert config == self.CFG
+        # A copy: changing it does not touch the session.
+        config.database = "other"
+        assert manager.config == self.CFG
+        manager.abort_session()
+        assert manager.config == self.CFG
+        manager.disconnect()
+        assert manager.config is None
+
     def test_ensure_connected_reopens_aborted_session(self, manager, connector):
         manager.connect(self.CFG, "pw")
         manager.abort_session()

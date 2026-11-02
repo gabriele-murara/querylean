@@ -15,6 +15,7 @@ at a time, a SQL editor and a table of copyable results.
   - highlighting of keywords, strings, numbers and comments;
   - execution with `Ctrl+Enter` (Linux) or `Cmd+Enter` (macOS).
 - Side bar with the tables and views of the database you have access to: a click on a table prepares `SELECT * FROM <table> LIMIT 1;` in the editor.
+- Bookmarked queries: a query saved with a name for one connection can be run again from the **Bookmarked queries** menu, only on that connection.
 - Only read statements are allowed (`SELECT`, `WITH … SELECT`, `UNION`, `SHOW`, `DESCRIBE`/`DESC`, `EXPLAIN SELECT`). Every query goes through a parser-based validator.
 - On connection the account privileges are checked: an account that can change data is refused, unless the connection is in [caution mode](#caution-mode).
 - Queries run outside the GUI thread, with an activity indicator, a **Stop** button and timeouts.
@@ -63,7 +64,7 @@ macOS compatibility should be considered confirmed only once the corresponding C
 
 ## Usage
 
-The toolbar contains, in order: **Run** (▶), **Stop** (enabled only while a query runs), **Export** (drop-down menu, enabled when there is a result), **Connect**/**Disconnect**, **Connections** (drop-down menu) and **About** (version, author, license). The connection state is shown at the bottom right. The user interface is in English. On the left, for the whole height of the window, there is the **Tables** side bar.
+The toolbar contains, in order: **Run** (▶), **Stop** (enabled only while a query runs), **Save query** (☆) and **Bookmarked queries** (drop-down menu), both enabled only while connected, **Export** (drop-down menu, enabled when there is a result), **Connect**/**Disconnect**, **Connections** (drop-down menu) and **About** (version, author, license). The connection state is shown at the bottom right. The user interface is in English. On the left, for the whole height of the window, there is the **Tables** side bar.
 
 1. **Connections** → **New connection…**: fill in name (optional), host, port, database, username, password and timeouts, then use **Test connection** and **Save**. Saving does not open the connection (see [Connections](#connections)).
 2. **Connect** opens the active connection, the one checked in the **Connections** menu: the state goes from *Disconnected* to *Connecting* and then to *Connected* or *Connection error*. If the password is not in the keychain, it is asked for.
@@ -79,7 +80,7 @@ Each item has a sub-menu:
 
 - **Connect**: makes it active and connects. If another connection is open, it is closed first.
 - **Edit…**: opens the form with the saved values. If it is the connection in use, the changes apply from the next connection.
-- **Delete…**: asks for confirmation, then deletes the connection file. If it is the one in use, it is closed.
+- **Delete…**: asks for confirmation, then deletes the connection file and its bookmarked queries. If it is the one in use, it is closed.
 
 The toolbar **Connect** button uses the active connection; if none exists, it opens **New connection…**. A connection that has just been saved becomes active if you are not connected at that moment.
 
@@ -95,6 +96,17 @@ After connecting, the **Tables** side bar lists the tables and views of the conf
 - The table name is always between backticks, with any inner backticks doubled, so names with spaces or reserved words work too.
 - The ⟳ button reloads the list, for example after a table has been created. On disconnection the list is emptied.
 - Reading the list goes through the validator, respects the query timeout and shows at most 10,000 items. An error (for example missing privileges) is shown in the side bar, without closing the connection.
+
+### Bookmarked queries
+
+A bookmarked query belongs to **one saved connection** and to the database it points to (`<user>@<host>:<port>/<database>`).
+
+- **Save query** saves the selection or, without a selection, the whole editor content. It asks for a name (at most 100 characters) and saves the query for the open connection. An existing bookmark with the same name (case insensitive) is replaced after confirmation. Only queries accepted by the validator can be saved: a write query is refused already at this step.
+- The **Bookmarked queries** menu lists, in alphabetical order, only the queries of the open connection; the query text is in the tooltip. A click puts the query in the editor (undoable with `Ctrl/Cmd+Z`) and runs it at once, through the validator like any other query.
+- **Bookmarked queries** → **Delete** deletes a bookmark, after confirmation.
+- A bookmark is never run on another connection: the menu shows only those of the open connection, and before running one the database thread checks that the open session points to the same user, host, port and database. Another saved connection pointing to the same database has its own bookmarks.
+- If a connection is edited to point to another host, port, database or user, its old bookmarks are no longer shown; they come back if the previous values are restored.
+- The bookmarks are stored in a JSON file per connection (see [Local files](#local-files)).
 
 ### Execution rules
 
@@ -216,6 +228,7 @@ Recommendations:
 | --- | --- | --- |
 | Configuration: active connection, window (permissions 0600) | `~/.config/querylean/config.json` | `~/Library/Application Support/querylean/config.json` |
 | Saved connections, one `<id>.json` file each (permissions 0600) | `~/.config/querylean/connections/` | `~/Library/Application Support/querylean/connections/` |
+| Bookmarked queries, one `<connection id>.json` file per connection (permissions 0600) | `~/.config/querylean/bookmarks/` | `~/Library/Application Support/querylean/bookmarks/` |
 | Log (rotation 1 MB × 3) | `~/.local/state/querylean/log/` | `~/Library/Logs/querylean/` |
 
 Versions up to 1.2 had a single connection inside `config.json`. On the first start of the new version it is saved as the first connection, and its password in the keychain stays valid.
@@ -258,6 +271,7 @@ src/querylean/
   app/          startup (Application), metadata (AppInfo), smoke test
   log/          application logger, rotating log, secret redaction
   config/       configuration model and JSON persistence
+  bookmarks/    bookmarked queries per connection (QueryBookmark, BookmarkStore)
   security/     password in the keychain (abstract SecretStore, KeyringSecretStore)
   export/       Excel/CSV/JSON export (abstract ResultExporter)
   database/     errors/, connection/, execution/, schema/ (table list), privileges/ (SHOW GRANTS check), validation/ (staged validator)

@@ -36,6 +36,8 @@ class ToolbarIcons:
     __DISCONNECT = "#6d4c41"
     __SETTINGS = "#546e7a"
     __ABOUT = "#1565c0"
+    __STAR = "#f9a825"
+    __BOOKMARKS = "#6a1b9a"
 
     @staticmethod
     def play() -> QIcon:
@@ -71,6 +73,16 @@ class ToolbarIcons:
     def settings() -> QIcon:
         """Gear ("Connections")."""
         return ToolbarIcons.__render(ToolbarIcons.__draw_settings)
+
+    @staticmethod
+    def star() -> QIcon:
+        """Yellow five-pointed star ("Save query")."""
+        return ToolbarIcons.__render(ToolbarIcons.__draw_star)
+
+    @staticmethod
+    def bookmarks() -> QIcon:
+        """Bookmark ribbon ("Bookmarked queries")."""
+        return ToolbarIcons.__render(ToolbarIcons.__draw_bookmarks)
 
     @staticmethod
     def about() -> QIcon:
@@ -196,6 +208,40 @@ class ToolbarIcons:
         path.setFillRule(Qt.FillRule.OddEvenFill)
         ToolbarIcons.__fill(painter, ToolbarIcons.__SETTINGS)
         painter.drawPath(path)
+
+    @staticmethod
+    def __draw_star(painter: QPainter) -> None:
+        center = QPointF(32, 34)
+        outer, inner = 29.0, 12.0
+        points = []
+        for step in range(10):
+            # Start at the top point and go clockwise.
+            angle = -math.pi / 2 + math.pi * step / 5
+            radius = outer if step % 2 == 0 else inner
+            points.append(
+                QPointF(
+                    center.x() + radius * math.cos(angle),
+                    center.y() + radius * math.sin(angle),
+                )
+            )
+        ToolbarIcons.__fill(painter, ToolbarIcons.__STAR)
+        painter.drawPolygon(QPolygonF(points))
+
+    @staticmethod
+    def __draw_bookmarks(painter: QPainter) -> None:
+        # Ribbon with a V notch at the bottom.
+        ToolbarIcons.__fill(painter, ToolbarIcons.__BOOKMARKS)
+        painter.drawPolygon(
+            QPolygonF(
+                [
+                    QPointF(14, 4),
+                    QPointF(50, 4),
+                    QPointF(50, 60),
+                    QPointF(32, 44),
+                    QPointF(14, 60),
+                ]
+            )
+        )
 
     @staticmethod
     def __draw_about(painter: QPainter) -> None:

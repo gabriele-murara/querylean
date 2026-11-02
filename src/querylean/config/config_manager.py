@@ -8,6 +8,7 @@ from pathlib import Path
 from platformdirs import user_config_dir
 
 from querylean.app.app_info import AppInfo
+from querylean.bookmarks.bookmark_store import BookmarkStore
 from querylean.config.app_config import AppConfig
 from querylean.config.config_error import ConfigError
 from querylean.config.connection_config import ConnectionConfig
@@ -21,13 +22,15 @@ from querylean.log.log_manager import LogManager
 class ConfigManager:
     """Reads and atomically writes ``config.json`` (mode 0600): active
     connection and UI preferences. The saved connections are in the
-    ``connections/`` folder next to it (``ConnectionStore``).
+    ``connections/`` folder next to it (``ConnectionStore``), their
+    bookmarked queries in the ``bookmarks/`` folder (``BookmarkStore``).
 
     Files written by versions with a single connection keep it under the
     ``connection`` key: ``load`` turns it into a saved connection once.
     """
 
     CONNECTIONS_DIR = "connections"
+    BOOKMARKS_DIR = "bookmarks"
     __FORMAT_VERSION = 2
     __log = LogManager.get_logger(__name__)
 
@@ -35,6 +38,9 @@ class ConfigManager:
         self.__path = path or ConfigManager.default_path()
         self.__connections = ConnectionStore(
             self.__path.parent / ConfigManager.CONNECTIONS_DIR
+        )
+        self.__bookmarks = BookmarkStore(
+            self.__path.parent / ConfigManager.BOOKMARKS_DIR
         )
 
     @property
@@ -46,6 +52,11 @@ class ConfigManager:
     def connections(self) -> ConnectionStore:
         """Saved connections."""
         return self.__connections
+
+    @property
+    def bookmarks(self) -> BookmarkStore:
+        """Bookmarked queries of the saved connections."""
+        return self.__bookmarks
 
     @staticmethod
     def default_path() -> Path:

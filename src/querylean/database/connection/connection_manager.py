@@ -79,6 +79,14 @@ class ConnectionManager:
         return self.__account_privileges
 
     @property
+    def config(self) -> ConnectionConfig | None:
+        """Copy of the settings of the current session (None when
+        disconnected)."""
+        with self.__lock:
+            params = self.__params
+        return None if params is None else params.config.copy()
+
+    @property
     def is_connected(self) -> bool:
         """True after a successful ``connect`` and until ``disconnect``."""
         return self.__params is not None

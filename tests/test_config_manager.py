@@ -25,6 +25,7 @@ class TestConfigManager:
         assert cfg.active_connection == ""
         assert manager.connections.load_all() == []
         assert manager.connections.directory == tmp_path / "connections"
+        assert manager.bookmarks.directory == tmp_path / "bookmarks"
 
     def test_roundtrip_and_permissions(self, tmp_path):
         path = tmp_path / "sub" / "config.json"

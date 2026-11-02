@@ -107,21 +107,22 @@ src/querylean/
   app/                 AppInfo (NAME, DISPLAY_NAME, AUTHOR, …, version()), VersionFile, BundleResources (percorsi nel bundle: `_MEIPASS` o radice), Application.run() (entry point, excepthook), SmokeTest
   log/                 AppLogger, LogManager, SecretRedactor
   config/              ConnectionConfig (anche name, display_name, caution_mode), ConnectionProfile (id + config), ConnectionStore (connections/<id>.json),
-                       UiPreferences, AppConfig (active_connection + ui), ConfigManager (config.json + migrazione), ConfigError
+                       UiPreferences, AppConfig (active_connection + ui), ConfigManager (config.json + migrazione; espone connections e bookmarks), ConfigError
+  bookmarks/           QueryBookmark (nome, sql, target `user@host:port/database`), BookmarkStore (bookmarks/<id connessione>.json)
   files/               PrivateFile (sostituzione atomica di un file 0600: temporaneo + os.replace), PrivateJsonFile (JSON tramite PrivateFile)
   security/            SecretStore (astratta), KeyringSecretStore, SecretStorageError
   export/              ResultExporter (astratta: scrittura tramite PrivateFile) → XlsxExporter, CsvExporter, JsonExporter;
                        ResultExporters (elenco e ricerca per estensione/filtro), ExportReport, ExportError
   database/
     errors/            DatabaseError(message, kind), QueryCancelled, QueryTimeout, ErrorTranslator
-    connection/        ConnectionParams (kwargs del driver, password mascherata), ConnectionManager (sessione READ ONLY verificata, controllo dei grant)
+    connection/        ConnectionParams (kwargs del driver, password mascherata), ConnectionManager (sessione READ ONLY verificata, controllo dei grant, config della sessione)
     privileges/        GrantAnalyzer (analisi fail-closed di SHOW GRANTS), AccountPrivileges (esito: read_only, write_privileges, verified)
     execution/         QueryExecutor (execute/cancel), QueryResult
     schema/            TableCatalog (SHOW FULL TABLES tramite QueryExecutor), TableInfo (select_statement), MySqlIdentifier (quoting con backtick)
     validation/        ReadOnlyValidator → stadi ValidationStage su ValidationContext;
                        MySqlLexer, SqlToken, LexedStatement, ReadOnlyRules, ValidationResult
   ui/
-    main/              MainWindow, ConnectionState, CautionPalette (sfondo rosa in modalità attenzione), ConnectionsMenu (menu "Connections": New connection…, Connect/Edit…/Delete… per connessione)
+    main/              MainWindow, ConnectionState, CautionPalette (sfondo rosa in modalità attenzione), ConnectionsMenu, BookmarksMenu ("Bookmarked queries") (menu "Connections": New connection…, Connect/Edit…/Delete… per connessione)
     dialogs/           ConnectionDialog, AboutDialog (versione/autore da AppInfo)
     icons/             ToolbarIcons (icone disegnate con QPainter: nessun asset da impacchettare)
     editor/            SqlEditor, SqlHighlighter, LineNumberArea
@@ -184,6 +185,12 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
   - un file illeggibile viene saltato (con log), non deve impedire il caricamento delle altre;
   - la migrazione del vecchio `config.json` a connessione singola avviene una sola volta e non tocca il portachiavi;
   - la password è indicizzata per account (`SecretStore.account_key`): si toglie dal portachiavi solo quando nessuna connessione salvata usa più quell'account.
+- **Query nei segnalibri** (1.6):
+  - un segnalibro appartiene a una connessione salvata (file `bookmarks/<id>.json`, 0600, scritto con `PrivateJsonFile`) **e** al suo target `user@host:port/database` (`QueryBookmark.target_of`);
+  - il menu mostra solo i segnalibri della sessione aperta (`MainWindow.__session_id` + `session_target`, fissati in `__start_connect` con la config effettivamente usata);
+  - l'esecuzione passa da `DbWorker.bookmark_requested`, che rifiuta (kind `bookmark_target`) se il target non coincide con `ConnectionManager.config`, poi dal normale `QueryExecutor` (validatore incluso). Non eseguire segnalibri con `query_requested`;
+  - si salvano solo query accettate da `ReadOnlyValidator`; un file danneggiato non va mai sovrascritto (`ConfigError`);
+  - eliminare una connessione elimina i suoi segnalibri.
 - **Password**:
   - mai su file di configurazione, log o messaggi;
   - registrarla con `LogManager.register_secret()` appena è nota (in `MainWindow` lo fa `__remember_session`, usato da ogni percorso che riceve una password);
@@ -224,6 +231,7 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
   - 1.2: barra laterale con l'elenco delle tabelle del database configurato, che prepara `SELECT * FROM <tabella> LIMIT 1;`. Niente albero di colonne, indici o altri database, niente esecuzione automatica;
   - 1.3: più connessioni salvate (profili), ma **una sola connessione aperta alla volta**. Niente connessioni simultanee, schede o finestre multiple.
   - 1.4: modalità attenzione per account con privilegi di scrittura (sempre e solo query di lettura) e validatore più severo.
+  - 1.6: query nei segnalibri per connessione (salva con nome, menu "Bookmarked queries" che le esegue). Niente cronologia automatica, cartelle, import/export o condivisione tra connessioni.
 
 ## Packaging
 

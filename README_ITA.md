@@ -15,6 +15,7 @@ volta, un editor SQL e una tabella di risultati copiabili.
   - evidenziazione di keyword, stringhe, numeri e commenti;
   - esecuzione con `Ctrl+Invio` (Linux) o `Cmd+Invio` (macOS).
 - Barra laterale con le tabelle e le viste del database a cui si ha accesso: un clic su una tabella prepara nell'editor `SELECT * FROM <tabella> LIMIT 1;`.
+- Query nei segnalibri: una query salvata con un nome per una connessione si riesegue dal menu **Bookmarked queries**, solo su quella connessione.
 - Sono ammesse solo istruzioni di lettura (`SELECT`, `WITH … SELECT`, `UNION`, `SHOW`, `DESCRIBE`/`DESC`, `EXPLAIN SELECT`). Ogni query passa da un validatore basato sul parsing.
 - Alla connessione vengono controllati i privilegi dell'account: un account che può modificare i dati viene rifiutato, a meno che la connessione sia in [modalità attenzione](#modalità-attenzione).
 - L'esecuzione avviene fuori dal thread della GUI, con indicatore di attività, pulsante **Stop** (Interrompi) e timeout.
@@ -63,7 +64,7 @@ La compatibilità macOS va considerata confermata solo quando la pipeline CI cor
 
 ## Uso
 
-La barra in alto contiene, nell'ordine: **Run** (Esegui, ▶), **Stop** (Interrompi, attivo solo durante l'esecuzione), **Export** (Esporta, menu a tendina, attivo quando c'è un risultato), **Connect**/**Disconnect** (Connetti/Disconnetti), **Connections** (Connessioni, menu a tendina) e **About** (Informazioni: versione, autore, licenza). Lo stato della connessione è in basso a destra. L'interfaccia è in inglese. A sinistra, per tutta l'altezza della finestra, c'è la barra **Tables** (Tabelle).
+La barra in alto contiene, nell'ordine: **Run** (Esegui, ▶), **Stop** (Interrompi, attivo solo durante l'esecuzione), **Save query** (Salva query, ☆) e **Bookmarked queries** (Query nei segnalibri, menu a tendina), attivi solo da connessi, **Export** (Esporta, menu a tendina, attivo quando c'è un risultato), **Connect**/**Disconnect** (Connetti/Disconnetti), **Connections** (Connessioni, menu a tendina) e **About** (Informazioni: versione, autore, licenza). Lo stato della connessione è in basso a destra. L'interfaccia è in inglese. A sinistra, per tutta l'altezza della finestra, c'è la barra **Tables** (Tabelle).
 
 1. **Connections** → **New connection…** (Connessioni → Nuova connessione…): compila nome (facoltativo), host, porta, database, username, password e i timeout, poi usa **Test connection** (Test connessione) e **Save** (Salva). Salvare non apre la connessione (vedi [Connessioni](#connessioni)).
 2. **Connect** apre la connessione attiva, quella con la spunta nel menu **Connections**: lo stato passa da *Disconnected* (Disconnesso) a *Connecting* (Connessione in corso) e poi a *Connected* (Connesso) o *Connection error* (Errore di connessione). Se la password non è nel portachiavi, viene richiesta.
@@ -79,7 +80,7 @@ Ogni voce ha un sottomenu:
 
 - **Connect** (Connetti): la rende attiva e si connette. Se si è già connessi a un'altra, quella viene chiusa prima.
 - **Edit…** (Modifica…): apre la finestra di compilazione con i valori salvati. Se è la connessione in uso, le modifiche valgono dalla prossima connessione.
-- **Delete…** (Elimina…): chiede conferma, poi cancella il file della connessione. Se è quella in uso, la chiude.
+- **Delete…** (Elimina…): chiede conferma, poi cancella il file della connessione e le sue query nei segnalibri. Se è quella in uso, la chiude.
 
 Il pulsante **Connect** (Connetti) della barra usa la connessione attiva; se non ne esiste nessuna, apre **New connection…**. Una connessione appena salvata diventa attiva se in quel momento non si è connessi.
 
@@ -95,6 +96,17 @@ Dopo la connessione la barra **Tables** (Tabelle) elenca tabelle e viste del dat
 - Il nome della tabella è sempre tra backtick, con gli eventuali backtick interni raddoppiati, quindi funzionano anche nomi con spazi o parole riservate.
 - Il pulsante ⟳ ricarica l'elenco, per esempio dopo la creazione di una tabella. Alla disconnessione l'elenco si svuota.
 - La lettura dell'elenco passa dal validatore, rispetta il timeout delle query e mostra al massimo 10.000 voci. Un errore (per esempio permessi insufficienti) viene mostrato nella barra, senza chiudere la connessione.
+
+### Query nei segnalibri
+
+Una query nei segnalibri appartiene a **una connessione salvata** e al database a cui punta (`<utente>@<host>:<porta>/<database>`).
+
+- **Save query** (Salva query) salva la selezione oppure, senza selezione, tutto il contenuto dell'editor. Chiede un nome (al massimo 100 caratteri) e salva la query per la connessione aperta. Un segnalibro esistente con lo stesso nome (senza distinzione tra maiuscole e minuscole) viene sostituito dopo una conferma. Si possono salvare solo query accettate dal validatore: una query di scrittura viene rifiutata già a questo punto.
+- Il menu **Bookmarked queries** (Query nei segnalibri) elenca, in ordine alfabetico, solo le query della connessione aperta; il testo della query è nel tooltip. Un clic mette la query nell'editor (annullabile con `Ctrl/Cmd+Z`) e la esegue subito, passando dal validatore come ogni altra query.
+- **Bookmarked queries** → **Delete** (Elimina) cancella un segnalibro, dopo una conferma.
+- Un segnalibro non viene mai eseguito su un'altra connessione: il menu mostra solo quelli della connessione aperta e, prima di eseguirne uno, il thread del database controlla che la sessione aperta punti allo stesso utente, host, porta e database. Un'altra connessione salvata che punta allo stesso database ha i suoi segnalibri.
+- Se una connessione viene modificata per puntare a un altro host, porta, database o utente, i suoi vecchi segnalibri non vengono più mostrati; tornano se si ripristinano i valori precedenti.
+- I segnalibri sono salvati in un file JSON per connessione (vedi [File locali](#file-locali)).
 
 ### Regole di esecuzione
 
@@ -216,6 +228,7 @@ Raccomandazioni:
 | --- | --- | --- |
 | Configurazione: connessione attiva, finestra (permessi 0600) | `~/.config/querylean/config.json` | `~/Library/Application Support/querylean/config.json` |
 | Connessioni salvate, un file `<id>.json` ciascuna (permessi 0600) | `~/.config/querylean/connections/` | `~/Library/Application Support/querylean/connections/` |
+| Query nei segnalibri, un file `<id connessione>.json` per connessione (permessi 0600) | `~/.config/querylean/bookmarks/` | `~/Library/Application Support/querylean/bookmarks/` |
 | Log (rotazione 1 MB × 3) | `~/.local/state/querylean/log/` | `~/Library/Logs/querylean/` |
 
 Le versioni fino alla 1.2 avevano una sola connessione dentro `config.json`. Al primo avvio della nuova versione viene salvata come prima connessione, e la sua password nel portachiavi resta valida.
@@ -258,6 +271,7 @@ src/querylean/
   app/          avvio (Application), metadati (AppInfo), smoke test
   log/          logger dell'applicazione, log ruotato, redazione dei segreti
   config/       modello della configurazione e persistenza JSON
+  bookmarks/    query nei segnalibri per connessione (QueryBookmark, BookmarkStore)
   security/     password nel portachiavi (SecretStore astratta, KeyringSecretStore)
   export/       esportazione Excel/CSV/JSON (ResultExporter astratta)
   database/     errors/, connection/, execution/, schema/ (elenco tabelle), privileges/ (controllo SHOW GRANTS), validation/ (validatore a stadi)

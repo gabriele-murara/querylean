@@ -30,6 +30,8 @@ class TestMainWindow(MainWindowTestBase):
         assert texts == [
             "Run",
             "Stop",
+            "Save query",
+            "Bookmarked queries",
             "Export",
             "Connect",
             "Connections",

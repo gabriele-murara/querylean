@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from querylean.app.app_info import AppInfo
+from querylean.bookmarks.query_bookmark import QueryBookmark
 from querylean.config.app_config import AppConfig
 from querylean.config.config_error import ConfigError
 from querylean.config.config_manager import ConfigManager
@@ -41,6 +42,9 @@ from querylean.database.execution.query_executor import QueryExecutor
 from querylean.database.execution.query_result import QueryResult
 from querylean.database.privileges.account_privileges import AccountPrivileges
 from querylean.database.schema.table_info import TableInfo
+from querylean.database.validation.read_only_validator import (
+    ReadOnlyValidator,
+)
 from querylean.export.export_report import ExportReport
 from querylean.export.result_exporter import ResultExporter
 from querylean.export.result_exporters import ResultExporters
@@ -52,6 +56,7 @@ from querylean.ui.dialogs.about_dialog import AboutDialog
 from querylean.ui.dialogs.connection_dialog import ConnectionDialog
 from querylean.ui.editor.sql_editor import SqlEditor
 from querylean.ui.icons.toolbar_icons import ToolbarIcons
+from querylean.ui.main.bookmarks_menu import BookmarksMenu
 from querylean.ui.main.caution_palette import CautionPalette
 from querylean.ui.main.connection_state import ConnectionState
 from querylean.ui.main.connections_menu import ConnectionsMenu
@@ -63,7 +68,8 @@ from querylean.ui.worker.export_thread import ExportThread
 
 
 class MainWindow(QMainWindow):
-    """Toolbar (run, stop, export, connect, connections, about); below it
+    """Toolbar (run, stop, save query, bookmarked queries, export, connect,
+    connections, about); below it
     the table side bar on the left and, on the right, editor and result
     panel separated by a resizable splitter; connection state at the bottom
     right.
@@ -71,7 +77,11 @@ class MainWindow(QMainWindow):
     Several connections can be saved (``ConnectionStore``); one at a time is
     active, and it is the one "Connect" opens. Passwords stay in the
     keychain or, for the session, in memory, keyed by MySQL account
-    (``user@host:port``): connections to the same account share it."""
+    (``user@host:port``): connections to the same account share it.
+
+    Bookmarked queries belong to one saved connection and its target
+    (``user@host:port/database``): the menu offers, and the worker runs,
+    only those of the open session."""
 
     # Delay after the query timeout before the watchdog sends KILL QUERY: lets
     # the server-side MAX_EXECUTION_TIME act first.
@@ -82,6 +92,9 @@ class MainWindow(QMainWindow):
     # Shown next to the state while connected in caution mode.
     CAUTION_LABEL = "CAUTION: account with write privileges"
     CAUTION_COLOR = "#c62828"
+    SAVE_QUERY_TEXT = "Save query"
+    __SAVE_QUERY_TIP = "Bookmark the selection or the whole query for the "
+    __SAVE_QUERY_TIP += "current connection"
     __log = LogManager.get_logger(__name__)
 
     def __init__(
@@ -107,6 +120,12 @@ class MainWindow(QMainWindow):
         self.__state = ConnectionState.DISCONNECTED
         # Privileges of the account of the open session (None when closed).
         self.__privileges: AccountPrivileges | None = None
+        # Saved connection and settings of the open session: bookmarks are
+        # read and run only for them.
+        self.__session_id = ""
+        self.__session_config: ConnectionConfig | None = None
+        self.__bookmarks: list[QueryBookmark] = []
+        self.__validator = ReadOnlyValidator()
         self.__running = False
         self.__closed = False
         # Result shown in the table (exported by "Export").
@@ -198,6 +217,19 @@ class MainWindow(QMainWindow):
             and self.__privileges is not None
             and not self.__privileges.read_only
         )
+
+    @property
+    def session_target(self) -> str:
+        """``user@host:port/database`` of the open (or opening) session;
+        empty when disconnected."""
+        if self.__session_config is None:
+            return ""
+        return QueryBookmark.target_of(self.__session_config)
+
+    @property
+    def bookmarks(self) -> list[QueryBookmark]:
+        """Bookmarked queries of the open session."""
+        return list(self.__bookmarks)
 
     @property
     def running(self) -> bool:
@@ -300,6 +332,21 @@ class MainWindow(QMainWindow):
         return self.__connect_action
 
     @property
+    def save_query_action(self) -> QAction:
+        """ "Save query" action (bookmarks the query)."""
+        return self.__save_query_action
+
+    @property
+    def bookmarks_action(self) -> QAction:
+        """ "Bookmarked queries" action."""
+        return self.__bookmarks_action
+
+    @property
+    def bookmarks_menu(self) -> BookmarksMenu:
+        """Menu of the bookmarked queries of the open session."""
+        return self.__bookmarks_menu
+
+    @property
     def execute_action(self) -> QAction:
         """ "Run" action."""
         return self.__execute_action
@@ -314,6 +361,8 @@ class MainWindow(QMainWindow):
         return (
             self.__execute_action,
             self.__stop_action,
+            self.__save_query_action,
+            self.__bookmarks_action,
             self.__export_action,
             self.__connect_action,
             self.__connections_action,
@@ -431,6 +480,10 @@ class MainWindow(QMainWindow):
             p for p in self.__profiles if p.profile_id != profile_id
         ]
         self.__forget_password(profile.config)
+        try:
+            self.__config_manager.bookmarks.delete_all(profile_id)
+        except ConfigError as exc:
+            self.__log.warning("Bookmarks of a deleted connection: {}", exc)
         if is_active:
             self.__app_config.active_connection = ""
             self.__ensure_active()
@@ -486,6 +539,123 @@ class MainWindow(QMainWindow):
         sql = self.__editor.query_text()
         if not sql.strip():
             return
+        self.__start_query(sql)
+
+    def save_bookmark(
+        self, name: str | None = None, *, confirm: bool = True
+    ) -> QueryBookmark | None:
+        """Save the selection, or the whole editor content, as a bookmarked
+        query of the open session. Without ``name`` the user is asked for
+        one; an existing bookmark with that name is replaced (after
+        confirmation). Only queries accepted by the validator are saved."""
+        if self.__running:
+            return None
+        if self.__state != ConnectionState.CONNECTED:
+            self.show_message(ConnectionManager.NOT_CONNECTED, error=True)
+            return None
+        sql = self.__editor.query_text().strip()
+        if not sql:
+            self.show_message("Write a query to bookmark it.", error=True)
+            return None
+        validation = self.__validator.validate(sql)
+        if not validation.ok:
+            msg = "Only read queries can be bookmarked. {}"
+            self.show_message(msg.format(validation.reason), error=True)
+            return None
+        if name is None:
+            name, ok = QInputDialog.getText(
+                self,
+                MainWindow.SAVE_QUERY_TEXT,
+                "Name of the query for “{}”:".format(
+                    self.__session_display_name()
+                ),
+            )
+            if not ok:
+                return None
+        name = QueryBookmark.clean_name(name)
+        if not name:
+            self.show_message("Query not saved: no name.", error=True)
+            return None
+        if len(name) > QueryBookmark.MAX_NAME_LENGTH:
+            msg = "Query not saved: the name is longer than {} characters."
+            self.show_message(
+                msg.format(QueryBookmark.MAX_NAME_LENGTH), error=True
+            )
+            return None
+        store = self.__config_manager.bookmarks
+        target = self.session_target
+        existing = store.find(self.__session_id, target, name)
+        if existing is not None and confirm:
+            answer = QMessageBox.question(
+                self,
+                MainWindow.SAVE_QUERY_TEXT,
+                "Replace the bookmarked query “{}”?".format(existing.name),
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return None
+        if existing is not None:
+            name = existing.name
+        bookmark = QueryBookmark(name, sql, target)
+        try:
+            store.add(self.__session_id, bookmark)
+        except ConfigError as exc:
+            QMessageBox.warning(self, MainWindow.SAVE_QUERY_TEXT, str(exc))
+            return None
+        self.__reload_bookmarks()
+        msg = "Query saved as “{}” for “{}”."
+        self.show_message(msg.format(name, self.__session_display_name()))
+        return bookmark
+
+    def run_bookmark(self, name: str) -> None:
+        """Put the bookmarked query ``name`` of the open session in the
+        editor (undoable) and run it. Bookmarks of other connections are
+        never run."""
+        if self.__running:
+            return
+        if self.__state != ConnectionState.CONNECTED:
+            self.show_message(ConnectionManager.NOT_CONNECTED, error=True)
+            return
+        target = self.session_target
+        bookmark = self.__config_manager.bookmarks.find(
+            self.__session_id, target, name
+        )
+        if bookmark is None or bookmark.target != target:
+            msg = "The bookmarked query “{}” is not available for this "
+            msg += "connection."
+            self.show_message(msg.format(name), error=True)
+            self.__reload_bookmarks()
+            return
+        self.__editor.replace_query(bookmark.sql)
+        self.__start_query(bookmark.sql, bookmark.target)
+
+    def delete_bookmark(self, name: str, *, confirm: bool = True) -> bool:
+        """Delete the bookmarked query ``name`` of the open session (after
+        confirmation). Returns True when deleted."""
+        if not self.__session_id:
+            return False
+        if confirm:
+            answer = QMessageBox.question(
+                self,
+                "Delete bookmark",
+                "Delete the bookmarked query “{}”?".format(name),
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return False
+        try:
+            deleted = self.__config_manager.bookmarks.remove(
+                self.__session_id, self.session_target, name
+            )
+        except ConfigError as exc:
+            QMessageBox.warning(self, "Delete bookmark", str(exc))
+            return False
+        self.__reload_bookmarks()
+        if deleted:
+            self.show_message("Bookmarked query “{}” deleted.".format(name))
+        return deleted
+
+    def __start_query(self, sql: str, target: str | None = None) -> None:
+        """Send ``sql`` to the worker; with ``target`` (a bookmark) the
+        worker runs it only on a session for that target."""
         if self.__state != ConnectionState.CONNECTED:
             self.show_message(ConnectionManager.NOT_CONNECTED, error=True)
             return
@@ -503,7 +673,14 @@ class MainWindow(QMainWindow):
         self.__watchdog.start(
             cfg.query_timeout * 1000 + MainWindow.WATCHDOG_GRACE_MS
         )
-        self.worker.query_requested.emit(sql, cfg.row_limit, cfg.query_timeout)
+        if target is None:
+            self.worker.query_requested.emit(
+                sql, cfg.row_limit, cfg.query_timeout
+            )
+        else:
+            self.worker.bookmark_requested.emit(
+                sql, target, cfg.row_limit, cfg.query_timeout
+            )
 
     def stop_query(self) -> None:
         """Interrupt the running query."""
@@ -622,6 +799,21 @@ class MainWindow(QMainWindow):
         self.__stop_action = QAction(ToolbarIcons.stop(), "Stop", self)
         self.__stop_action.setToolTip("Stop the running query")
         self.__stop_action.triggered.connect(self.stop_query)
+        self.__save_query_action = QAction(
+            ToolbarIcons.star(), MainWindow.SAVE_QUERY_TEXT, self
+        )
+        self.__save_query_action.setToolTip(MainWindow.__SAVE_QUERY_TIP)
+        self.__save_query_action.triggered.connect(lambda: self.save_bookmark())
+        self.__bookmarks_action = QAction(
+            ToolbarIcons.bookmarks(), BookmarksMenu.TITLE, self
+        )
+        self.__bookmarks_action.setToolTip(
+            "Run a query bookmarked for the current connection"
+        )
+        self.__bookmarks_menu = BookmarksMenu(self)
+        self.__bookmarks_menu.run_requested.connect(self.run_bookmark)
+        self.__bookmarks_menu.delete_requested.connect(self.delete_bookmark)
+        self.__bookmarks_action.setMenu(self.__bookmarks_menu)
         self.__export_action = QAction(ToolbarIcons.export(), "Export", self)
         self.__export_action.setToolTip(
             "Export the result to Excel, CSV or JSON"
@@ -659,7 +851,11 @@ class MainWindow(QMainWindow):
         for action in self.toolbar_actions():
             toolbar.addAction(action)
         # A click on "Export" or "Connections" opens the menu directly.
-        for action in (self.__export_action, self.__connections_action):
+        for action in (
+            self.__bookmarks_action,
+            self.__export_action,
+            self.__connections_action,
+        ):
             button = toolbar.widgetForAction(action)
             if isinstance(button, QToolButton):
                 button.setPopupMode(
@@ -759,6 +955,10 @@ class MainWindow(QMainWindow):
         self.__state = state
         if state != ConnectionState.CONNECTED:
             self.__privileges = None
+        if state in (ConnectionState.DISCONNECTED, ConnectionState.ERROR):
+            self.__session_id = ""
+            self.__session_config = None
+            self.__set_bookmarks([])
         text = "<b style='color:{}'>●</b> {}".format(state.color, state.label)
         if self.caution_active:
             text = "{} · <b style='color:{}'>{}</b>".format(
@@ -798,6 +998,8 @@ class MainWindow(QMainWindow):
         self.__connect_action.setEnabled(not busy and not self.__running)
         self.__connections_action.setEnabled(not busy and not self.__running)
         self.__execute_action.setEnabled(connected and not self.__running)
+        self.__save_query_action.setEnabled(connected and not self.__running)
+        self.__bookmarks_action.setEnabled(connected and not self.__running)
         self.__stop_action.setEnabled(self.__running)
         self.__export_action.setEnabled(
             self.__can_export() and not self.__running
@@ -809,6 +1011,26 @@ class MainWindow(QMainWindow):
             and bool(self.__result.columns)
             and self.__export_thread is None
         )
+
+    # ---------------------------------------------------------------- bookmarks
+    def __reload_bookmarks(self) -> None:
+        """Read the bookmarks of the open session again."""
+        if not self.__session_id or self.__session_config is None:
+            self.__set_bookmarks([])
+            return
+        self.__set_bookmarks(
+            self.__config_manager.bookmarks.load(
+                self.__session_id, self.session_target
+            )
+        )
+
+    def __set_bookmarks(self, bookmarks: list[QueryBookmark]) -> None:
+        self.__bookmarks = list(bookmarks)
+        self.__bookmarks_menu.set_bookmarks(self.__bookmarks)
+
+    def __session_display_name(self) -> str:
+        profile = self.__profile(self.__session_id)
+        return profile.display_name if profile is not None else ""
 
     # -------------------------------------------------------------- connections
     def __profile(self, profile_id: str | None) -> ConnectionProfile | None:
@@ -889,6 +1111,9 @@ class MainWindow(QMainWindow):
     def __start_connect(self, profile: ConnectionProfile) -> None:
         cfg = profile.config
         self.__set_state(ConnectionState.CONNECTING)
+        self.__session_id = profile.profile_id
+        self.__session_config = cfg.copy()
+        self.__set_bookmarks([])
         msg = "Connecting to {}:{}/{}…"
         self.show_message(msg.format(cfg.host, cfg.port, cfg.database))
         self.worker.connect_requested.emit(cfg.copy(), self.__password_for(cfg))
@@ -975,6 +1200,7 @@ class MainWindow(QMainWindow):
             )
         else:
             self.show_message(msg)
+        self.__reload_bookmarks()
         self.__editor.setFocus()
         self.refresh_tables()
 

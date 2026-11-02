@@ -6,6 +6,7 @@ import threading
 
 from PySide6.QtCore import QObject, Signal, Slot
 
+from querylean.bookmarks.query_bookmark import QueryBookmark
 from querylean.config.connection_config import ConnectionConfig
 from querylean.database.connection.connection_manager import ConnectionManager
 from querylean.database.errors.database_error import DatabaseError
@@ -21,12 +22,17 @@ class DbWorker(QObject):
     UNEXPECTED_ERROR = (
         "Unexpected error. The technical details were written to the log."
     )
+    WRONG_TARGET = "The bookmarked query was not run: it was saved for "
+    WRONG_TARGET += "another connection."
+    WRONG_TARGET_KIND = "bookmark_target"
 
     # Requests (GUI -> worker)
     connect_requested = Signal(object, str)
     disconnect_requested = Signal()
     test_requested = Signal(object, str)
     query_requested = Signal(str, int, int)
+    # Bookmarked query: sql, target it was saved for, row limit, timeout.
+    bookmark_requested = Signal(str, str, int, int)
     tables_requested = Signal(int)  # timeout in seconds
 
     # Responses (worker -> GUI)
@@ -50,6 +56,7 @@ class DbWorker(QObject):
         self.disconnect_requested.connect(self.__on_disconnect)
         self.test_requested.connect(self.__on_test)
         self.query_requested.connect(self.__on_query)
+        self.bookmark_requested.connect(self.__on_bookmark)
         self.tables_requested.connect(self.__on_tables)
 
     @property
@@ -124,6 +131,22 @@ class DbWorker(QObject):
             self.query_failed.emit(DbWorker.UNEXPECTED_ERROR, "generic")
         else:
             self.query_finished.emit(result)
+
+    @Slot(str, str, int, int)
+    def __on_bookmark(
+        self, sql: str, target: str, row_limit: int, timeout: int
+    ) -> None:
+        """Run a bookmarked query only on a session opened for the target it
+        was saved for."""
+        # Without a session the executor reports "not connected".
+        config = self.__manager.config
+        if config is not None and QueryBookmark.target_of(config) != target:
+            self.__log.warning("Bookmarked query refused: different target")
+            self.query_failed.emit(
+                DbWorker.WRONG_TARGET, DbWorker.WRONG_TARGET_KIND
+            )
+            return
+        self.__on_query(sql, row_limit, timeout)
 
     @Slot(int)
     def __on_tables(self, timeout: int) -> None:
