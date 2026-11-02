@@ -61,3 +61,20 @@ class TestConnectionConfig:
         assert cfg.connect_timeout == 5
         assert cfg.username == "ro"
         assert ConnectionConfig.from_dict("not a dict") == ConnectionConfig()
+
+    def test_caution_mode_is_off_by_default_and_serialised(self):
+        assert ConnectionConfig().caution_mode is False
+        cfg = ConnectionConfig(database="d", username="u", caution_mode=True)
+        assert cfg.to_dict()["caution_mode"] is True
+        assert ConnectionConfig.from_dict(cfg.to_dict()) == cfg
+        assert cfg.copy().caution_mode is True
+
+    def test_caution_mode_accepts_only_booleans(self):
+        for value in (1, "true", "yes", None, [True]):
+            cfg = ConnectionConfig.from_dict({"caution_mode": value})
+            assert cfg.caution_mode is False, value
+        cfg = ConnectionConfig()
+        cfg.caution_mode = 1
+        assert cfg.caution_mode is False
+        # Files written before 1.4 have no caution_mode key.
+        assert ConnectionConfig.from_dict({"host": "db"}).caution_mode is False

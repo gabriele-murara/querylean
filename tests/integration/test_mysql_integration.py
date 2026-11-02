@@ -147,6 +147,18 @@ class TestMysqlIntegration:
             cursor.execute(sql)
         cursor.close()
 
+    def test_select_only_account_is_read_only(self, manager):
+        """The test account (SELECT only) passes the privilege check and the
+        session is confirmed read-only."""
+        assert manager.account_privileges.read_only
+        cursor = manager.ensure_connected().cursor()
+        try:
+            cursor.execute("SELECT @@SESSION.transaction_read_only")
+        except mysql.connector.Error:
+            cursor.execute("SELECT @@SESSION.tx_read_only")
+        assert int(cursor.fetchall()[0][0]) == 1
+        cursor.close()
+
     def test_driver_refuses_multiple_statements(self, manager):
         cursor = manager.ensure_connected().cursor()
         with pytest.raises(mysql.connector.Error):

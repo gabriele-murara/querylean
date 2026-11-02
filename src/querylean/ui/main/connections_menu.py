@@ -10,7 +10,8 @@ from querylean.config.connection_profile import ConnectionProfile
 
 class ConnectionsMenu(QMenu):
     """ "New connection…", then one sub-menu per saved connection with
-    "Connect", "Edit…" and "Delete…". The active connection is checked.
+    "Connect", "Edit…" and "Delete…". The active connection is checked;
+    connections in caution mode are marked in the title.
 
     Signals carry the connection identifier; the menu holds no logic.
     """
@@ -24,6 +25,8 @@ class ConnectionsMenu(QMenu):
     CONNECT_TEXT = "Connect"
     EDIT_TEXT = "Edit…"
     DELETE_TEXT = "Delete…"
+    # Title of a connection in caution mode.
+    CAUTION_TITLE = "{} (caution mode)"
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__("Connections", parent)
@@ -51,7 +54,10 @@ class ConnectionsMenu(QMenu):
             self.addSeparator()
         for profile in profiles:
             pid = profile.profile_id
-            submenu = self.addMenu(profile.display_name)
+            title = profile.display_name
+            if profile.config.caution_mode:
+                title = ConnectionsMenu.CAUTION_TITLE.format(title)
+            submenu = self.addMenu(title)
             submenu.setToolTipsVisible(True)
             entry = submenu.menuAction()
             # Only the active connection shows a check mark.

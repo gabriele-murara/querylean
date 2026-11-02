@@ -16,6 +16,7 @@ volta, un editor SQL e una tabella di risultati copiabili.
   - esecuzione con `Ctrl+Invio` (Linux) o `Cmd+Invio` (macOS).
 - Barra laterale con le tabelle e le viste del database a cui si ha accesso: un clic su una tabella prepara nell'editor `SELECT * FROM <tabella> LIMIT 1;`.
 - Sono ammesse solo istruzioni di lettura (`SELECT`, `WITH … SELECT`, `UNION`, `SHOW`, `DESCRIBE`/`DESC`, `EXPLAIN SELECT`). Ogni query passa da un validatore basato sul parsing.
+- Alla connessione vengono controllati i privilegi dell'account: un account che può modificare i dati viene rifiutato, a meno che la connessione sia in [modalità attenzione](#modalità-attenzione).
 - L'esecuzione avviene fuori dal thread della GUI, con indicatore di attività, pulsante **Stop** (Interrompi) e timeout.
 - Tabella dei risultati non modificabile:
   - `NULL` è distinto dalla stringa vuota;
@@ -84,6 +85,8 @@ Il pulsante **Connect** (Connetti) della barra usa la connessione attiva; se non
 
 Ogni connessione è un file JSON a sé (vedi [File locali](#file-locali)) e non contiene mai la password.
 
+Una connessione con la **Caution mode** (modalità attenzione) attiva compare nel menu come "<nome> (caution mode)" (vedi [Modalità attenzione](#modalità-attenzione)).
+
 ### Barra delle tabelle
 
 Dopo la connessione la barra **Tables** (Tabelle) elenca tabelle e viste del database configurato (`SHOW FULL TABLES`), cioè solo quelle a cui l'account ha accesso. Le viste sono in corsivo e in fondo c'è il numero di elementi.
@@ -136,10 +139,10 @@ In tutti i formati i valori binari sono scritti per intero (testo UTF-8 o esadec
 
 ### Sola lettura: due barriere
 
-1. **Account MySQL con privilegi minimi (barriera principale).** L'applicazione presume che l'account abbia solo privilegi `SELECT`. Non tenta mai di creare utenti o di modificare permessi.
+1. **Account MySQL con privilegi minimi (barriera principale).** A ogni connessione l'applicazione legge i privilegi dell'account con `SHOW GRANTS` e rifiuta la connessione se l'account non è dimostrabilmente di sola lettura (vedi [Controllo dei privilegi](#controllo-dei-privilegi)). Non tenta mai di creare utenti o di modificare permessi.
 2. **Validatore applicativo (barriera aggiuntiva)**, in `src/querylean/database/validation/` (`ReadOnlyValidator`). È fail-closed: se una query non può essere classificata con certezza, viene rifiutata. Lavora su tre livelli:
    - **Lexer MySQL**: riconosce stringhe, identificatori e commenti con le regole del server. Rifiuta istruzioni multiple, commenti eseguibili `/*! … */`, hint `/*+ … */`, `--` non seguito da spazio (in MySQL non è un commento), assegnazioni `:=`, stringhe e commenti non chiusi.
-   - **Parole e funzioni**: fuori da stringhe e commenti blocca le parole riservate di scrittura (`INSERT`, `UPDATE`, `DELETE`, `INTO`, `LOCK`, `CALL`, `LOAD`, …) e le funzioni con effetti collaterali (`GET_LOCK`, `LOAD_FILE`, …).
+   - **Parole e funzioni**: fuori da stringhe e commenti blocca le parole delle istruzioni di scrittura, modifica e amministrazione (`INSERT`, `UPDATE`, `DELETE`, `REPLACE`, `TRUNCATE`, `CREATE`, `DROP`, `ALTER`, `GRANT`, `INTO`, `LOCK`, `CALL`, `LOAD`, `PREPARE`, `EXECUTE`, `COMMIT`, `FLUSH`, `KILL`, …) ovunque compaiano: senza quote, qualificate (`t.update`) o come identificatori quotati (`` `delete` ``). Sono ammesse solo `REPLACE(…)` e `TRUNCATE(…)`, come funzioni di sola lettura. Blocca anche le funzioni con effetti collaterali (`GET_LOCK`, `LOAD_FILE`, …).
    - **Parser sqlglot**: richiede esattamente un'istruzione di un tipo ammesso, senza nodi di DML/DDL, `SELECT … INTO` o `FOR UPDATE`/`LOCK IN SHARE MODE`.
 
    Al server viene inviato il testo originale, mai SQL rigenerato.
@@ -147,10 +150,32 @@ In tutti i formati i valori binari sono scritti per intero (testo UTF-8 o esadec
 Oltre a queste due barriere, la connessione:
 
 - è aperta **senza** il flag `CLIENT_MULTI_STATEMENTS` e con `LOCAL INFILE` disabilitato;
-- imposta `SET SESSION TRANSACTION READ ONLY`;
+- imposta `SET SESSION TRANSACTION READ ONLY` e rilegge `@@SESSION.transaction_read_only` (`tx_read_only` sui server meno recenti): se il server non conferma una sessione di sola lettura, la connessione viene chiusa;
 - rimuove `NO_BACKSLASH_ESCAPES` dal `sql_mode` di sessione, così il server interpreta le stringhe come il validatore.
 
-> L'applicazione **non** promette una modalità read-only assoluta basata solo sulla GUI. Ad esempio, una funzione memorizzata (stored function) richiamata in una `SELECT` potrebbe modificare dati se l'account ne avesse i privilegi. Per questo il vincolo deve essere garantito dall'account MySQL.
+> L'applicazione **non** promette una modalità read-only assoluta basata solo sulla GUI. Ad esempio, una funzione memorizzata (stored function) richiamata in una `SELECT` potrebbe modificare dati se l'account ne avesse i privilegi (la sessione READ ONLY blocca le scritture sulle tabelle permanenti, non su quelle temporanee). Per questo il vincolo deve essere garantito dall'account MySQL.
+
+### Controllo dei privilegi
+
+A ogni connessione, compresi **Test connection** (Test connessione) e le riconnessioni trasparenti, l'applicazione esegue `SHOW GRANTS` e ne analizza il risultato in modo fail-closed:
+
+- i privilegi di lettura sono solo `USAGE`, `SELECT`, `SHOW VIEW` e `SHOW DATABASES`; qualsiasi altro privilegio (`INSERT`, `ALL PRIVILEGES`, `EXECUTE`, `PROXY`, `WITH GRANT OPTION`, privilegi dinamici come `BACKUP_ADMIN`, …) rende l'account "con privilegi di scrittura";
+- i privilegi su colonne (`UPDATE (col)`) contano come gli altri;
+- l'assegnazione di ruoli (`` GRANT `ruolo` TO … ``), righe non riconosciute o un errore di `SHOW GRANTS` rendono l'account "non verificato", e viene trattato come uno con privilegi di scrittura;
+- le righe `REVOKE` (revoche parziali) tolgono soltanto privilegi e vengono ignorate.
+
+Un account che non è di sola lettura viene rifiutato con un messaggio che elenca i privilegi trovati. Nel log finiscono solo i nomi dei privilegi, mai le righe dei grant (su MariaDB possono contenere l'hash della password).
+
+### Modalità attenzione
+
+La **Caution mode** (modalità attenzione) è un'opzione di ogni connessione, nella finestra **New connection…**/**Edit…** ("Caution mode: allow an account with write privileges"). Se è attiva:
+
+- viene accettato un account con privilegi di scrittura o con privilegi non verificabili;
+- **non cambia nient'altro**: vale lo stesso validatore (solo query di lettura) e la sessione deve essere confermata READ ONLY, altrimenti la connessione viene chiusa;
+- mentre si è connessi con un account di questo tipo, lo stato in basso a destra mostra in rosso "CAUTION: account with write privileges" (ATTENZIONE: account con privilegi di scrittura) e il messaggio di connessione elenca i privilegi trovati;
+- **Test connection** segnala i privilegi trovati.
+
+Con un account di sola lettura la modalità attenzione non ha effetti visibili. Va usata solo quando non è disponibile un account con il solo `SELECT`.
 
 ### Predisporre un account MySQL di sola lettura
 
@@ -234,7 +259,7 @@ src/querylean/
   config/       modello della configurazione e persistenza JSON
   security/     password nel portachiavi (SecretStore astratta, KeyringSecretStore)
   export/       esportazione Excel/CSV/JSON (ResultExporter astratta)
-  database/     errors/, connection/, execution/, schema/ (elenco tabelle), validation/ (validatore a stadi)
+  database/     errors/, connection/, execution/, schema/ (elenco tabelle), privileges/ (controllo SHOW GRANTS), validation/ (validatore a stadi)
   ui/           main/, dialogs/, editor/, icons/, results/, sidebar/, worker/ (thread QThread)
 tests/          una classe Test… per file; fakes/ (doppioni), support/ (basi), integration/
 packaging/      spec PyInstaller, script AppImage/.deb/DMG, desktop file, icona,
@@ -412,7 +437,7 @@ Per verificare un download: `sha256sum -c SHA256SUMS --ignore-missing`.
 - Non sono supportati: TLS/SSH tunnel configurabili da GUI, autocompletamento, cronologia, paginazione.
 - L'esportazione salva solo le righe caricate (al massimo 10.000): per esportarne di più serve uno strumento come `mysqldump` o `mysql --batch`.
 - `SHOW` è ammesso solo nelle forme riconosciute dal parser; le altre vengono rifiutate.
-- Le parole riservate di scrittura usate come nomi di colonna devono essere quotate (`` `update` ``) o qualificate (`t.update`), come richiede MySQL.
+- Colonne, tabelle e alias il cui nome è una parola di scrittura (`update`, `delete`, `insert`, …) vengono rifiutati anche se quotati o qualificati; i nomi che contengono soltanto una di queste parole (`updated_at`, `delete_flag`) sono ammessi. Viene rifiutata anche la funzione di stringa `INSERT()`. Le parole dentro stringhe e commenti non vengono controllate.
 - Sequenze `--` non seguite da spazio fuori dalle stringhe (es. `1--1`) vengono rifiutate per evitare ambiguità con i commenti: scrivi `1 - -1`.
 - Il supporto a MariaDB non è garantito: `MAX_EXECUTION_TIME` non esiste e si usa solo il watchdog.
 

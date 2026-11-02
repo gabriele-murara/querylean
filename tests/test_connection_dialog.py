@@ -55,3 +55,52 @@ class TestConnectionDialog(MainWindowTestBase):
             lambda: dialog.test_button.isEnabled(), timeout=self.WAIT_MS
         )
         assert "Authentication failed" in dialog.status.text()
+
+    def test_caution_mode_checkbox(self, qtbot, window):
+        dialog = ConnectionDialog(
+            ConnectionConfig(database="app", username="ro"),
+            "pw",
+            window.worker,
+            keyring_available=True,
+        )
+        qtbot.addWidget(dialog)
+        assert not dialog.caution_mode.isChecked()
+        assert dialog.caution_warning.isHidden()
+        assert dialog.config().caution_mode is False
+        dialog.caution_mode.setChecked(True)
+        assert not dialog.caution_warning.isHidden()
+        assert dialog.config().caution_mode is True
+        edit = ConnectionDialog(
+            ConnectionConfig(caution_mode=True),
+            "",
+            window.worker,
+            keyring_available=True,
+        )
+        qtbot.addWidget(edit)
+        assert edit.caution_mode.isChecked()
+        assert not edit.caution_warning.isHidden()
+
+    def test_connection_test_with_write_account(self, qtbot, window, connector):
+        connector.configure = lambda conn: setattr(
+            conn, "grants", ["GRANT SELECT, INSERT ON `app`.* TO `rw`@`%`"]
+        )
+        dialog = ConnectionDialog(
+            ConnectionConfig(database="app", username="rw"),
+            "pw",
+            window.worker,
+            keyring_available=True,
+        )
+        qtbot.addWidget(dialog)
+        dialog.test_connection()
+        qtbot.waitUntil(
+            lambda: dialog.test_button.isEnabled(), timeout=self.WAIT_MS
+        )
+        assert "Caution mode" in dialog.status.text()
+        assert "INSERT" in dialog.status.text()
+        dialog.caution_mode.setChecked(True)
+        dialog.test_connection()
+        qtbot.waitUntil(
+            lambda: dialog.test_button.isEnabled(), timeout=self.WAIT_MS
+        )
+        assert "succeeded" in dialog.status.text()
+        assert "INSERT" in dialog.status.text()

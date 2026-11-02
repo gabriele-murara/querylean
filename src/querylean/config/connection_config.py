@@ -29,6 +29,7 @@ class ConnectionConfig:
         query_timeout: int = DEFAULT_QUERY_TIMEOUT,
         row_limit: int = DEFAULT_ROW_LIMIT,
         name: str = "",
+        caution_mode: bool = False,
     ) -> None:
         self.__name = ""
         self.__host = ""
@@ -38,6 +39,7 @@ class ConnectionConfig:
         self.__connect_timeout = ConnectionConfig.DEFAULT_CONNECT_TIMEOUT
         self.__query_timeout = ConnectionConfig.DEFAULT_QUERY_TIMEOUT
         self.__row_limit = ConnectionConfig.DEFAULT_ROW_LIMIT
+        self.__caution_mode = False
         self.host = host
         self.port = port
         self.database = database
@@ -46,6 +48,7 @@ class ConnectionConfig:
         self.query_timeout = query_timeout
         self.row_limit = row_limit
         self.name = name
+        self.caution_mode = caution_mode
 
     # --------------------------------------------------------------- properties
     @property
@@ -137,6 +140,16 @@ class ConnectionConfig:
             ConnectionConfig.DEFAULT_ROW_LIMIT,
         )
 
+    @property
+    def caution_mode(self) -> bool:
+        """Allow an account with privileges beyond reading. Queries are
+        still limited to reads; only the account check is relaxed."""
+        return self.__caution_mode
+
+    @caution_mode.setter
+    def caution_mode(self, value: bool) -> None:
+        self.__caution_mode = value is True
+
     # ---------------------------------------------------------------- behaviour
     def default_name(self) -> str:
         """``<user>@<host>/<database>``: the name used when none is set."""
@@ -176,6 +189,7 @@ class ConnectionConfig:
             "connect_timeout": self.__connect_timeout,
             "query_timeout": self.__query_timeout,
             "row_limit": self.__row_limit,
+            "caution_mode": self.__caution_mode,
         }
 
     @staticmethod
@@ -187,7 +201,10 @@ class ConnectionConfig:
             return config
         for name, default in config.to_dict().items():
             value = data.get(name)
-            if isinstance(value, type(default)) and not isinstance(value, bool):
+            # bool is a subclass of int: accept it only for bool fields.
+            if isinstance(value, bool) == isinstance(default, bool) and (
+                isinstance(value, type(default))
+            ):
                 setattr(config, name, value)
         return config
 

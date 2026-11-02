@@ -3,6 +3,7 @@ search."""
 
 import pytest
 
+from querylean.database.validation.read_only_rules import ReadOnlyRules
 from querylean.database.validation.read_only_validator import ReadOnlyValidator
 from querylean.database.validation.validation_stage import ValidationStage
 
@@ -37,11 +38,16 @@ class TestReadOnlyValidator:
         "SELECT * FROM logs WHERE message LIKE '%DELETE FROM%'",
         'SELECT "drop table x; --" AS s',
         "SELECT 'it''s', 'a\\'b; DROP TABLE x'",
-        "SELECT `select`, `update` FROM `table`",
-        "SELECT t.update FROM t",
+        "SELECT `select`, `order` FROM `table`",
+        "SELECT updated_at, deleted, insert_id, created_by FROM t",
+        "SELECT `last_update`, t.`delete_flag` FROM t",
         "SELECT * FROM users;",
         "SELECT * FROM users;  -- fine\n",
         "SELECT REPLACE(name, 'a', 'b'), TRUNCATE(price, 2) FROM products",
+        "SELECT replace (name, 'a', 'b') FROM products",
+        "SHOW CHARACTER SET",
+        "SHOW GRANTS",
+        "EXPLAIN ANALYZE SELECT * FROM users",
         "SELECT SUBSTRING(name FROM 1 FOR 3) FROM users",
         "SELECT 1 - -1",
         "SELECT @@version, DATABASE(), NOW()",
@@ -83,6 +89,26 @@ class TestReadOnlyValidator:
         "COMMIT",
         "KILL 1",
         "FLUSH PRIVILEGES",
+        # write words anywhere outside strings and comments, also as
+        # identifiers or aliases (edge cases to be handled later)
+        "SELECT `update` FROM t",
+        "SELECT t.update FROM t",
+        "SELECT t.`delete` FROM t",
+        "SELECT a AS `insert` FROM t",
+        "SELECT a AS drop_me, b `drop` FROM t",
+        "SELECT * FROM `delete`",
+        "SELECT * FROM app.`update`",
+        "SELECT `REPLACE`(name, 'a', 'b') FROM t",
+        "SELECT t.replace(name, 'a', 'b') FROM t",
+        "SELECT replace FROM t",
+        "SELECT truncate FROM t",
+        "SELECT INSERT('abc', 1, 1, 'x')",
+        "SELECT * FROM t WHERE commit = 1",
+        "SELECT `execute` FROM t",
+        "SELECT * FROM t WHERE flush = 1",
+        "SHOW CREATE TABLE `update`",
+        "DESCRIBE `delete`",
+        "WITH `insert` AS (SELECT 1) SELECT * FROM `insert`",
         # multiple statements
         "SELECT 1; SELECT 2",
         "SELECT 1; DROP TABLE users",
@@ -155,6 +181,25 @@ class TestReadOnlyValidator:
             validator.validate("SELECT 1 -- nota").statement
             == "SELECT 1 -- nota"
         )
+
+    @pytest.mark.parametrize(
+        "word",
+        sorted(
+            ReadOnlyRules.FORBIDDEN_WORDS
+            - ReadOnlyRules.FUNCTION_NAME_EXCEPTIONS
+        ),
+    )
+    def test_every_forbidden_word_is_rejected_as_identifier(
+        self, validator, word
+    ):
+        for sql in (
+            "SELECT {} FROM t".format(word.lower()),
+            "SELECT t.{} FROM t".format(word),
+            "SELECT `{}` FROM t".format(word.lower()),
+            "SELECT a AS `{}` FROM t".format(word),
+        ):
+            result = validator.validate(sql)
+            assert not result.ok, "{!r} accepted".format(sql)
 
     def test_keyword_inside_string_does_not_trigger_rejection(self, validator):
         assert validator.validate(

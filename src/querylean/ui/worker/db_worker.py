@@ -30,7 +30,7 @@ class DbWorker(QObject):
     tables_requested = Signal(int)  # timeout in seconds
 
     # Responses (worker -> GUI)
-    connected = Signal()
+    connected = Signal(object)  # AccountPrivileges of the account
     connect_failed = Signal(str)
     disconnected = Signal()
     test_finished = Signal(bool, str)
@@ -82,7 +82,7 @@ class DbWorker(QObject):
             self.__log.exception("Unexpected error while connecting")
             self.connect_failed.emit(DbWorker.UNEXPECTED_ERROR)
         else:
-            self.connected.emit()
+            self.connected.emit(self.__manager.account_privileges)
 
     @Slot()
     def __on_disconnect(self) -> None:
@@ -94,7 +94,9 @@ class DbWorker(QObject):
     @Slot(object, str)
     def __on_test(self, config: ConnectionConfig, password: str) -> None:
         try:
-            version = self.__manager.test_connection(config, password)
+            version, privileges = self.__manager.test_connection(
+                config, password
+            )
         except DatabaseError as exc:
             self.test_finished.emit(False, exc.message)
         except Exception:
@@ -105,6 +107,10 @@ class DbWorker(QObject):
         else:
             suffix = " (MySQL server {})".format(version) if version else ""
             msg = "Connection succeeded{}.".format(suffix)
+            if not privileges.read_only:
+                caution = "{} Caution mode: {}; only read queries are "
+                caution += "allowed."
+                msg = caution.format(msg, privileges.describe())
             self.test_finished.emit(True, msg)
 
     @Slot(str, int, int)

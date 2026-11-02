@@ -13,8 +13,17 @@ from fakes.fake_cursor import FakeCursor
 
 
 class FakeConnection:
-    """In-memory connection whose behaviour is controlled by the test."""
+    """In-memory connection whose behaviour is controlled by the test.
 
+    The session checks of ``ConnectionManager`` are answered from
+    ``session_variables`` and ``grants`` (a read-only session and account by
+    default), without reaching ``handler``.
+    """
+
+    READ_ONLY_GRANTS = (
+        "GRANT USAGE ON *.* TO `ro`@`%`",
+        "GRANT SELECT ON `app`.* TO `ro`@`%`",
+    )
     __ids = itertools.count(100)
 
     def __init__(self, **kwargs: Any) -> None:
@@ -30,6 +39,11 @@ class FakeConnection:
         self.__closed_by: str | None = None
         self.__block_fetch: threading.Event | None = None
         self.__killed = False
+        self.__session_variables: dict[str, Any] = {
+            "transaction_read_only": 1,
+            "tx_read_only": 1,
+        }
+        self.__grants: Any = list(FakeConnection.READ_ONLY_GRANTS)
 
     @property
     def kwargs(self) -> dict[str, Any]:
@@ -113,6 +127,25 @@ class FakeConnection:
     @killed.setter
     def killed(self, value: bool) -> None:
         self.__killed = value
+
+    @property
+    def session_variables(self) -> dict[str, Any]:
+        """Values (or exceptions) of ``SELECT @@SESSION.<name>``; a missing
+        name fails like an unknown system variable."""
+        return self.__session_variables
+
+    @session_variables.setter
+    def session_variables(self, value: dict[str, Any]) -> None:
+        self.__session_variables = dict(value)
+
+    @property
+    def grants(self) -> Any:
+        """Lines returned by ``SHOW GRANTS``, or an exception."""
+        return self.__grants
+
+    @grants.setter
+    def grants(self, value: Any) -> None:
+        self.__grants = value
 
     def cursor(self) -> FakeCursor:
         """New cursor on this connection."""

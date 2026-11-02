@@ -16,6 +16,7 @@ at a time, a SQL editor and a table of copyable results.
   - execution with `Ctrl+Enter` (Linux) or `Cmd+Enter` (macOS).
 - Side bar with the tables and views of the database you have access to: a click on a table prepares `SELECT * FROM <table> LIMIT 1;` in the editor.
 - Only read statements are allowed (`SELECT`, `WITH … SELECT`, `UNION`, `SHOW`, `DESCRIBE`/`DESC`, `EXPLAIN SELECT`). Every query goes through a parser-based validator.
+- On connection the account privileges are checked: an account that can change data is refused, unless the connection is in [caution mode](#caution-mode).
 - Queries run outside the GUI thread, with an activity indicator, a **Stop** button and timeouts.
 - Read-only results table:
   - `NULL` is distinct from the empty string;
@@ -84,6 +85,8 @@ The toolbar **Connect** button uses the active connection; if none exists, it op
 
 Each connection is a JSON file of its own (see [Local files](#local-files)) and never contains the password.
 
+A connection with **Caution mode** enabled is shown in the menu as "<name> (caution mode)" (see [Caution mode](#caution-mode)).
+
 ### Table side bar
 
 After connecting, the **Tables** side bar lists the tables and views of the configured database (`SHOW FULL TABLES`), that is only those the account can access. Views are in italics and the number of items is shown at the bottom.
@@ -136,10 +139,10 @@ In every format binary values are written in full (UTF-8 text or hexadecimal `0x
 
 ### Read-only: two barriers
 
-1. **MySQL account with minimal privileges (primary barrier).** The application assumes the account has only `SELECT` privileges. It never tries to create users or change permissions.
+1. **MySQL account with minimal privileges (primary barrier).** On every connection the application reads the account privileges with `SHOW GRANTS` and refuses the connection if the account is not provably read-only (see [Privilege check](#privilege-check)). It never tries to create users or change permissions.
 2. **Application validator (additional barrier)**, in `src/querylean/database/validation/` (`ReadOnlyValidator`). It is fail-closed: if a query cannot be classified with certainty, it is rejected. It works on three levels:
    - **MySQL lexer**: recognizes strings, identifiers and comments with the server's rules. It rejects multiple statements, executable comments `/*! … */`, hints `/*+ … */`, `--` not followed by whitespace (in MySQL that is not a comment), `:=` assignments, and unterminated strings and comments.
-   - **Words and functions**: outside strings and comments it blocks reserved write words (`INSERT`, `UPDATE`, `DELETE`, `INTO`, `LOCK`, `CALL`, `LOAD`, …) and functions with side effects (`GET_LOCK`, `LOAD_FILE`, …).
+   - **Words and functions**: outside strings and comments it blocks the words of write, modify and administration statements (`INSERT`, `UPDATE`, `DELETE`, `REPLACE`, `TRUNCATE`, `CREATE`, `DROP`, `ALTER`, `GRANT`, `INTO`, `LOCK`, `CALL`, `LOAD`, `PREPARE`, `EXECUTE`, `COMMIT`, `FLUSH`, `KILL`, …) wherever they appear: unquoted, qualified (`t.update`) or as quoted identifiers (`` `delete` ``). Only `REPLACE(…)` and `TRUNCATE(…)` are allowed, as read-only functions. Functions with side effects (`GET_LOCK`, `LOAD_FILE`, …) are blocked too.
    - **sqlglot parser**: requires exactly one statement of an allowed type, with no DML/DDL nodes, `SELECT … INTO` or `FOR UPDATE`/`LOCK IN SHARE MODE`.
 
    The original text is sent to the server, never regenerated SQL.
@@ -147,10 +150,32 @@ In every format binary values are written in full (UTF-8 text or hexadecimal `0x
 On top of these two barriers, the connection:
 
 - is opened **without** the `CLIENT_MULTI_STATEMENTS` flag and with `LOCAL INFILE` disabled;
-- sets `SET SESSION TRANSACTION READ ONLY`;
+- sets `SET SESSION TRANSACTION READ ONLY` and reads back `@@SESSION.transaction_read_only` (`tx_read_only` on older servers): if the server does not confirm a read-only session, the connection is closed;
 - removes `NO_BACKSLASH_ESCAPES` from the session `sql_mode`, so the server interprets strings the same way as the validator.
 
-> The application does **not** promise an absolute read-only mode based on the GUI alone. For example, a stored function called in a `SELECT` could modify data if the account had the privileges to do so. This is why the constraint must be guaranteed by the MySQL account.
+> The application does **not** promise an absolute read-only mode based on the GUI alone. For example, a stored function called in a `SELECT` could modify data if the account had the privileges to do so (the READ ONLY session blocks writes to permanent tables, not to temporary ones). This is why the constraint must be guaranteed by the MySQL account.
+
+### Privilege check
+
+On every connection, including **Test connection** and transparent reconnections, the application runs `SHOW GRANTS` and analyzes the result fail-closed:
+
+- read privileges are only `USAGE`, `SELECT`, `SHOW VIEW` and `SHOW DATABASES`; any other privilege (`INSERT`, `ALL PRIVILEGES`, `EXECUTE`, `PROXY`, `WITH GRANT OPTION`, dynamic privileges such as `BACKUP_ADMIN`, …) makes the account "with write privileges";
+- column privileges (`UPDATE (col)`) count like the others;
+- role grants (`` GRANT `role` TO … ``), unrecognized lines or a failure of `SHOW GRANTS` make the account "not verified", and it is treated like one with write privileges;
+- `REVOKE` lines (partial revokes) only remove privileges and are ignored.
+
+An account that is not read-only is refused with a message listing the privileges found. The log records only the privilege names, never the grant lines (on MariaDB they can contain the password hash).
+
+### Caution mode
+
+**Caution mode** is a per-connection option, in the **New connection…**/**Edit…** form ("Caution mode: allow an account with write privileges"). When enabled:
+
+- an account with write privileges, or whose privileges cannot be verified, is accepted;
+- **nothing else changes**: the same validator applies (only read queries) and the session must be confirmed READ ONLY, otherwise the connection is closed;
+- while connected with such an account, the state at the bottom right shows "CAUTION: account with write privileges" in red, and the connection message lists the privileges found;
+- **Test connection** reports the privileges found.
+
+With a read-only account caution mode has no visible effect. Use it only when a SELECT-only account is not available.
 
 ### Setting up a read-only MySQL account
 
@@ -234,7 +259,7 @@ src/querylean/
   config/       configuration model and JSON persistence
   security/     password in the keychain (abstract SecretStore, KeyringSecretStore)
   export/       Excel/CSV/JSON export (abstract ResultExporter)
-  database/     errors/, connection/, execution/, schema/ (table list), validation/ (staged validator)
+  database/     errors/, connection/, execution/, schema/ (table list), privileges/ (SHOW GRANTS check), validation/ (staged validator)
   ui/           main/, dialogs/, editor/, icons/, results/, sidebar/, worker/ (QThread thread)
 tests/          one Test… class per file; fakes/ (test doubles), support/ (bases), integration/
 packaging/      PyInstaller spec, AppImage/.deb/DMG scripts, desktop file, icon,
@@ -412,7 +437,7 @@ To verify a download: `sha256sum -c SHA256SUMS --ignore-missing`.
 - Not supported: TLS/SSH tunnels configurable from the GUI, autocompletion, history, pagination.
 - The export saves only the loaded rows (at most 10,000): to export more, use a tool such as `mysqldump` or `mysql --batch`.
 - `SHOW` is allowed only in the forms recognized by the parser; the others are rejected.
-- Reserved write words used as column names must be quoted (`` `update` ``) or qualified (`t.update`), as MySQL requires.
+- Columns, tables and aliases whose name is a write word (`update`, `delete`, `insert`, …) are rejected even when quoted or qualified; names that only contain such a word (`updated_at`, `delete_flag`) are allowed. The `INSERT()` string function is rejected too. Words inside strings and comments are not checked.
 - `--` sequences not followed by whitespace outside strings (e.g. `1--1`) are rejected to avoid ambiguity with comments: write `1 - -1`.
 - MariaDB support is not guaranteed: `MAX_EXECUTION_TIME` does not exist there, so only the watchdog is used.
 

@@ -106,7 +106,7 @@ Il logger è implementato **nel progetto** (`querylean/log/`) e non importato da
 src/querylean/
   app/                 AppInfo (NAME, DISPLAY_NAME, AUTHOR, …, version()), VersionFile, BundleResources (percorsi nel bundle: `_MEIPASS` o radice), Application.run() (entry point, excepthook), SmokeTest
   log/                 AppLogger, LogManager, SecretRedactor
-  config/              ConnectionConfig (anche name, display_name), ConnectionProfile (id + config), ConnectionStore (connections/<id>.json),
+  config/              ConnectionConfig (anche name, display_name, caution_mode), ConnectionProfile (id + config), ConnectionStore (connections/<id>.json),
                        UiPreferences, AppConfig (active_connection + ui), ConfigManager (config.json + migrazione), ConfigError
   files/               PrivateFile (sostituzione atomica di un file 0600: temporaneo + os.replace), PrivateJsonFile (JSON tramite PrivateFile)
   security/            SecretStore (astratta), KeyringSecretStore, SecretStorageError
@@ -114,7 +114,8 @@ src/querylean/
                        ResultExporters (elenco e ricerca per estensione/filtro), ExportReport, ExportError
   database/
     errors/            DatabaseError(message, kind), QueryCancelled, QueryTimeout, ErrorTranslator
-    connection/        ConnectionParams (kwargs del driver, password mascherata), ConnectionManager
+    connection/        ConnectionParams (kwargs del driver, password mascherata), ConnectionManager (sessione READ ONLY verificata, controllo dei grant)
+    privileges/        GrantAnalyzer (analisi fail-closed di SHOW GRANTS), AccountPrivileges (esito: read_only, write_privileges, verified)
     execution/         QueryExecutor (execute/cancel), QueryResult
     schema/            TableCatalog (SHOW FULL TABLES tramite QueryExecutor), TableInfo (select_statement), MySqlIdentifier (quoting con backtick)
     validation/        ReadOnlyValidator → stadi ValidationStage su ValidationContext;
@@ -171,6 +172,13 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
   - `SET SESSION TRANSACTION READ ONLY`;
   - rimozione di `NO_BACKSLASH_ESCAPES` dal `sql_mode`.
 - **Sola lettura**: la garanzia primaria è l'account MySQL con solo SELECT. L'app non deve mai creare utenti né modificare privilegi.
+- **Parole vietate "a prescindere"** (scelta dell'utente, 1.4): le parole di `ReadOnlyRules.FORBIDDEN_WORDS` si rifiutano ovunque fuori da stringhe e commenti, anche qualificate (`t.update`) o come identificatori quotati (`` `delete` ``), quindi anche come nomi di colonna, tabella o alias. Uniche eccezioni: `SHOW CREATE` e le funzioni `REPLACE(`/`TRUNCATE(` (`FUNCTION_NAME_EXCEPTIONS`, solo senza quote né qualificazione). La gestione di campi e alias con questi nomi è rimandata: non aggiungere eccezioni senza richiesta.
+- **Controllo della sessione e dell'account** (`ConnectionManager.__open`, a ogni connessione, test e riconnessione):
+  - dopo il setup si rilegge `@@SESSION.transaction_read_only` (poi `tx_read_only`): se non vale 1 la connessione si chiude, **anche in modalità attenzione**;
+  - `SHOW GRANTS` → `GrantAnalyzer`: sono di lettura solo `USAGE`, `SELECT`, `SHOW VIEW`, `SHOW DATABASES`; ruoli, righe sconosciute o errori rendono l'account non verificato (= non read-only). Non allargare l'elenco senza richiesta;
+  - un account non read-only si rifiuta (`DatabaseError` kind `write_account`) se la connessione non ha `caution_mode`;
+  - nel log solo i nomi dei privilegi, mai le righe dei grant (su MariaDB contengono l'hash della password).
+- **Modalità attenzione** (`ConnectionConfig.caution_mode`, default `False`): rilassa **solo** il controllo dell'account. Validatore, sessione READ ONLY e tutte le altre barriere restano identici. La GUI la segnala (`MainWindow.caution_active`, `CAUTION_LABEL` nello stato, titolo del menu con `ConnectionsMenu.CAUTION_TITLE`).
 - **Connessioni salvate**:
   - una connessione = un file `connections/<id>.json` (0600) scritto con `PrivateJsonFile`; `config.json` tiene solo `active_connection` e le preferenze;
   - un file illeggibile viene saltato (con log), non deve impedire il caricamento delle altre;
@@ -208,12 +216,14 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
 - `openpyxl` per l'export Excel. Lo spec esclude `numpy`, `pandas`, `PIL` e `lxml`, che openpyxl usa solo se installati.
 - Nei test unitari il database è finto: `tests/fakes/` (`FakeConnector`, `FakeConnection`, `FakeCursor`), da iniettare con `ConnectionManager(connector)`.
   - Per simulare `KILL QUERY` si usa `FakeConnection.on_kill`.
+  - I controlli di sessione rispondono da `FakeConnection.session_variables` e `FakeConnection.grants` (default: sessione READ ONLY e account con solo SELECT), senza passare dall'`handler`.
   - Per il keyring ci sono `MemoryKeyring` e `LockedKeyring`.
 - I test GUI estendono `support/main_window_test_base.MainWindowTestBase`, che fornisce le fixture `connector`/`window` e gli helper `configure`/`connect`/`run`. Vanno attesi con `qtbot.waitUntil`.
 - **Non aggiungere funzionalità escluse** da `PROJECT.md` §16: multi-connessione, browser schemi, cronologia, autocomplete, plugin, telemetria, ecc. Eccezioni richieste dall'utente:
   - 1.1: esportazione in Excel, CSV e JSON; altre forme di esportazione restano escluse;
   - 1.2: barra laterale con l'elenco delle tabelle del database configurato, che prepara `SELECT * FROM <tabella> LIMIT 1;`. Niente albero di colonne, indici o altri database, niente esecuzione automatica;
   - 1.3: più connessioni salvate (profili), ma **una sola connessione aperta alla volta**. Niente connessioni simultanee, schede o finestre multiple.
+  - 1.4: modalità attenzione per account con privilegi di scrittura (sempre e solo query di lettura) e validatore più severo.
 
 ## Packaging
 

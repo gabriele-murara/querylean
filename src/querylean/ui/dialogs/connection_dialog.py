@@ -17,15 +17,16 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from querylean.app.app_info import AppInfo
 from querylean.config.connection_config import ConnectionConfig
 from querylean.ui.worker.db_worker import DbWorker
 
 
 class ConnectionDialog(QDialog):
-    """Edits name, host, port, database, credentials, timeouts and row
-    limit; offers "Test connection" (asynchronous, through the worker) and
-    "Save". The name is optional: when empty the connection is listed as
-    ``<user>@<host>/<database>``, shown as placeholder."""
+    """Edits name, host, port, database, credentials, timeouts, row limit
+    and caution mode; offers "Test connection" (asynchronous, through the
+    worker) and "Save". The name is optional: when empty the connection is
+    listed as ``<user>@<host>/<database>``, shown as placeholder."""
 
     NEW_TITLE = "New connection"
     EDIT_TITLE = "Edit connection"
@@ -83,6 +84,23 @@ class ConnectionDialog(QDialog):
         )
         self.__row_limit.setSingleStep(ConnectionDialog.__ROW_LIMIT_STEP)
 
+        self.__caution_mode = QCheckBox(
+            "Caution mode: allow an account with write privileges"
+        )
+        self.__caution_mode.setChecked(config.caution_mode)
+        self.__caution_mode.toggled.connect(self.__on_toggle_caution)
+        warning_text = "The account can change data. {} still runs only "
+        warning_text += "read queries, but a mistake or a bug could have "
+        warning_text += "consequences: prefer a SELECT-only account."
+        self.__caution_warning = QLabel(
+            warning_text.format(AppInfo.DISPLAY_NAME)
+        )
+        self.__caution_warning.setWordWrap(True)
+        self.__caution_warning.setStyleSheet(
+            "color: {};".format(ConnectionDialog.__ERROR_COLOR)
+        )
+        self.__caution_warning.setVisible(config.caution_mode)
+
         form = QFormLayout()
         form.addRow("Name", self.__name)
         form.addRow("Host *", self.__host)
@@ -95,10 +113,13 @@ class ConnectionDialog(QDialog):
         form.addRow("Connection timeout", self.__connect_timeout)
         form.addRow("Query timeout", self.__query_timeout)
         form.addRow("Maximum rows", self.__row_limit)
+        form.addRow("", self.__caution_mode)
+        form.addRow("", self.__caution_warning)
 
         hint_text = "Use a MySQL account with SELECT privileges only: "
         hint_text += "read-only mode is guaranteed mainly by the account "
-        hint_text += "privileges."
+        hint_text += "privileges. An account with more privileges is "
+        hint_text += "refused unless caution mode is enabled."
         hint = QLabel(hint_text)
         hint.setWordWrap(True)
         hint.setStyleSheet("color: palette(placeholder-text);")
@@ -192,6 +213,16 @@ class ConnectionDialog(QDialog):
         return self.__row_limit
 
     @property
+    def caution_mode(self) -> QCheckBox:
+        """Whether an account with write privileges is allowed."""
+        return self.__caution_mode
+
+    @property
+    def caution_warning(self) -> QLabel:
+        """Warning shown while caution mode is checked."""
+        return self.__caution_warning
+
+    @property
     def status(self) -> QLabel:
         """Validation and test outcome label."""
         return self.__status
@@ -218,6 +249,7 @@ class ConnectionDialog(QDialog):
             connect_timeout=self.__connect_timeout.value(),
             query_timeout=self.__query_timeout.value(),
             row_limit=self.__row_limit.value(),
+            caution_mode=self.__caution_mode.isChecked(),
         )
 
     def password_value(self) -> str:
@@ -270,6 +302,9 @@ class ConnectionDialog(QDialog):
     def __on_test_finished(self, ok: bool, message: str) -> None:
         self.__test_button.setEnabled(True)
         self.__set_status(ok, message)
+
+    def __on_toggle_caution(self, checked: bool) -> None:
+        self.__caution_warning.setVisible(checked)
 
     def __on_toggle_password(self, visible: bool) -> None:
         self.__password.setEchoMode(

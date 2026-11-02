@@ -106,7 +106,8 @@ class TestConnectionManager:
         assert info.value.kind == "not_connected"
 
     def test_test_connection_closes_its_connection(self, manager, connector):
-        assert manager.test_connection(self.CFG, "pw") == "8.0.36"
+        version, privileges = manager.test_connection(self.CFG, "pw")
+        assert version == "8.0.36" and privileges.read_only
         assert not connector.connections[0].is_connected()
         assert not manager.is_connected
 
@@ -117,6 +118,101 @@ class TestConnectionManager:
         killer = connector.connections[1]
         assert killer.executed == ["KILL QUERY {}".format(target)]
         assert not killer.is_connected()
+
+    def test_read_only_account_is_accepted(self, manager, connector):
+        manager.connect(self.CFG, "pw")
+        assert manager.account_privileges.read_only
+        executed = connector.connections[0].executed
+        assert ConnectionManager.GRANTS_STATEMENT in executed
+        manager.disconnect()
+        assert manager.account_privileges is None
+
+    @pytest.mark.parametrize(
+        "grants",
+        [
+            ["GRANT SELECT, INSERT, UPDATE ON `app`.* TO `rw`@`%`"],
+            ["GRANT ALL PRIVILEGES ON *.* TO `root`@`localhost`"],
+            ["GRANT `reader`@`%` TO `ro`@`%`"],
+            mysql_errors.ProgrammingError(msg="denied", errno=1142),
+        ],
+    )
+    def test_account_not_read_only_is_refused(self, manager, connector, grants):
+        connector.configure = lambda conn: setattr(conn, "grants", grants)
+        with pytest.raises(DatabaseError) as info:
+            manager.connect(self.CFG, "pw")
+        assert info.value.kind == ConnectionManager.WRITE_ACCOUNT_KIND
+        assert "Caution mode" in info.value.message
+        assert not manager.is_connected
+        assert connector.connections[0].closed_by is not None
+
+    def test_caution_mode_allows_write_account(self, manager, connector):
+        grants = ["GRANT SELECT, DELETE ON `app`.* TO `rw`@`%`"]
+        connector.configure = lambda conn: setattr(conn, "grants", grants)
+        cfg = self.CFG.copy()
+        cfg.caution_mode = True
+        manager.connect(cfg, "pw")
+        assert manager.is_connected
+        assert manager.account_privileges.write_privileges == ("DELETE",)
+        # The session is read-only in caution mode too.
+        executed = connector.connections[0].executed
+        assert "SET SESSION TRANSACTION READ ONLY" in executed
+        _, privileges = manager.test_connection(cfg, "pw")
+        assert not privileges.read_only
+
+    def test_write_account_refused_again_on_reconnection(
+        self, manager, connector
+    ):
+        manager.connect(self.CFG, "pw")
+        manager.abort_session()
+        connector.configure = lambda conn: setattr(
+            conn, "grants", ["GRANT UPDATE ON *.* TO `ro`@`%`"]
+        )
+        with pytest.raises(DatabaseError) as info:
+            manager.ensure_connected()
+        assert info.value.kind == ConnectionManager.WRITE_ACCOUNT_KIND
+
+    @pytest.mark.parametrize(
+        "variables",
+        [
+            {"transaction_read_only": 0},
+            {"transaction_read_only": "0"},
+            {"transaction_read_only": None},
+            {},
+            {
+                "transaction_read_only": mysql_errors.OperationalError(
+                    msg="lost", errno=2013
+                ),
+                "tx_read_only": 0,
+            },
+        ],
+    )
+    def test_session_not_confirmed_read_only_is_closed(
+        self, manager, connector, variables
+    ):
+        cfg = self.CFG.copy()
+        cfg.caution_mode = True
+        connector.configure = lambda conn: setattr(
+            conn, "session_variables", variables
+        )
+        with pytest.raises(DatabaseError) as info:
+            manager.connect(cfg, "pw")
+        assert "did not confirm" in info.value.message
+        assert not manager.is_connected
+        assert connector.connections[0].closed_by is not None
+
+    @pytest.mark.parametrize("value", [1, "1", b"1"])
+    def test_read_only_check_falls_back_to_tx_read_only(
+        self, manager, connector, value
+    ):
+        # Older servers (MySQL < 5.7.20, MariaDB < 11.1).
+        connector.configure = lambda conn: setattr(
+            conn, "session_variables", {"tx_read_only": value}
+        )
+        manager.connect(self.CFG, "pw")
+        assert "SELECT @@SESSION.tx_read_only" in (
+            connector.connections[0].executed
+        )
+        assert manager.is_connected
 
     def test_password_is_masked_in_params_repr(self):
         assert "pw-XYZ" not in repr(ConnectionParams(self.CFG, "pw-XYZ"))

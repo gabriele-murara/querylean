@@ -8,10 +8,13 @@ from typing import Any
 
 import mysql.connector
 
+from querylean.app.app_info import AppInfo
 from querylean.config.connection_config import ConnectionConfig
 from querylean.database.connection.connection_params import ConnectionParams
 from querylean.database.errors.database_error import DatabaseError
 from querylean.database.errors.error_translator import ErrorTranslator
+from querylean.database.privileges.account_privileges import AccountPrivileges
+from querylean.database.privileges.grant_analyzer import GrantAnalyzer
 from querylean.log.log_manager import LogManager
 
 
@@ -32,6 +35,24 @@ class ConnectionManager:
         "SET SESSION TRANSACTION READ ONLY",
         __SQL_MODE,
     )
+    # Read back the transaction access mode: the first variable exists in
+    # MySQL 5.7.20+ and MariaDB 11.1+, the second in older servers.
+    __READ_ONLY_CHECKS = (
+        "SELECT @@SESSION.transaction_read_only",
+        "SELECT @@SESSION.tx_read_only",
+    )
+    GRANTS_STATEMENT = "SHOW GRANTS"
+    # Error kind of a refused account with privileges beyond reading.
+    WRITE_ACCOUNT_KIND = "write_account"
+    __SETUP_FAILED = "Connection opened, but the session could not be made "
+    __SETUP_FAILED += "read-only. See the log for details."
+    __NOT_CONFIRMED = "Connection opened, but the server did not confirm "
+    __NOT_CONFIRMED += "that the session is read-only, so it was closed. "
+    __NOT_CONFIRMED += "See the log for details."
+    __WRITE_ACCOUNT = "Connection refused: {}. {} accepts only accounts "
+    __WRITE_ACCOUNT += "with read privileges (SELECT). To use this account "
+    __WRITE_ACCOUNT += "anyway, enable “Caution mode” in the connection "
+    __WRITE_ACCOUNT += "(Connections → Edit…)."
     # User-facing message shown when a query is requested without a session.
     NOT_CONNECTED = "Not connected: press “Connect” before running a "
     NOT_CONNECTED += "query."
@@ -42,6 +63,7 @@ class ConnectionManager:
         self.__conn: Any = None
         self.__params: ConnectionParams | None = None
         self.__connection_id: int | None = None
+        self.__account_privileges: AccountPrivileges | None = None
         self.__lock = threading.Lock()  # guards __params and __connection_id
 
     # --------------------------------------------------------------- properties
@@ -50,6 +72,11 @@ class ConnectionManager:
         """Server id of the current session, if any."""
         with self.__lock:
             return self.__connection_id
+
+    @property
+    def account_privileges(self) -> AccountPrivileges | None:
+        """Privileges of the account of the current session, if any."""
+        return self.__account_privileges
 
     @property
     def is_connected(self) -> bool:
@@ -62,23 +89,28 @@ class ConnectionManager:
         ``DatabaseError``."""
         self.disconnect()
         params = ConnectionParams(config, password)
-        conn = self.__open(params)
+        conn, privileges = self.__open(params)
+        self.__account_privileges = privileges
         with self.__lock:
             self.__conn = conn
             self.__params = params
             self.__connection_id = getattr(conn, "connection_id", None)
         self.__log.info("Connected (session id {})", self.__connection_id)
 
-    def test_connection(self, config: ConnectionConfig, password: str) -> str:
-        """Check reachability and credentials. Returns the server version."""
-        conn = self.__open(ConnectionParams(config, password))
+    def test_connection(
+        self, config: ConnectionConfig, password: str
+    ) -> tuple[str, AccountPrivileges]:
+        """Check reachability, credentials, the read-only session and the
+        account privileges, like ``connect``. Returns the server version and
+        the privileges."""
+        conn, privileges = self.__open(ConnectionParams(config, password))
         try:
             version = (
                 conn.get_server_info()
                 if hasattr(conn, "get_server_info")
                 else ""
             )
-            return str(version or "")
+            return str(version or ""), privileges
         finally:
             ConnectionManager.__close_quietly(conn)
 
@@ -88,6 +120,7 @@ class ConnectionManager:
             conn, self.__conn = self.__conn, None
             self.__params = None
             self.__connection_id = None
+        self.__account_privileges = None
         if conn is not None:
             ConnectionManager.__close_quietly(conn)
             self.__log.info("Disconnected")
@@ -116,7 +149,8 @@ class ConnectionManager:
                 pass
             ConnectionManager.__shutdown_quietly(self.__conn)
             self.__conn = None
-        conn = self.__open(self.__params)
+        conn, privileges = self.__open(self.__params)
+        self.__account_privileges = privileges
         with self.__lock:
             self.__conn = conn
             self.__connection_id = getattr(conn, "connection_id", None)
@@ -149,7 +183,7 @@ class ConnectionManager:
             ConnectionManager.__close_quietly(conn)
 
     # ---------------------------------------------------------------- internals
-    def __open(self, params: ConnectionParams) -> Any:
+    def __open(self, params: ConnectionParams) -> tuple[Any, AccountPrivileges]:
         LogManager.register_secret(params.password)
         cfg = params.config
         self.__log.info(
@@ -167,6 +201,17 @@ class ConnectionManager:
                 exc, cfg.connect_timeout
             ) from None
         try:
+            ConnectionManager.__prepare_session(conn)
+            privileges = ConnectionManager.__check_account(conn, cfg)
+        except BaseException:
+            ConnectionManager.__close_quietly(conn)
+            raise
+        return conn, privileges
+
+    @staticmethod
+    def __prepare_session(conn: Any) -> None:
+        """Make the session read-only and check that the server agrees."""
+        try:
             cursor = conn.cursor()
             try:
                 for statement in ConnectionManager.__SESSION_SETUP:
@@ -174,12 +219,81 @@ class ConnectionManager:
             finally:
                 cursor.close()
         except Exception as exc:
-            self.__log.warning("Session initialisation failed: {!r}", exc)
-            ConnectionManager.__close_quietly(conn)
-            msg = "Connection opened, but the session could not be made "
-            msg += "read-only. See the log for details."
-            raise DatabaseError(msg) from None
-        return conn
+            ConnectionManager.__log.warning(
+                "Session initialisation failed: {!r}", exc
+            )
+            raise DatabaseError(ConnectionManager.__SETUP_FAILED) from None
+        value = None
+        for statement in ConnectionManager.__READ_ONLY_CHECKS:
+            try:
+                rows = ConnectionManager.__fetch(conn, statement)
+            except Exception as exc:
+                ConnectionManager.__log.info(
+                    "Read-only check {} failed: {!r}", statement, exc
+                )
+                continue
+            value = rows[0][0] if rows and rows[0] else None
+            break
+        if ConnectionManager.__text(value) != "1":
+            ConnectionManager.__log.warning(
+                "The server did not confirm a read-only session (value {!r})",
+                value,
+            )
+            raise DatabaseError(ConnectionManager.__NOT_CONFIRMED) from None
+
+    @staticmethod
+    def __check_account(
+        conn: Any, config: ConnectionConfig
+    ) -> AccountPrivileges:
+        """Read the account grants; refuse an account that is not provably
+        read-only unless the connection is in caution mode."""
+        try:
+            rows = ConnectionManager.__fetch(
+                conn, ConnectionManager.GRANTS_STATEMENT
+            )
+            lines = [ConnectionManager.__text(row[0]) for row in rows if row]
+            privileges = GrantAnalyzer.analyze(lines)
+        except Exception as exc:
+            ConnectionManager.__log.warning(
+                "Could not read the account grants: {!r}", exc
+            )
+            privileges = AccountPrivileges.unverified()
+        if privileges.read_only:
+            ConnectionManager.__log.info("Account privileges: read-only")
+            return privileges
+        # Only privilege names are logged: grant lines can contain password
+        # hashes (MariaDB).
+        ConnectionManager.__log.warning(
+            "Account not read-only: write privileges {}, verified {}",
+            list(privileges.write_privileges),
+            privileges.verified,
+        )
+        if config.caution_mode:
+            ConnectionManager.__log.warning(
+                "Caution mode: account with privileges beyond reading allowed"
+            )
+            return privileges
+        msg = ConnectionManager.__WRITE_ACCOUNT.format(
+            privileges.describe(), AppInfo.DISPLAY_NAME
+        )
+        raise DatabaseError(msg, kind=ConnectionManager.WRITE_ACCOUNT_KIND)
+
+    @staticmethod
+    def __fetch(conn: Any, statement: str) -> list[Any]:
+        """Run a fixed internal statement and return all its rows."""
+        cursor = conn.cursor()
+        try:
+            cursor.execute(statement)
+            return list(cursor.fetchall())
+        finally:
+            cursor.close()
+
+    @staticmethod
+    def __text(value: object) -> str:
+        """Driver value as text (some servers return bytes)."""
+        if isinstance(value, (bytes, bytearray)):
+            return bytes(value).decode("utf-8", errors="replace").strip()
+        return "" if value is None else str(value).strip()
 
     @staticmethod
     def __close_quietly(conn: Any) -> None:

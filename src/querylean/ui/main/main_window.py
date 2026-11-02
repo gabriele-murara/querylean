@@ -38,6 +38,7 @@ from querylean.database.connection.connection_manager import (
 )
 from querylean.database.execution.query_executor import QueryExecutor
 from querylean.database.execution.query_result import QueryResult
+from querylean.database.privileges.account_privileges import AccountPrivileges
 from querylean.database.schema.table_info import TableInfo
 from querylean.export.export_report import ExportReport
 from querylean.export.result_exporter import ResultExporter
@@ -76,6 +77,9 @@ class MainWindow(QMainWindow):
     __MAX_RUNNING_PREVIEW = 160
     __SIDEBAR_WIDTH = 220
     __ERROR_STYLE = "color: #c62828;"
+    # Shown next to the state while connected in caution mode.
+    CAUTION_LABEL = "CAUTION: account with write privileges"
+    CAUTION_COLOR = "#c62828"
     __log = LogManager.get_logger(__name__)
 
     def __init__(
@@ -99,6 +103,8 @@ class MainWindow(QMainWindow):
         # another saved connection.
         self.__switching = False
         self.__state = ConnectionState.DISCONNECTED
+        # Privileges of the account of the open session (None when closed).
+        self.__privileges: AccountPrivileges | None = None
         self.__running = False
         self.__closed = False
         # Result shown in the table (exported by "Export").
@@ -180,6 +186,16 @@ class MainWindow(QMainWindow):
     def state(self) -> ConnectionState:
         """Current connection state."""
         return self.__state
+
+    @property
+    def caution_active(self) -> bool:
+        """True while connected with an account that is not read-only
+        (allowed by the caution mode of the connection)."""
+        return (
+            self.__state == ConnectionState.CONNECTED
+            and self.__privileges is not None
+            and not self.__privileges.read_only
+        )
 
     @property
     def running(self) -> bool:
@@ -733,7 +749,13 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ state
     def __set_state(self, state: ConnectionState) -> None:
         self.__state = state
+        if state != ConnectionState.CONNECTED:
+            self.__privileges = None
         text = "<b style='color:{}'>●</b> {}".format(state.color, state.label)
+        if self.caution_active:
+            text = "{} · <b style='color:{}'>{}</b>".format(
+                text, MainWindow.CAUTION_COLOR, MainWindow.CAUTION_LABEL
+            )
         profile = self.active_connection
         if profile is not None and state in (
             ConnectionState.CONNECTED,
@@ -919,11 +941,20 @@ class MainWindow(QMainWindow):
             )
             self.worker.cancel_query(QueryExecutor.CANCEL_BY_TIMEOUT)
 
-    def __on_connected(self) -> None:
+    def __on_connected(self, privileges: AccountPrivileges | None) -> None:
         cfg = self.__active_config()
+        self.__privileges = privileges
         self.__set_state(ConnectionState.CONNECTED)
-        msg = "Connected to {}:{}/{}."
-        self.show_message(msg.format(cfg.host, cfg.port, cfg.database))
+        msg = "Connected to {}:{}/{}.".format(cfg.host, cfg.port, cfg.database)
+        if self.caution_active and privileges is not None:
+            caution = "{} Caution mode: {}. Only read queries are allowed, "
+            caution += "but the account could change data: double-check "
+            caution += "what you run."
+            self.show_message(
+                caution.format(msg, privileges.describe()), error=True
+            )
+        else:
+            self.show_message(msg)
         self.__editor.setFocus()
         self.refresh_tables()
 
