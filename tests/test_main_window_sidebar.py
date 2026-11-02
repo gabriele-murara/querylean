@@ -2,6 +2,7 @@
 
 import pytest
 from mysql.connector import errors as mysql_errors
+from PySide6.QtCore import Qt
 
 from fakes.schema_handler import SchemaHandler
 from querylean.config.config_manager import ConfigManager
@@ -52,6 +53,28 @@ class TestMainWindowSidebar(MainWindowTestBase):
         text = window.editor.toPlainText()
         assert text == "SELECT * FROM `order items` LIMIT 1;"
         assert window.running is False  # filled, not executed
+        window.editor.undo()
+        assert window.editor.toPlainText() == "SELECT 1"
+
+    def test_click_and_double_click_fill_the_editor(
+        self, qtbot, window, handler
+    ):
+        self.connect(qtbot, window)
+        self.wait_tables(qtbot, window, 2)
+        window.editor.setPlainText("SELECT 1")
+        tree = window.sidebar.tree_widget
+        center = tree.visualItemRect(tree.topLevelItem(0)).center()
+        qtbot.mouseClick(tree.viewport(), Qt.MouseButton.LeftButton, pos=center)
+        expected = "SELECT * FROM `customers` LIMIT 1;"
+        assert window.editor.toPlainText() == expected
+        assert tree.topLevelItem(0).isExpanded()
+        assert window.running is False
+        # The second click of a double click changes nothing more.
+        qtbot.mousePress(tree.viewport(), Qt.MouseButton.LeftButton, pos=center)
+        qtbot.mouseDClick(
+            tree.viewport(), Qt.MouseButton.LeftButton, pos=center
+        )
+        assert window.editor.toPlainText() == expected
         window.editor.undo()
         assert window.editor.toPlainText() == "SELECT 1"
 

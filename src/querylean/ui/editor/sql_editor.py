@@ -169,12 +169,6 @@ class SqlEditor(QPlainTextEdit):
         cursor.endEditBlock()
         self.setTextCursor(cursor)
 
-    def insert_text(self, text: str) -> None:
-        """Insert ``text`` at the cursor (replacing the selection)."""
-        self.hide_completion()
-        self.textCursor().insertText(text)
-        self.setFocus()
-
     def query_text(self) -> str:
         """The selection if present, otherwise the whole content."""
         cursor = self.textCursor()

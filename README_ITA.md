@@ -15,11 +15,11 @@ volta, un editor SQL e una tabella di risultati copiabili.
   - evidenziazione di keyword, stringhe, numeri e commenti;
   - esecuzione con `Ctrl+Invio` (Linux) o `Cmd+Invio` (macOS);
   - [autocompletamento](#autocompletamento) di tabelle, colonne, alias, parole chiave e funzioni con `Ctrl+Spazio`, che si apre anche da solo mentre si scrive.
-- Barra laterale con le tabelle e le viste del database a cui si ha accesso: un clic mostra le colonne di una tabella (tipo, chiavi, commenti), un doppio clic prepara nell'editor `SELECT * FROM <tabella> LIMIT 1;`.
+- Barra laterale con le tabelle e le viste del database a cui si ha accesso: un clic su una tabella prepara nell'editor `SELECT * FROM <tabella> LIMIT 1;` e ne mostra le colonne (tipo, chiavi, commenti).
 - Query nei segnalibri: una query salvata con un nome per una connessione si riesegue dal menu **Bookmarked queries**, solo su quella connessione.
 - Sono ammesse solo istruzioni di lettura (`SELECT`, `WITH … SELECT`, `UNION`, `SHOW`, `DESCRIBE`/`DESC`, `EXPLAIN SELECT`). Ogni query passa da un validatore basato sul parsing.
 - Alla connessione vengono controllati i privilegi dell'account: un account che può modificare i dati viene rifiutato, a meno che la connessione sia in [modalità attenzione](#modalità-attenzione).
-- L'esecuzione avviene fuori dal thread della GUI, con indicatore di attività, pulsante **Stop** (Interrompi) e timeout.
+- L'esecuzione avviene fuori dal thread della GUI, con indicatore di attività, timeout e un pulsante **Stop** (Interrompi) lampeggiante che compare solo quando una query dura più di un secondo.
 - Tabella dei risultati non modificabile:
   - `NULL` è distinto dalla stringa vuota;
   - colonne ridimensionabili;
@@ -65,11 +65,13 @@ La compatibilità macOS va considerata confermata solo quando la pipeline CI cor
 
 ## Uso
 
-La barra in alto contiene, nell'ordine: **Run** (Esegui, ▶), **Stop** (Interrompi, attivo solo durante l'esecuzione), **Save query** (Salva query, ☆) e **Bookmarked queries** (Query nei segnalibri, menu a tendina), attivi solo da connessi, **Export** (Esporta, menu a tendina, attivo quando c'è un risultato), **Connect**/**Disconnect** (Connetti/Disconnetti), **Connections** (Connessioni, menu a tendina) e **About** (Informazioni: versione, autore, licenza). Lo stato della connessione è in basso a destra. L'interfaccia è in inglese. A sinistra, per tutta l'altezza della finestra, c'è la barra **Tables** (Tabelle).
+La barra in alto contiene, nell'ordine: **Run** (Esegui, ▶), **Save query** (Salva query, ☆) e **Bookmarked queries** (Query nei segnalibri, menu a tendina), attivi solo da connessi, **Export** (Esporta, menu a tendina, attivo quando c'è un risultato), **Connect**/**Disconnect** (Connetti/Disconnetti), **Connections** (Connessioni, menu a tendina) e **About** (Informazioni: versione, autore, licenza). Lo stato della connessione è in basso a destra. L'interfaccia è in inglese. A sinistra, per tutta l'altezza della finestra, c'è la barra **Tables** (Tabelle).
+
+Mentre una query è in esecuzione, sotto i risultati compaiono una barra di attività e il testo della query. Se dopo un secondo la query è ancora in corso, accanto alla barra di attività compare un pulsante rosso **Stop** (Interrompi, ■) che lampeggia fino alla fine della query: un clic la interrompe. Le query veloci non lo mostrano mai.
 
 1. **Connections** → **New connection…** (Connessioni → Nuova connessione…): compila nome (facoltativo), host, porta, database, username, password e i timeout, poi usa **Test connection** (Test connessione) e **Save** (Salva). Salvare non apre la connessione (vedi [Connessioni](#connessioni)).
 2. **Connect** apre la connessione attiva, quella con la spunta nel menu **Connections**: lo stato passa da *Disconnected* (Disconnesso) a *Connecting* (Connessione in corso) e poi a *Connected* (Connesso) o *Connection error* (Errore di connessione). Se la password non è nel portachiavi, viene richiesta.
-3. Scrivi la query, aiutato dall'[autocompletamento](#autocompletamento), e premi **Run** oppure `Ctrl/Cmd+Invio`. In alternativa fai doppio clic su una tabella nella barra laterale (vedi [Barra delle tabelle](#barra-delle-tabelle)). Sotto i risultati compaiono righe e tempo, poi "Query executed:" (Query eseguita:) seguito dalla query appena eseguita, su una riga. Oltre i 160 caratteri la query è troncata con "…"; il testo completo è nel tooltip del messaggio.
+3. Scrivi la query, aiutato dall'[autocompletamento](#autocompletamento), e premi **Run** oppure `Ctrl/Cmd+Invio`. In alternativa fai clic su una tabella nella barra laterale (vedi [Barra delle tabelle](#barra-delle-tabelle)). Sotto i risultati compaiono righe e tempo, poi "Query executed:" (Query eseguita:) seguito dalla query appena eseguita, su una riga. Oltre i 160 caratteri la query è troncata con "…"; il testo completo è nel tooltip del messaggio.
 4. Seleziona celle o righe e premi `Ctrl/Cmd+C`. Il menu contestuale offre anche le varianti "con intestazioni" e "righe intere".
 5. Per salvare il risultato su file apri il menu **Export** e scegli il formato (vedi [Esportazione](#esportazione)).
 
@@ -93,10 +95,11 @@ Una connessione con la **Caution mode** (modalità attenzione) attiva compare ne
 
 Dopo la connessione la barra **Tables** (Tabelle) elenca tabelle e viste del database configurato (`SHOW FULL TABLES`), cioè solo quelle a cui l'account ha accesso. Le viste sono in corsivo e in fondo c'è il numero di elementi.
 
-- **Colonne**: un clic su una tabella (o sulla sua freccia) la espande e ne mostra le colonne in ordine, con il tipo a destra. Le colonne della chiave primaria sono in grassetto con un'etichetta gialla "P"; il tooltip mostra la definizione completa (tipo, `NULL`/`NOT NULL`, chiave, default, extra, commento).
-- Un **doppio clic** su una tabella, oppure `Invio` sulla voce selezionata, sostituisce il contenuto dell'editor con `SELECT * FROM <tabella> LIMIT 1;`. La query **non viene eseguita**: premi **Run** per lanciarla. Il testo precedente si recupera con `Ctrl/Cmd+Z`.
-- Un doppio clic su una colonna, oppure `Invio`, ne inserisce il nome nel punto del cursore dell'editor (tra backtick quando serve).
-- Il menu contestuale (clic destro) offre **Prepare SELECT** (Prepara la SELECT, sulle tabelle), **Insert in the editor** (Inserisci nell'editor, sulle colonne) e **Copy name** (Copia il nome).
+- Un **clic** su una tabella (anche un doppio clic, oppure `Invio` sulla voce selezionata) sostituisce il contenuto dell'editor con `SELECT * FROM <tabella> LIMIT 1;`. La query **non viene eseguita**: premi **Run** per lanciarla. Il testo precedente si recupera con `Ctrl/Cmd+Z`.
+- **Colonne**: lo stesso clic espande la tabella e ne mostra le colonne in ordine, con il tipo a destra; la sola freccia la apre o la chiude senza toccare l'editor. Le colonne della chiave primaria sono in grassetto con un'etichetta gialla "P"; il tooltip mostra la definizione completa (tipo, `NULL`/`NOT NULL`, chiave, default, extra, commento).
+- Un doppio clic su una colonna, oppure `Invio`, sostituisce il contenuto dell'editor con `SELECT <colonna> FROM <tabella> LIMIT 1;`, senza eseguirla e annullabile con `Ctrl/Cmd+Z`. Un clic singolo su una colonna non tocca l'editor.
+- **Shift + doppio clic** su una colonna (oppure `Shift+Invio`) la aggiunge alle colonne della query preparata: `SELECT * FROM <tabella> LIMIT 1;` diventa `SELECT <colonna> …`, poi `SELECT <colonna>, <altra colonna> …`. Una colonna già presente non viene ripetuta; se nell'editor c'è un altro testo (una query su un'altra tabella o scritta a mano), viene sostituito da una nuova `SELECT <colonna> FROM <tabella> LIMIT 1;`. Ogni aggiunta si annulla con `Ctrl/Cmd+Z`.
+- Il menu contestuale (clic destro) offre **Prepare SELECT** (Prepara la SELECT, sulle tabelle), **Prepare SELECT of the column** (Prepara la SELECT della colonna) e **Add to the SELECT** (Aggiungi alla SELECT, sulle colonne), e **Copy name** (Copia il nome).
 - **Filter tables…** (Filtra le tabelle…) in alto mostra solo le tabelle il cui nome contiene il testo (senza distinzione tra maiuscole e minuscole); la riga in fondo indica allora "N of M tables" (N di M tabelle).
 - Il nome della tabella è sempre tra backtick, con gli eventuali backtick interni raddoppiati, quindi funzionano anche nomi con spazi o parole riservate.
 - Il pulsante ⟳ ricarica l'elenco, per esempio dopo la creazione di una tabella. Alla disconnessione l'elenco si svuota.
@@ -267,7 +270,7 @@ Agli utenti non vengono mai mostrati stack trace: i dettagli tecnici finiscono n
 - Il **timeout di esecuzione** funziona così:
   - prima di ogni query viene impostato `MAX_EXECUTION_TIME` di sessione, che il server applica alle `SELECT`;
   - un watchdog lato client, scaduto il timeout più 2 secondi, invia `KILL QUERY` da una connessione separata. Questo copre anche `SHOW`/`EXPLAIN` e i server che non supportano `MAX_EXECUTION_TIME`, come MariaDB.
-- **Stop** invia `KILL QUERY` sulla stessa connessione separata.
+- **Stop** (il pulsante lampeggiante sotto i risultati) invia `KILL QUERY` sulla stessa connessione separata.
 - Limiti noti:
   - `KILL QUERY` richiede che l'utente possa terminare le proprie query, cosa sempre consentita sulle proprie sessioni;
   - se il server non è raggiungibile, la richiesta di interruzione fallisce dopo il timeout di connessione. La GUI resta comunque reattiva perché la query gira in un thread separato;

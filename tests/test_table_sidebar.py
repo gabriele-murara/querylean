@@ -66,7 +66,7 @@ class TestTableSidebar:
             qtbot.keyClick(tree, Qt.Key.Key_Return)
         assert blocker.args == [self.TABLES[0]]
 
-    def test_single_click_shows_the_columns(self, qtbot):
+    def test_click_chooses_the_table_and_shows_the_columns(self, qtbot):
         schema = SchemaModel()
         schema.set_columns("customers", self.COLUMNS)
         sidebar = self.make(qtbot, schema)
@@ -79,7 +79,7 @@ class TestTableSidebar:
             tree.viewport(), Qt.MouseButton.LeftButton, pos=rect.center()
         )
         assert tree.topLevelItem(0).isExpanded()
-        assert chosen == []  # the editor is not touched
+        assert chosen == [self.TABLES[0]]
         assert sidebar.column_names("customers") == ["id", "full name"]
         key = tree.topLevelItem(0).child(0)
         assert key.font(0).bold()
@@ -120,7 +120,7 @@ class TestTableSidebar:
         tree.setCurrentItem(tree.topLevelItem(0).child(1))
         with qtbot.waitSignal(sidebar.column_chosen) as blocker:
             qtbot.keyClick(tree, Qt.Key.Key_Return)
-        assert blocker.args == ["full name"]
+        assert blocker.args == [self.TABLES[0], "full name"]
 
     def test_context_menu(self, qtbot):
         schema = SchemaModel()
@@ -138,10 +138,44 @@ class TestTableSidebar:
         assert QApplication.clipboard().text() == "customers"
         menu = sidebar.context_menu(table.child(1))
         texts = [a.text() for a in menu.actions()]
-        assert texts == [TableSidebar.INSERT_TEXT, TableSidebar.COPY_TEXT]
+        assert texts == [
+            TableSidebar.COLUMN_TEXT,
+            TableSidebar.ADD_TEXT,
+            TableSidebar.COPY_TEXT,
+        ]
         with qtbot.waitSignal(sidebar.column_chosen) as blocker:
             menu.actions()[0].trigger()
-        assert blocker.args == ["full name"]
+        assert blocker.args == [self.TABLES[0], "full name"]
+        with qtbot.waitSignal(sidebar.column_added) as blocker:
+            menu.actions()[1].trigger()
+        assert blocker.args == [self.TABLES[0], "full name"]
+
+    def test_shift_adds_the_column(self, qtbot):
+        schema = SchemaModel()
+        schema.set_columns("customers", self.COLUMNS)
+        sidebar = self.make(qtbot, schema)
+        sidebar.set_tables(self.TABLES)
+        tree = sidebar.tree_widget
+        sidebar.table_item("customers").setExpanded(True)
+        column = sidebar.table_item("customers").child(1)
+        center = tree.visualItemRect(column).center()
+        chosen, added = [], []
+        sidebar.column_chosen.connect(lambda t, c: chosen.append(c))
+        sidebar.column_added.connect(lambda t, c: added.append(c))
+        shift = Qt.KeyboardModifier.ShiftModifier
+        viewport = tree.viewport()
+        left = Qt.MouseButton.LeftButton
+        qtbot.mouseClick(viewport, left, shift, pos=center)
+        assert (chosen, added) == ([], [])  # a click alone does nothing
+        qtbot.mousePress(viewport, left, shift, pos=center)
+        qtbot.mouseDClick(viewport, left, shift, pos=center)
+        assert (chosen, added) == ([], ["full name"])
+        qtbot.mousePress(viewport, left, pos=center)
+        qtbot.mouseDClick(viewport, left, pos=center)
+        assert (chosen, added) == (["full name"], ["full name"])
+        tree.setCurrentItem(column)
+        qtbot.keyClick(tree, Qt.Key.Key_Return, shift)
+        assert added == ["full name", "full name"]
 
     def test_filter(self, qtbot):
         sidebar = self.make(qtbot)

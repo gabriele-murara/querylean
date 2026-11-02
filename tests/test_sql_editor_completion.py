@@ -216,11 +216,3 @@ class TestSqlEditorCompletion:
         self.ctrl_space(qtbot, editor)
         assert not editor.completer.visible
         assert editor.toPlainText() == "SELECT * FROM us"
-
-    def test_insert_text(self, qtbot, editor):
-        editor.setPlainText("SELECT  FROM t")
-        cursor = editor.textCursor()
-        cursor.setPosition(7)
-        editor.setTextCursor(cursor)
-        editor.insert_text("`my col`")
-        assert editor.toPlainText() == "SELECT `my col` FROM t"

@@ -2,6 +2,7 @@
 
 from mysql.connector import errors as mysql_errors
 from PySide6.QtGui import QTextCursor
+from PySide6.QtWidgets import QToolBar
 
 from fakes.fake_connector import FakeConnector
 from querylean.config.config_manager import ConfigManager
@@ -29,7 +30,6 @@ class TestMainWindow(MainWindowTestBase):
         texts = [action.text() for action in window.toolbar_actions()]
         assert texts == [
             "Run",
-            "Stop",
             "Save query",
             "Bookmarked queries",
             "Export",
@@ -114,14 +114,33 @@ class TestMainWindow(MainWindowTestBase):
         assert not window.execute_action.isEnabled()
         assert window.stop_action.isEnabled()
         assert window.progress.isVisible()
+        # The Stop button appears only after a while, then blinks.
+        assert window.stop_button.isHidden() and window.stop_button.pending
+        qtbot.waitUntil(window.stop_button.isVisible, timeout=self.WAIT_MS)
+        assert window.stop_button.defaultAction() is window.stop_action
+        qtbot.waitUntil(
+            lambda: window.stop_button.opacity < 1.0, timeout=self.WAIT_MS
+        )
         assert "Running: SELECT n FROM t" in window.running_label.text()
         # The GUI thread keeps processing events while the worker is blocked.
         qtbot.wait(100)
         window.editor.insertPlainText(" ")
-        window.stop_query()
+        window.stop_button.click()
         qtbot.waitUntil(lambda: not window.running, timeout=self.WAIT_MS)
         assert "stopped" in window.message_label.text()
         assert window.execute_action.isEnabled()
+        assert window.stop_button.isHidden()
+        assert not window.stop_button.blinking
+
+    def test_quick_query_does_not_show_stop(self, qtbot, window):
+        self.connect(qtbot, window)
+        self.run(qtbot, window, "SELECT n FROM t")
+        qtbot.wait(50)
+        assert window.stop_button.isHidden()
+        assert not window.stop_button.pending
+        assert not window.stop_action.isEnabled()
+        toolbar = window.findChild(QToolBar, "main-toolbar")
+        assert window.stop_action not in toolbar.actions()
 
     def test_execute_uses_selection(self, qtbot, window):
         self.connect(qtbot, window)

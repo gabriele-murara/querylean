@@ -6,6 +6,9 @@ from PySide6.QtCore import Qt
 
 from fakes.schema_handler import SchemaHandler
 from querylean.database.schema.column_catalog import ColumnCatalog
+from querylean.database.validation.read_only_validator import (
+    ReadOnlyValidator,
+)
 from querylean.ui.main.connection_state import ConnectionState
 from querylean.ui.sidebar.table_sidebar import TableSidebar
 from support.main_window_test_base import MainWindowTestBase
@@ -108,27 +111,84 @@ class TestMainWindowColumns(MainWindowTestBase):
         assert not window.schema.has_columns("customers")
         assert window.state == ConnectionState.CONNECTED
 
-    def test_chosen_column_goes_to_the_editor(self, qtbot, window, handler):
+    def test_chosen_column_prepares_its_select(self, qtbot, window, handler):
         self.connect(qtbot, window)
         self.wait_columns(qtbot, window)
-        window.editor.setPlainText("SELECT  FROM customers")
-        cursor = window.editor.textCursor()
-        cursor.setPosition(7)
-        window.editor.setTextCursor(cursor)
-        window.sidebar.column_chosen.emit("full name")
-        assert window.editor.toPlainText() == (
-            "SELECT `full name` FROM customers"
+        window.editor.setPlainText("SELECT 1")
+        table = window.sidebar.table_item("customers").data(
+            0, Qt.ItemDataRole.UserRole
         )
+        window.sidebar.column_chosen.emit(table, "full name")
+        expected = "SELECT `full name` FROM `customers` LIMIT 1;"
+        assert window.editor.toPlainText() == expected
+        assert window.running is False  # prepared, not executed
+        assert ReadOnlyValidator().validate(expected).ok
+        window.editor.undo()
+        assert window.editor.toPlainText() == "SELECT 1"
 
     def test_double_click_on_a_column(self, qtbot, window, handler):
         self.connect(qtbot, window)
         self.wait_columns(qtbot, window)
         tree = window.sidebar.tree_widget
         window.sidebar.table_item("customers").setExpanded(True)
-        tree.setCurrentItem(window.sidebar.table_item("customers").child(0))
-        window.editor.setPlainText("")
+        column = window.sidebar.table_item("customers").child(0)
+        window.editor.setPlainText("SELECT 1")
+        center = tree.visualItemRect(column).center()
+        qtbot.mouseClick(tree.viewport(), Qt.MouseButton.LeftButton, pos=center)
+        # A single click on a column does not touch the editor.
+        assert window.editor.toPlainText() == "SELECT 1"
+        qtbot.mousePress(tree.viewport(), Qt.MouseButton.LeftButton, pos=center)
+        qtbot.mouseDClick(
+            tree.viewport(), Qt.MouseButton.LeftButton, pos=center
+        )
+        expected = "SELECT `id` FROM `customers` LIMIT 1;"
+        assert window.editor.toPlainText() == expected
+        # Enter on the same column adds no undo step.
         qtbot.keyClick(tree, Qt.Key.Key_Return)
-        assert window.editor.toPlainText() == "id"
+        window.editor.undo()
+        assert window.editor.toPlainText() == "SELECT 1"
+
+    def test_shift_double_click_adds_columns(self, qtbot, window, handler):
+        self.connect(qtbot, window)
+        self.wait_columns(qtbot, window)
+        sidebar = window.sidebar
+        table = sidebar.table_item("customers").data(
+            0, Qt.ItemDataRole.UserRole
+        )
+        window.editor.setPlainText("SELECT 1")
+        sidebar.table_chosen.emit(table)
+        assert window.editor.toPlainText() == (
+            "SELECT * FROM `customers` LIMIT 1;"
+        )
+        sidebar.column_added.emit(table, "id")
+        assert window.editor.toPlainText() == (
+            "SELECT `id` FROM `customers` LIMIT 1;"
+        )
+        sidebar.column_added.emit(table, "full name")
+        expected = "SELECT `id`, `full name` FROM `customers` LIMIT 1;"
+        assert window.editor.toPlainText() == expected
+        sidebar.column_added.emit(table, "id")  # already there
+        assert window.editor.toPlainText() == expected
+        assert window.running is False
+        # Each addition is one undo step.
+        window.editor.undo()
+        assert window.editor.toPlainText() == (
+            "SELECT `id` FROM `customers` LIMIT 1;"
+        )
+
+    def test_shift_double_click_on_other_text_starts_over(
+        self, qtbot, window, handler
+    ):
+        self.connect(qtbot, window)
+        self.wait_columns(qtbot, window)
+        table = window.sidebar.table_item("customers").data(
+            0, Qt.ItemDataRole.UserRole
+        )
+        window.editor.setPlainText("SELECT `id` FROM `orders` LIMIT 1;")
+        window.sidebar.column_added.emit(table, "full name")
+        assert window.editor.toPlainText() == (
+            "SELECT `full name` FROM `customers` LIMIT 1;"
+        )
 
     def test_disconnect_clears_the_schema(self, qtbot, window, handler):
         self.connect(qtbot, window)

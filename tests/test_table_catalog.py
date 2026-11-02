@@ -81,3 +81,45 @@ class TestTableCatalog:
         expected = "SELECT * FROM {} LIMIT 1;"
         assert statement == expected.format(MySqlIdentifier.quote(name))
         assert ReadOnlyValidator().validate(statement).ok
+
+    @pytest.mark.parametrize(
+        ("table", "column"),
+        [("users", "id"), ("my table", "full name"), ("a`b", "c`d")],
+    )
+    def test_column_statement_is_a_valid_read_query(self, table, column):
+        statement = TableInfo(table).column_statement(column)
+        expected = "SELECT {} FROM {} LIMIT 1;"
+        assert statement == expected.format(
+            MySqlIdentifier.quote(column), MySqlIdentifier.quote(table)
+        )
+        assert ReadOnlyValidator().validate(statement).ok
+
+    def test_columns_statement(self):
+        table = TableInfo("my t")
+        assert table.columns_statement([]) == table.select_statement
+        assert table.columns_statement(["a", "b c"]) == (
+            "SELECT `a`, `b c` FROM `my t` LIMIT 1;"
+        )
+        assert (
+            ReadOnlyValidator()
+            .validate(table.columns_statement(["a", "x`y"]))
+            .ok
+        )
+
+    @pytest.mark.parametrize(
+        ("statement", "columns"),
+        [
+            ("SELECT * FROM `my t` LIMIT 1;", []),
+            ("SELECT `a` FROM `my t` LIMIT 1;", ["a"]),
+            ("  SELECT `a`, `b, c` FROM `my t` LIMIT 1;\n", ["a", "b, c"]),
+            ("SELECT `x``y` FROM `my t` LIMIT 1;", ["x`y"]),
+            ("SELECT * FROM `other` LIMIT 1;", None),
+            ("SELECT a FROM `my t` LIMIT 1;", None),
+            ("SELECT `a`,`b` FROM `my t` LIMIT 1;", None),
+            ("SELECT `a` FROM `my t` LIMIT 5;", None),
+            ("SELECT `a` FROM `my t` WHERE 1 LIMIT 1;", None),
+            ("", None),
+        ],
+    )
+    def test_selected_columns(self, statement, columns):
+        assert TableInfo("my t").selected_columns(statement) == columns

@@ -31,7 +31,6 @@ from querylean.app.app_info import AppInfo
 from querylean.bookmarks.query_bookmark import QueryBookmark
 from querylean.completion.completion_engine import CompletionEngine
 from querylean.completion.schema_model import SchemaModel
-from querylean.completion.sql_vocabulary import SqlVocabulary
 from querylean.config.app_config import AppConfig
 from querylean.config.config_error import ConfigError
 from querylean.config.config_manager import ConfigManager
@@ -64,6 +63,7 @@ from querylean.ui.main.bookmarks_menu import BookmarksMenu
 from querylean.ui.main.caution_palette import CautionPalette
 from querylean.ui.main.connection_state import ConnectionState
 from querylean.ui.main.connections_menu import ConnectionsMenu
+from querylean.ui.main.stop_button import StopButton
 from querylean.ui.results.results_table import ResultsTable
 from querylean.ui.sidebar.table_sidebar import TableSidebar
 from querylean.ui.worker.db_thread import DbThread
@@ -72,7 +72,7 @@ from querylean.ui.worker.export_thread import ExportThread
 
 
 class MainWindow(QMainWindow):
-    """Toolbar (run, stop, save query, bookmarked queries, export, connect,
+    """Toolbar (run, save query, bookmarked queries, export, connect,
     connections, about); below it
     the table side bar on the left and, on the right, editor and result
     panel separated by a resizable splitter; connection state at the bottom
@@ -365,6 +365,12 @@ class MainWindow(QMainWindow):
         return self.__execute_action
 
     @property
+    def stop_button(self) -> StopButton:
+        """Blinking "Stop" button of the result panel, shown only while a
+        query runs for a while."""
+        return self.__stop_button
+
+    @property
     def stop_action(self) -> QAction:
         """ "Stop" action."""
         return self.__stop_action
@@ -373,7 +379,6 @@ class MainWindow(QMainWindow):
         """Toolbar actions in display order."""
         return (
             self.__execute_action,
-            self.__stop_action,
             self.__save_query_action,
             self.__bookmarks_action,
             self.__export_action,
@@ -676,6 +681,7 @@ class MainWindow(QMainWindow):
         self.__running = True
         self.__update_actions()
         self.__progress.show()
+        self.__stop_button.start()
         self.__rows_label.clear()
         self.__time_label.clear()
         self.__limit_label.clear()
@@ -722,15 +728,38 @@ class MainWindow(QMainWindow):
         timeout = self.__active_config().query_timeout
         self.worker.table_columns_requested.emit(table, timeout)
 
-    def insert_column(self, name: str) -> None:
-        """Insert the column ``name`` (quoted when needed) at the editor
-        cursor."""
-        self.__editor.insert_text(SqlVocabulary.identifier(name))
+    def use_column(self, table: TableInfo, column: str) -> None:
+        """Put ``SELECT column FROM table LIMIT 1;`` in the editor,
+        replacing its content (undoable). The query is not executed."""
+        self.__prepare(table.column_statement(column))
+
+    def add_column(self, table: TableInfo, column: str) -> None:
+        """Add ``column`` to the preview query of ``table`` in the editor
+        (``SELECT *`` becomes ``SELECT column``). When the editor holds
+        another text, start ``SELECT column FROM table LIMIT 1;``. A column
+        already selected is not repeated."""
+        current = table.selected_columns(self.__editor.toPlainText())
+        if current is None:
+            columns = [column]
+        elif column in current:
+            columns = current
+        else:
+            columns = [*current, column]
+        self.__prepare(table.columns_statement(columns))
 
     def use_table(self, table: TableInfo) -> None:
         """Put the preview query of ``table`` in the editor, replacing its
-        content (undoable with Ctrl/Cmd+Z). The query is not executed."""
-        self.__editor.replace_query(table.select_statement)
+        content (undoable with Ctrl/Cmd+Z). The query is not executed.
+        When the editor already holds it (e.g. the second click of a double
+        click) nothing changes, so one undo still restores the old text."""
+        self.__prepare(table.select_statement)
+
+    def __prepare(self, statement: str) -> None:
+        """Replace the editor text with ``statement`` (no new undo step when
+        it is already there, e.g. on the second click of a double click)."""
+        self.__editor.hide_completion()
+        if self.__editor.toPlainText() != statement:
+            self.__editor.replace_query(statement)
         self.__editor.setFocus()
 
     def export_results(self, exporter: ResultExporter | None = None) -> None:
@@ -828,6 +857,7 @@ class MainWindow(QMainWindow):
         self.__execute_action.triggered.connect(self.execute_query)
         self.__stop_action = QAction(ToolbarIcons.stop(), "Stop", self)
         self.__stop_action.setToolTip("Stop the running query")
+        self.__stop_action.setEnabled(False)
         self.__stop_action.triggered.connect(self.stop_query)
         self.__save_query_action = QAction(
             ToolbarIcons.star(), MainWindow.SAVE_QUERY_TEXT, self
@@ -914,6 +944,9 @@ class MainWindow(QMainWindow):
         self.__progress.setMaximumHeight(14)
         self.__progress.setTextVisible(False)
         self.__progress.hide()
+        # Not in the toolbar: it appears, blinking, next to the progress bar
+        # only when a query takes a while.
+        self.__stop_button = StopButton(self.__stop_action)
         self.__message_label = QLabel()
         # Messages contain SQL: "<" must never be read as rich text.
         self.__message_label.setTextFormat(Qt.TextFormat.PlainText)
@@ -927,6 +960,7 @@ class MainWindow(QMainWindow):
         self.__running_label.hide()
 
         info = QHBoxLayout()
+        info.addWidget(self.__stop_button)
         info.addWidget(self.__progress)
         info.addWidget(self.__rows_label)
         info.addWidget(self.__time_label)
@@ -954,7 +988,8 @@ class MainWindow(QMainWindow):
         self.__sidebar.refresh_requested.connect(self.refresh_tables)
         self.__sidebar.set_schema(self.__schema)
         self.__sidebar.columns_requested.connect(self.load_columns)
-        self.__sidebar.column_chosen.connect(self.insert_column)
+        self.__sidebar.column_chosen.connect(self.use_column)
+        self.__sidebar.column_added.connect(self.add_column)
 
         # Side bar on the left, for the whole height below the toolbar.
         self.__sidebar_splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -1267,6 +1302,7 @@ class MainWindow(QMainWindow):
         self.__watchdog.stop()
         self.__running = False
         self.__progress.hide()
+        self.__stop_button.finish()
         self.__running_label.clear()
         self.__running_label.hide()
         self.__update_actions()

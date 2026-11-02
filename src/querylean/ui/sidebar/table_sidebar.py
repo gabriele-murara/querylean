@@ -3,7 +3,7 @@ columns."""
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPoint, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, QSize, Qt, Signal
 from PySide6.QtGui import QFont, QGuiApplication, QPalette
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -33,14 +33,17 @@ class TableSidebar(QWidget):
 
     Expanding a table shows its columns with type, keys and a tooltip with
     the full definition; columns not loaded yet are requested with
-    ``columns_requested(table)``. A single click on a table expands it.
-    Double click (or Enter) on a table emits ``table_chosen(TableInfo)``,
-    on a column ``column_chosen(name)``. The context menu offers the same
-    actions and the copy of the name.
+    ``columns_requested(table)``. A click on a table emits
+    ``table_chosen(TableInfo)`` and expands it; double click and Enter emit
+    ``table_chosen`` too. Double click (or Enter) on a column emits
+    ``column_chosen(TableInfo, name)``; with Shift held it emits
+    ``column_added(TableInfo, name)`` instead. The context menu offers the
+    same actions and the copy of the name.
     """
 
     table_chosen = Signal(object)
-    column_chosen = Signal(str)
+    column_chosen = Signal(object, str)  # TableInfo, column name
+    column_added = Signal(object, str)  # TableInfo, column name (Shift)
     columns_requested = Signal(str)
     refresh_requested = Signal()
 
@@ -51,7 +54,8 @@ class TableSidebar(QWidget):
     NO_COLUMNS = "No columns available."
     FILTER_PLACEHOLDER = "Filter tables…"
     PREPARE_TEXT = "Prepare SELECT"
-    INSERT_TEXT = "Insert in the editor"
+    COLUMN_TEXT = "Prepare SELECT of the column"
+    ADD_TEXT = "Add to the SELECT"
     COPY_TEXT = "Copy name"
     __TABLE_ROLE = Qt.ItemDataRole.UserRole
     __COLUMN_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -102,6 +106,11 @@ class TableSidebar(QWidget):
         tree_header.setSectionResizeMode(
             1, QHeaderView.ResizeMode.ResizeToContents
         )
+        # Modifiers of the last click or key press on the tree: Shift turns
+        # the choice of a column into its addition.
+        self.__modifiers = Qt.KeyboardModifier.NoModifier
+        self.__tree.installEventFilter(self)
+        self.__tree.viewport().installEventFilter(self)
         self.__tree.itemActivated.connect(self.__on_activated)
         self.__tree.itemClicked.connect(self.__on_clicked)
         self.__tree.itemExpanded.connect(self.__on_expanded)
@@ -348,8 +357,19 @@ class TableSidebar(QWidget):
             self.__fill_columns(item, request=True)
 
     def __on_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
-        if item.data(0, TableSidebar.__TABLE_ROLE) is not None:
+        table = item.data(0, TableSidebar.__TABLE_ROLE)
+        if isinstance(table, TableInfo):
             item.setExpanded(True)
+            self.table_chosen.emit(table)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        if event.type() in (
+            QEvent.Type.MouseButtonPress,
+            QEvent.Type.MouseButtonDblClick,
+            QEvent.Type.KeyPress,
+        ):
+            self.__modifiers = event.modifiers()
+        return super().eventFilter(watched, event)
 
     def __on_activated(self, item: QTreeWidgetItem, _column: int) -> None:
         table = item.data(0, TableSidebar.__TABLE_ROLE)
@@ -357,8 +377,13 @@ class TableSidebar(QWidget):
             self.table_chosen.emit(table)
             return
         column = item.data(0, TableSidebar.__COLUMN_ROLE)
-        if isinstance(column, ColumnInfo):
-            self.column_chosen.emit(column.name)
+        parent = item.parent()
+        if isinstance(column, ColumnInfo) and parent is not None:
+            owner = parent.data(0, TableSidebar.__TABLE_ROLE)
+            if self.__modifiers & Qt.KeyboardModifier.ShiftModifier:
+                self.column_added.emit(owner, column.name)
+            else:
+                self.column_chosen.emit(owner, column.name)
 
     def __on_menu(self, pos: QPoint) -> None:
         item = self.__tree.itemAt(pos)
@@ -369,8 +394,9 @@ class TableSidebar(QWidget):
             menu.exec(self.__tree.viewport().mapToGlobal(pos))
 
     def context_menu(self, item: QTreeWidgetItem) -> QMenu | None:
-        """Menu for ``item``: prepare the SELECT (tables) or insert the
-        name (columns), and copy the name."""
+        """Menu for ``item``: prepare the SELECT (tables), prepare the
+        SELECT of the column or add it to the SELECT (columns), and copy the
+        name."""
         table = item.data(0, TableSidebar.__TABLE_ROLE)
         column = item.data(0, TableSidebar.__COLUMN_ROLE)
         menu = QMenu(self)
@@ -378,10 +404,15 @@ class TableSidebar(QWidget):
             prepare = menu.addAction(TableSidebar.PREPARE_TEXT)
             prepare.triggered.connect(lambda: self.table_chosen.emit(table))
             name = table.name
-        elif isinstance(column, ColumnInfo):
-            insert = menu.addAction(TableSidebar.INSERT_TEXT)
-            insert.triggered.connect(
-                lambda: self.column_chosen.emit(column.name)
+        elif isinstance(column, ColumnInfo) and item.parent() is not None:
+            owner = item.parent().data(0, TableSidebar.__TABLE_ROLE)
+            prepare = menu.addAction(TableSidebar.COLUMN_TEXT)
+            prepare.triggered.connect(
+                lambda: self.column_chosen.emit(owner, column.name)
+            )
+            add = menu.addAction(TableSidebar.ADD_TEXT)
+            add.triggered.connect(
+                lambda: self.column_added.emit(owner, column.name)
             )
             name = column.name
         else:

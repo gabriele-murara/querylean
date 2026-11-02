@@ -125,12 +125,12 @@ src/querylean/
     validation/        ReadOnlyValidator → stadi ValidationStage su ValidationContext;
                        MySqlLexer, SqlToken, LexedStatement, ReadOnlyRules, ValidationResult
   ui/
-    main/              MainWindow, ConnectionState, CautionPalette (sfondo rosa in modalità attenzione), ConnectionsMenu, BookmarksMenu ("Bookmarked queries") (menu "Connections": New connection…, Connect/Edit…/Delete… per connessione)
+    main/              MainWindow, StopButton (Stop lampeggiante sotto i risultati, solo per query lunghe), ConnectionState, CautionPalette (sfondo rosa in modalità attenzione), ConnectionsMenu, BookmarksMenu ("Bookmarked queries") (menu "Connections": New connection…, Connect/Edit…/Delete… per connessione)
     dialogs/           ConnectionDialog, AboutDialog (versione/autore da AppInfo)
     icons/             ToolbarIcons, CompletionIcons (icone disegnate con QPainter: nessun asset da impacchettare)
     editor/            SqlEditor (autocompletamento), SqlCompleter (popup), CompletionDelegate, SqlHighlighter, LineNumberArea
     results/           ResultsTable, ResultsModel, ValueFormatter
-    sidebar/           TableSidebar (albero tabelle → colonne con filtro; table_chosen → MainWindow.use_table, column_chosen → insert_column)
+    sidebar/           TableSidebar (albero tabelle → colonne con filtro; table_chosen → MainWindow.use_table, column_chosen → MainWindow.use_column, column_added → add_column)
     worker/            DbWorker (QObject nel thread DB), DbThread (avvio/arresto), ExportThread (scrittura dell'export)
 tests/                 test_<classe>.py; fakes/; support/; integration/
 ```
@@ -215,7 +215,7 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
 - **Barra delle tabelle**:
   - l'elenco si legge con `TableCatalog` tramite `QueryExecutor` (validatore, timeout, limite di righe), nel thread del worker (`tables_requested` → `tables_loaded`/`tables_failed`), mai con SQL fuori dal validatore;
   - i nomi entrano nella query solo tramite `MySqlIdentifier.quote`;
-  - un clic espande la tabella e ne mostra le colonne; doppio clic/`Invio` sulla tabella sostituisce il testo dell'editor in modo annullabile (`SqlEditor.replace_query`) e non esegue la query; doppio clic/`Invio` su una colonna ne inserisce il nome (`SqlVocabulary.identifier`) al cursore;
+  - un clic (ma anche doppio clic/`Invio`) sulla tabella sostituisce il testo dell'editor in modo annullabile (`SqlEditor.replace_query`, nessun nuovo passo se il testo è già quello) e non esegue la query; lo stesso clic espande la tabella e ne mostra le colonne, la sola freccia la espande senza toccare l'editor; doppio clic/`Invio` su una colonna sostituisce allo stesso modo il testo con `TableInfo.column_statement` (`SELECT `col` FROM `tab` LIMIT 1;`), senza eseguirla; con Shift (`column_added`) la colonna si aggiunge alla lista della query di anteprima riconosciuta da `TableInfo.selected_columns` (solo il formato scritto da `columns_statement`), altrimenti si riparte da `SELECT `col``;
   - le colonne si leggono con `ColumnCatalog` tramite `QueryExecutor`, nel thread del worker: tutte insieme alla connessione (`columns_requested`, una query su `information_schema.COLUMNS`, al massimo 10.000 righe; la tabella troncata si scarta), poi su richiesta tabella per tabella (`table_columns_requested`, `SHOW FULL COLUMNS FROM` con `MySqlIdentifier.quote`). `MainWindow.load_columns` evita richieste doppie; un errore memorizza le colonne come vuote (nessun nuovo tentativo fino al refresh o alla riconnessione);
   - `SchemaModel` vive in `MainWindow`, è condiviso da barra e autocompletamento e si svuota quando la sessione non è più `CONNECTED`; le risposte arrivate dopo la chiusura vanno ignorate.
 - **Autocompletamento** (1.7):

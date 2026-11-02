@@ -15,11 +15,11 @@ at a time, a SQL editor and a table of copyable results.
   - highlighting of keywords, strings, numbers and comments;
   - execution with `Ctrl+Enter` (Linux) or `Cmd+Enter` (macOS);
   - [autocompletion](#autocompletion) of tables, columns, aliases, keywords and functions with `Ctrl+Space`, also opening by itself while typing.
-- Side bar with the tables and views of the database you have access to: a click shows the columns of a table (type, keys, comments), a double click prepares `SELECT * FROM <table> LIMIT 1;` in the editor.
+- Side bar with the tables and views of the database you have access to: a click on a table prepares `SELECT * FROM <table> LIMIT 1;` in the editor and shows its columns (type, keys, comments).
 - Bookmarked queries: a query saved with a name for one connection can be run again from the **Bookmarked queries** menu, only on that connection.
 - Only read statements are allowed (`SELECT`, `WITH … SELECT`, `UNION`, `SHOW`, `DESCRIBE`/`DESC`, `EXPLAIN SELECT`). Every query goes through a parser-based validator.
 - On connection the account privileges are checked: an account that can change data is refused, unless the connection is in [caution mode](#caution-mode).
-- Queries run outside the GUI thread, with an activity indicator, a **Stop** button and timeouts.
+- Queries run outside the GUI thread, with an activity indicator, timeouts and a blinking **Stop** button that appears only when a query takes more than a second.
 - Read-only results table:
   - `NULL` is distinct from the empty string;
   - resizable columns;
@@ -65,11 +65,13 @@ macOS compatibility should be considered confirmed only once the corresponding C
 
 ## Usage
 
-The toolbar contains, in order: **Run** (▶), **Stop** (enabled only while a query runs), **Save query** (☆) and **Bookmarked queries** (drop-down menu), both enabled only while connected, **Export** (drop-down menu, enabled when there is a result), **Connect**/**Disconnect**, **Connections** (drop-down menu) and **About** (version, author, license). The connection state is shown at the bottom right. The user interface is in English. On the left, for the whole height of the window, there is the **Tables** side bar.
+The toolbar contains, in order: **Run** (▶), **Save query** (☆) and **Bookmarked queries** (drop-down menu), both enabled only while connected, **Export** (drop-down menu, enabled when there is a result), **Connect**/**Disconnect**, **Connections** (drop-down menu) and **About** (version, author, license). The connection state is shown at the bottom right. The user interface is in English. On the left, for the whole height of the window, there is the **Tables** side bar.
+
+While a query runs, an activity bar and the text of the query appear below the results. If the query is still running after one second, a red **Stop** button (■) appears next to the activity bar and blinks until the query ends: a click interrupts it. Quick queries never show it.
 
 1. **Connections** → **New connection…**: fill in name (optional), host, port, database, username, password and timeouts, then use **Test connection** and **Save**. Saving does not open the connection (see [Connections](#connections)).
 2. **Connect** opens the active connection, the one checked in the **Connections** menu: the state goes from *Disconnected* to *Connecting* and then to *Connected* or *Connection error*. If the password is not in the keychain, it is asked for.
-3. Write the query, helped by the [autocompletion](#autocompletion), and press **Run** or `Ctrl/Cmd+Enter`. Alternatively double-click a table in the side bar (see [Table side bar](#table-side-bar)). Below the results you see rows and time, then "Query executed:" followed by the query just executed, on one line. Beyond 160 characters the query is cut with "…"; the full text is in the message tooltip.
+3. Write the query, helped by the [autocompletion](#autocompletion), and press **Run** or `Ctrl/Cmd+Enter`. Alternatively click a table in the side bar (see [Table side bar](#table-side-bar)). Below the results you see rows and time, then "Query executed:" followed by the query just executed, on one line. Beyond 160 characters the query is cut with "…"; the full text is in the message tooltip.
 4. Select cells or rows and press `Ctrl/Cmd+C`. The context menu also offers the "with headers" and "whole rows" variants.
 5. To save the result to a file open the **Export** menu and choose the format (see [Export](#export)).
 
@@ -93,10 +95,11 @@ A connection with **Caution mode** enabled is shown in the menu as "<name> (caut
 
 After connecting, the **Tables** side bar lists the tables and views of the configured database (`SHOW FULL TABLES`), that is only those the account can access. Views are in italics and the number of items is shown at the bottom.
 
-- **Columns**: a click on a table (or on its arrow) expands it and shows its columns in order, with the type on the right. Primary key columns are in bold with a yellow "P" badge; the tooltip shows the full definition (type, `NULL`/`NOT NULL`, key, default, extra, comment).
-- A **double click** on a table, or `Enter` on the selected one, replaces the editor content with `SELECT * FROM <table> LIMIT 1;`. The query is **not executed**: press **Run** to start it. The previous text can be restored with `Ctrl/Cmd+Z`.
-- A double click on a column, or `Enter`, inserts its name at the editor cursor (between backticks when needed).
-- The context menu (right click) offers **Prepare SELECT** (tables), **Insert in the editor** (columns) and **Copy name**.
+- A **click** on a table (also a double click, or `Enter` on the selected one) replaces the editor content with `SELECT * FROM <table> LIMIT 1;`. The query is **not executed**: press **Run** to start it. The previous text can be restored with `Ctrl/Cmd+Z`.
+- **Columns**: the same click expands the table and shows its columns in order, with the type on the right; the arrow alone expands or collapses it without touching the editor. Primary key columns are in bold with a yellow "P" badge; the tooltip shows the full definition (type, `NULL`/`NOT NULL`, key, default, extra, comment).
+- A double click on a column, or `Enter`, replaces the editor content with `SELECT <column> FROM <table> LIMIT 1;`, not executed and undoable with `Ctrl/Cmd+Z`. A single click on a column does not touch the editor.
+- **Shift + double click** on a column (or `Shift+Enter`) adds it to the columns of the prepared query: `SELECT * FROM <table> LIMIT 1;` becomes `SELECT <column> …`, then `SELECT <column>, <other column> …`. A column already in the list is not repeated; if the editor holds another text (a query on another table or written by hand), a new `SELECT <column> FROM <table> LIMIT 1;` replaces it. Each addition is undone with `Ctrl/Cmd+Z`.
+- The context menu (right click) offers **Prepare SELECT** (tables), **Prepare SELECT of the column** and **Add to the SELECT** (columns), and **Copy name**.
 - **Filter tables…** at the top shows only the tables whose name contains the text (case insensitive); the bottom line then shows "N of M tables".
 - The table name is always between backticks, with any inner backticks doubled, so names with spaces or reserved words work too.
 - The ⟳ button reloads the list, for example after a table has been created. On disconnection the list is emptied.
@@ -267,7 +270,7 @@ Users are never shown stack traces: technical details go to the log, without sec
 - The **execution timeout** works like this:
   - before every query the session `MAX_EXECUTION_TIME` is set, which the server applies to `SELECT`;
   - a client-side watchdog, once the timeout plus 2 seconds has expired, sends `KILL QUERY` from a separate connection. This also covers `SHOW`/`EXPLAIN` and servers that do not support `MAX_EXECUTION_TIME`, such as MariaDB.
-- **Stop** sends `KILL QUERY` over the same separate connection.
+- **Stop** (the blinking button below the results) sends `KILL QUERY` over the same separate connection.
 - Known limits:
   - `KILL QUERY` requires the user to be allowed to terminate their own queries, which is always permitted on one's own sessions;
   - if the server is unreachable, the cancellation request fails after the connection timeout. The GUI stays responsive anyway, because the query runs in a separate thread;
