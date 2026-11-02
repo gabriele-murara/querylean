@@ -6,9 +6,10 @@ import base64
 import html
 from pathlib import Path
 
-from PySide6.QtCore import QByteArray, QSize, Qt, QTimer
-from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
+from PySide6.QtCore import QByteArray, QEvent, QSize, Qt, QTimer
+from PySide6.QtGui import QAction, QCloseEvent, QKeySequence, QPalette
 from PySide6.QtWidgets import (
+    QApplication,
     QFileDialog,
     QHBoxLayout,
     QInputDialog,
@@ -51,6 +52,7 @@ from querylean.ui.dialogs.about_dialog import AboutDialog
 from querylean.ui.dialogs.connection_dialog import ConnectionDialog
 from querylean.ui.editor.sql_editor import SqlEditor
 from querylean.ui.icons.toolbar_icons import ToolbarIcons
+from querylean.ui.main.caution_palette import CautionPalette
 from querylean.ui.main.connection_state import ConnectionState
 from querylean.ui.main.connections_menu import ConnectionsMenu
 from querylean.ui.results.results_table import ResultsTable
@@ -585,6 +587,12 @@ class MainWindow(QMainWindow):
         self.__db.shutdown()
         event.accept()
 
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().changeEvent(event)
+        # A theme change replaces the application palette: tint it again.
+        if event.type() == QEvent.Type.ApplicationPaletteChange:
+            self.__apply_palette()
+
     # ---------------------------------------------------------- UI construction
     def __build_toolbar(self) -> None:
         toolbar = QToolBar("Main", self)
@@ -763,10 +771,22 @@ class MainWindow(QMainWindow):
         ):
             text = "{} · {}".format(text, html.escape(profile.display_name))
         self.__state_label.setText(text)
+        self.__apply_palette()
         if state != ConnectionState.CONNECTED:
             self.__sidebar.show_message(TableSidebar.NOT_CONNECTED)
         self.__update_actions()
         self.__refresh_connections()
+
+    def __apply_palette(self) -> None:
+        """Pink window background while the account is not read-only, the
+        inherited palette otherwise."""
+        if self.caution_active:
+            base = QApplication.palette(self)
+            self.setPalette(CautionPalette.tinted(base))
+        else:
+            # An empty palette clears the explicit roles: back to the
+            # application palette.
+            self.setPalette(QPalette())
 
     def __update_actions(self) -> None:
         connected = self.__state == ConnectionState.CONNECTED

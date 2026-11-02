@@ -121,7 +121,7 @@ src/querylean/
     validation/        ReadOnlyValidator → stadi ValidationStage su ValidationContext;
                        MySqlLexer, SqlToken, LexedStatement, ReadOnlyRules, ValidationResult
   ui/
-    main/              MainWindow, ConnectionState, ConnectionsMenu (menu "Connections": New connection…, Connect/Edit…/Delete… per connessione)
+    main/              MainWindow, ConnectionState, CautionPalette (sfondo rosa in modalità attenzione), ConnectionsMenu (menu "Connections": New connection…, Connect/Edit…/Delete… per connessione)
     dialogs/           ConnectionDialog, AboutDialog (versione/autore da AppInfo)
     icons/             ToolbarIcons (icone disegnate con QPainter: nessun asset da impacchettare)
     editor/            SqlEditor, SqlHighlighter, LineNumberArea
@@ -178,7 +178,7 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
   - `SHOW GRANTS` → `GrantAnalyzer`: sono di lettura solo `USAGE`, `SELECT`, `SHOW VIEW`, `SHOW DATABASES`; ruoli, righe sconosciute o errori rendono l'account non verificato (= non read-only). Non allargare l'elenco senza richiesta;
   - un account non read-only si rifiuta (`DatabaseError` kind `write_account`) se la connessione non ha `caution_mode`;
   - nel log solo i nomi dei privilegi, mai le righe dei grant (su MariaDB contengono l'hash della password).
-- **Modalità attenzione** (`ConnectionConfig.caution_mode`, default `False`): rilassa **solo** il controllo dell'account. Validatore, sessione READ ONLY e tutte le altre barriere restano identici. La GUI la segnala (`MainWindow.caution_active`, `CAUTION_LABEL` nello stato, titolo del menu con `ConnectionsMenu.CAUTION_TITLE`).
+- **Modalità attenzione** (`ConnectionConfig.caution_mode`, default `False`): rilassa **solo** il controllo dell'account. Validatore, sessione READ ONLY e tutte le altre barriere restano identici. La GUI la segnala (`MainWindow.caution_active`, `CAUTION_LABEL` nello stato, titolo del menu con `ConnectionsMenu.CAUTION_TITLE`, sfondo della finestra tinto di rosa con `CautionPalette`: solo il ruolo `Window` della palette, mai editor e tabelle; si ripristina con `setPalette(QPalette())` quando la sessione non è più in attenzione).
 - **Connessioni salvate**:
   - una connessione = un file `connections/<id>.json` (0600) scritto con `PrivateJsonFile`; `config.json` tiene solo `active_connection` e le preferenze;
   - un file illeggibile viene saltato (con log), non deve impedire il caricamento delle altre;

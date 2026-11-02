@@ -1,6 +1,10 @@
 """GUI tests of connections with an account that is not read-only."""
 
+from PySide6.QtGui import QPalette
+from PySide6.QtWidgets import QApplication
+
 from querylean.config.connection_config import ConnectionConfig
+from querylean.ui.main.caution_palette import CautionPalette
 from querylean.ui.main.connection_state import ConnectionState
 from querylean.ui.main.connections_menu import ConnectionsMenu
 from querylean.ui.main.main_window import MainWindow
@@ -8,7 +12,8 @@ from support.main_window_test_base import MainWindowTestBase
 
 
 class TestMainWindowCaution(MainWindowTestBase):
-    """Refusal without caution mode, warning state with it, menu marker."""
+    """Refusal without caution mode, warning state with it, pink window,
+    menu marker."""
 
     WRITE_GRANTS = ["GRANT SELECT, UPDATE ON `app`.* TO `rw`@`%`"]
 
@@ -16,6 +21,15 @@ class TestMainWindowCaution(MainWindowTestBase):
         connector.configure = lambda conn: setattr(
             conn, "grants", self.WRITE_GRANTS
         )
+
+    @staticmethod
+    def window_color(widget):
+        return widget.palette().color(QPalette.ColorRole.Window)
+
+    @staticmethod
+    def default_color(widget):
+        palette = QApplication.palette(widget)
+        return palette.color(QPalette.ColorRole.Window)
 
     def save(self, window, *, caution: bool):
         return window.save_connection(
@@ -38,6 +52,7 @@ class TestMainWindowCaution(MainWindowTestBase):
         assert "Connection refused" in text and "UPDATE" in text
         assert "Caution mode" in text
         assert not window.caution_active
+        assert self.window_color(window) == self.default_color(window)
 
     def test_caution_mode_connects_with_warning(self, qtbot, window, connector):
         self.write_account(connector)
@@ -50,6 +65,17 @@ class TestMainWindowCaution(MainWindowTestBase):
         assert window.caution_active
         assert MainWindow.CAUTION_LABEL in window.state_label.text()
         assert "Caution mode" in window.message_label.text()
+        # The grey parts turn pink; editor and results keep their colors.
+        pink = CautionPalette.tinted(QApplication.palette(window))
+        assert self.window_color(window) == pink.color(
+            QPalette.ColorRole.Window
+        )
+        assert self.window_color(window) != self.default_color(window)
+        assert self.window_color(window.sidebar) == self.window_color(window)
+        base = QPalette.ColorRole.Base
+        assert window.editor.palette().color(base) == QApplication.palette(
+            window.editor
+        ).color(base)
         # Writes stay forbidden.
         self.run(qtbot, window, "UPDATE t SET a = 1")
         assert "read operations only" in window.message_label.text()
@@ -60,6 +86,7 @@ class TestMainWindowCaution(MainWindowTestBase):
         )
         assert not window.caution_active
         assert MainWindow.CAUTION_LABEL not in window.state_label.text()
+        assert self.window_color(window) == self.default_color(window)
 
     def test_read_only_account_in_caution_mode_has_no_warning(
         self, qtbot, window
@@ -72,6 +99,7 @@ class TestMainWindowCaution(MainWindowTestBase):
         )
         assert not window.caution_active
         assert MainWindow.CAUTION_LABEL not in window.state_label.text()
+        assert self.window_color(window) == self.default_color(window)
 
     def test_menu_marks_caution_connections(self, window):
         profile = self.save(window, caution=True)

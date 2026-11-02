@@ -173,6 +173,7 @@ An account that is not read-only is refused with a message listing the privilege
 - an account with write privileges, or whose privileges cannot be verified, is accepted;
 - **nothing else changes**: the same validator applies (only read queries) and the session must be confirmed READ ONLY, otherwise the connection is closed;
 - while connected with such an account, the state at the bottom right shows "CAUTION: account with write privileges" in red, and the connection message lists the privileges found;
+- for the whole session the grey parts of the window (toolbar, side bar and status bar background, margins) turn pink, a constant reminder that the account is not read-only; editor and tables keep their colors. The tint follows the system theme (a soft pink on light themes, a dark rose on dark ones) and disappears on disconnection;
 - **Test connection** reports the privileges found.
 
 With a read-only account caution mode has no visible effect. Use it only when a SELECT-only account is not available.

@@ -173,6 +173,7 @@ La **Caution mode** (modalità attenzione) è un'opzione di ogni connessione, ne
 - viene accettato un account con privilegi di scrittura o con privilegi non verificabili;
 - **non cambia nient'altro**: vale lo stesso validatore (solo query di lettura) e la sessione deve essere confermata READ ONLY, altrimenti la connessione viene chiusa;
 - mentre si è connessi con un account di questo tipo, lo stato in basso a destra mostra in rosso "CAUTION: account with write privileges" (ATTENZIONE: account con privilegi di scrittura) e il messaggio di connessione elenca i privilegi trovati;
+- per tutta la sessione le parti grigie della finestra (sfondo di barra degli strumenti, barra laterale e barra di stato, margini) diventano rosa, come promemoria costante che l'account non è di sola lettura; editor e tabelle mantengono i loro colori. La tinta segue il tema del sistema (rosa tenue con i temi chiari, rosa scuro con quelli scuri) e sparisce alla disconnessione;
 - **Test connection** segnala i privilegi trovati.
 
 Con un account di sola lettura la modalità attenzione non ha effetti visibili. Va usata solo quando non è disponibile un account con il solo `SELECT`.
