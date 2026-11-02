@@ -48,11 +48,6 @@ class ResultsTable(QTableView):
         """Model holding the current result."""
         return self.__model
 
-    @property
-    def copy_action(self) -> QAction:
-        """Ctrl/Cmd+C action."""
-        return self.__copy_action
-
     def set_result(
         self, columns: list[str], rows: list[tuple[Any, ...]]
     ) -> None:

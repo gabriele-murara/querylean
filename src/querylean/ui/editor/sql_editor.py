@@ -43,11 +43,6 @@ class SqlEditor(QPlainTextEdit):
         self.updateRequest.connect(self.__update_line_area)
         self.__update_margin()
 
-    @property
-    def highlighter(self) -> SqlHighlighter:
-        """Syntax highlighter attached to the document."""
-        return self.__highlighter
-
     def query_text(self) -> str:
         """The selection if present, otherwise the whole content."""
         cursor = self.textCursor()

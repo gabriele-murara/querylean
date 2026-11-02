@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import html
 from pathlib import Path
 
 from PySide6.QtCore import QByteArray, QSize, Qt, QTimer
@@ -289,11 +290,6 @@ class MainWindow(QMainWindow):
     def stop_action(self) -> QAction:
         """ "Stop" action."""
         return self.__stop_action
-
-    @property
-    def about_action(self) -> QAction:
-        """ "About" action."""
-        return self.__about_action
 
     def toolbar_actions(self) -> tuple[QAction, ...]:
         """Toolbar actions in display order."""
@@ -743,9 +739,7 @@ class MainWindow(QMainWindow):
             ConnectionState.CONNECTED,
             ConnectionState.CONNECTING,
         ):
-            name = profile.display_name.replace("&", "&amp;")
-            name = name.replace("<", "&lt;").replace(">", "&gt;")
-            text = "{} · {}".format(text, name)
+            text = "{} · {}".format(text, html.escape(profile.display_name))
         self.__state_label.setText(text)
         if state != ConnectionState.CONNECTED:
             self.__sidebar.show_message(TableSidebar.NOT_CONNECTED)

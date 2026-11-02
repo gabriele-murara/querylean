@@ -13,8 +13,8 @@ from querylean.config.config_error import ConfigError
 from querylean.config.connection_config import ConnectionConfig
 from querylean.config.connection_profile import ConnectionProfile
 from querylean.config.connection_store import ConnectionStore
-from querylean.config.private_json_file import PrivateJsonFile
 from querylean.config.ui_preferences import UiPreferences
+from querylean.files.private_json_file import PrivateJsonFile
 from querylean.log.log_manager import LogManager
 
 

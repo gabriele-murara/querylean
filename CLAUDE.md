@@ -107,9 +107,10 @@ src/querylean/
   app/                 AppInfo (NAME, DISPLAY_NAME, AUTHOR, …, version()), VersionFile, BundleResources (percorsi nel bundle: `_MEIPASS` o radice), Application.run() (entry point, excepthook), SmokeTest
   log/                 AppLogger, LogManager, SecretRedactor
   config/              ConnectionConfig (anche name, display_name), ConnectionProfile (id + config), ConnectionStore (connections/<id>.json),
-                       UiPreferences, AppConfig (active_connection + ui), ConfigManager (config.json + migrazione), PrivateJsonFile (JSON atomico 0600), ConfigError
+                       UiPreferences, AppConfig (active_connection + ui), ConfigManager (config.json + migrazione), ConfigError
+  files/               PrivateFile (sostituzione atomica di un file 0600: temporaneo + os.replace), PrivateJsonFile (JSON tramite PrivateFile)
   security/            SecretStore (astratta), KeyringSecretStore, SecretStorageError
-  export/              ResultExporter (astratta: scrittura atomica, file 0600) → XlsxExporter, CsvExporter, JsonExporter;
+  export/              ResultExporter (astratta: scrittura tramite PrivateFile) → XlsxExporter, CsvExporter, JsonExporter;
                        ResultExporters (elenco e ricerca per estensione/filtro), ExportReport, ExportError
   database/
     errors/            DatabaseError(message, kind), QueryCancelled, QueryTimeout, ErrorTranslator
@@ -190,7 +191,7 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
 - **Export**:
   - esporta solo le righe già caricate (`MainWindow.__result`), senza rieseguire la query e senza superare il limite di righe;
   - il file si scrive in `ExportThread`, mai nel thread GUI;
-  - la scrittura è atomica (file temporaneo nella cartella di destinazione + `os.replace`) con permessi 0600;
+  - la scrittura è atomica con permessi 0600 (`PrivateFile`: file temporaneo nella cartella di destinazione + `os.replace`);
   - in Excel il testo è sempre una cella stringa, mai una formula (`data_type = "s"`);
   - in tutti i formati i valori sono scritti senza perdite (`ValueFormatter.full_text`, non `format_value`).
 - **Barra delle tabelle**:

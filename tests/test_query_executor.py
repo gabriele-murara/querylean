@@ -108,14 +108,7 @@ class TestQueryExecutor:
         self, connector, executor, reason, expected
     ):
         conn = connector.connections[0]
-        gate = threading.Event()
-        conn.block_fetch = gate
-
-        def on_kill():
-            conn.killed = True
-            gate.set()
-
-        connector.configure = lambda killer: setattr(killer, "on_kill", on_kill)
+        connector.block_until_killed(conn)
         errors = []
 
         def run():

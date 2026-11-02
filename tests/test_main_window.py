@@ -1,7 +1,5 @@
 """GUI tests of the main window."""
 
-import threading
-
 from mysql.connector import errors as mysql_errors
 from PySide6.QtGui import QTextCursor
 
@@ -107,15 +105,7 @@ class TestMainWindow(MainWindowTestBase):
         self, qtbot, window, connector
     ):
         self.connect(qtbot, window)
-        conn = connector.connections[0]
-        gate = threading.Event()
-        conn.block_fetch = gate
-
-        def on_kill():
-            conn.killed = True
-            gate.set()
-
-        connector.configure = lambda killer: setattr(killer, "on_kill", on_kill)
+        connector.block_until_killed(connector.connections[0])
         window.editor.setPlainText("SELECT n FROM t")
         window.execute_query()
         assert window.running

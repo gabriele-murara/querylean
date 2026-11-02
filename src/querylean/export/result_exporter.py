@@ -2,24 +2,22 @@
 
 from __future__ import annotations
 
-import os
-import tempfile
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
 
 from querylean.export.export_error import ExportError
 from querylean.export.export_report import ExportReport
+from querylean.files.private_file import PrivateFile
 from querylean.log.log_manager import LogManager
 
 
 class ResultExporter(ABC):
     """Writes column names and rows to a file of one format.
 
-    ``export`` writes to a temporary file in the target directory and then
-    renames it, so an existing file is replaced only by a complete export.
-    The file is created readable only by the current user (mode 0600): it
-    may contain sensitive data.
+    ``export`` writes through ``PrivateFile``: an existing file is replaced
+    only by a complete export, and the file is readable only by the current
+    user (mode 0600) because it may contain sensitive data.
     """
 
     __log = LogManager.get_logger(__name__)
@@ -52,15 +50,9 @@ class ResultExporter(ABC):
         """Atomically write the result to ``path``. Raises ``ExportError``
         with a user-facing message."""
         path = Path(path)
-        tmp_name = None
         try:
-            fd, tmp_name = tempfile.mkstemp(
-                prefix=".querylean-", suffix=self.extension, dir=path.parent
-            )
-            os.close(fd)
-            shortened = self.write(Path(tmp_name), columns, rows)
-            os.replace(tmp_name, path)
-            tmp_name = None
+            with PrivateFile.replace(path, self.extension) as tmp_path:
+                shortened = self.write(tmp_path, columns, rows)
         except OSError as exc:
             self.__log.error("Export to {} failed: {}", path, exc)
             msg = "Cannot write the file {}: {}"
@@ -69,9 +61,6 @@ class ResultExporter(ABC):
             self.__log.exception("Export to {} failed", path)
             msg = "Export failed: the details are in the log file."
             raise ExportError(msg) from exc
-        finally:
-            if tmp_name is not None:
-                Path(tmp_name).unlink(missing_ok=True)
         self.__log.info(
             "Exported {} rows to {} ({})", len(rows), path, self.label
         )

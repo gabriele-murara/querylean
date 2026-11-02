@@ -28,11 +28,6 @@ class AppLogger:
         """Fully qualified logger name."""
         return self.__name
 
-    @property
-    def logger(self) -> logging.Logger:
-        """Underlying standard library logger."""
-        return self.__logger
-
     def debug(self, msg: str, *args: object) -> None:
         """Log a DEBUG message."""
         self.__log(logging.DEBUG, msg, args)
