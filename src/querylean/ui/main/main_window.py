@@ -98,6 +98,9 @@ class MainWindow(QMainWindow):
     # Databases named in the state line before "…".
     __CAUTION_NAMES = 3
     CAUTION_COLOR = "#c62828"
+    READ_ONLY_NOTICE_TITLE = "Read queries only"
+    # Error kind of a query refused by the validator.
+    __REJECTED_KIND = "rejected"
     SAVE_QUERY_TEXT = "Save query"
     __SAVE_QUERY_TIP = "Bookmark the selection or the whole query for the "
     __SAVE_QUERY_TIP += "current connection"
@@ -127,6 +130,8 @@ class MainWindow(QMainWindow):
         # Privileges of the account of the open session (None when closed).
         # Write access of the account to the databases of the open session.
         self.__check: AccountCheck | None = None
+        # Dialog shown when a query is refused because it is not a read.
+        self.__read_only_notice: QMessageBox | None = None
         # Saved connection and settings of the open session: bookmarks are
         # read and run only for them.
         self.__session_id = ""
@@ -232,6 +237,12 @@ class MainWindow(QMainWindow):
             and self.__check is not None
             and self.__check.caution
         )
+
+    @property
+    def read_only_notice(self) -> QMessageBox | None:
+        """Notice shown the last time a query was refused because it is
+        not a read query, if any."""
+        return self.__read_only_notice
 
     @property
     def account_check(self) -> AccountCheck | None:
@@ -745,6 +756,7 @@ class MainWindow(QMainWindow):
         database = config.database if config is not None else active
         self.__schema.set_databases([database])
         self.__sidebar.set_loading()
+        self.__sidebar.set_write_access(self.__write_access([database]))
         # Showing the single database expands it, which requests its tables.
         self.__sidebar.set_databases([database], database)
 
@@ -1416,14 +1428,48 @@ class MainWindow(QMainWindow):
     def __on_query_failed(self, message: str, kind: str) -> None:
         self.__finish_run()
         self.show_message(message, error=True)
-        if kind == "not_connected":
+        if kind == MainWindow.__REJECTED_KIND:
+            self.__show_read_only_notice(message)
+        elif kind == "not_connected":
             self.__set_state(ConnectionState.DISCONNECTED)
         elif kind == "connection_lost":
             self.__set_state(ConnectionState.ERROR)
             self.worker.disconnect_requested.emit()
 
+    def __show_read_only_notice(self, reason: str) -> None:
+        """Tell the user, in a dialog, that the query was not run because
+        only read queries are allowed (also with an account that can change
+        data). Window-modal but not blocking."""
+        if self.__read_only_notice is not None:
+            self.__read_only_notice.close()
+        text = "The query was not run: {} runs only read queries "
+        text += "(SELECT, SHOW, DESCRIBE, EXPLAIN)."
+        info = reason
+        check = self.__check
+        if self.caution_active and check is not None:
+            extra = "\n\nThe account could change data in {}, but "
+            extra += "queries that write or change data are always refused."
+            info += extra.format(check.describe())
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle(MainWindow.READ_ONLY_NOTICE_TITLE)
+        box.setText(text.format(AppInfo.DISPLAY_NAME))
+        box.setInformativeText(info)
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        self.__read_only_notice = box
+        box.open()
+
     def __timeout(self) -> int:
         return self.__active_config().query_timeout
+
+    def __write_access(self, databases: list[str]) -> dict[str, str] | None:
+        """Privileges beyond reading of each writable database in
+        ``databases`` (also those created after the connection), from the
+        grants read at connection; None when unknown."""
+        if self.__check is None:
+            return None
+        check = AccountCheck(self.__check.privileges, databases)
+        return {name: check.reason(name) for name in check.write_databases}
 
     def __wire(self, database: str) -> str:
         """Database as sent to the worker: empty (the default database of
@@ -1442,6 +1488,7 @@ class MainWindow(QMainWindow):
         if self.__state != ConnectionState.CONNECTED:
             return  # stale: the session was closed meanwhile
         self.__schema.set_databases(databases)
+        self.__sidebar.set_write_access(self.__write_access(databases))
         self.__sidebar.set_databases(databases, self.__schema.database)
         if self.__schema.database:
             self.load_tables(self.__schema.database)

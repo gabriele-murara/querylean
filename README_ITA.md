@@ -107,6 +107,8 @@ Nella finestra della connessione il campo **Database** può essere sostituito da
 
 Dopo la connessione la barra **Tables** (Tabelle) mostra un albero: i database (quello configurato, oppure tutti quelli accessibili), le loro tabelle e viste (`SHOW FULL TABLES`, solo quelle a cui l'account ha accesso) e le colonne. Le viste sono in corsivo e in fondo c'è il numero di tabelle (o di database).
 
+I nomi dei database mostrano l'accesso in scrittura dell'account: in **verde** quelli che può solo leggere, in **rosa** con un'icona di avviso arancione (⚠) quelli che può modificare (accettati in [modalità attenzione](#modalità-attenzione)). Il tooltip elenca i privilegi. L'accesso si calcola dai grant letti alla connessione, anche per i database che compaiono dopo un aggiornamento.
+
 - Un **clic** su una tabella (anche un doppio clic, oppure `Invio` sulla voce selezionata) sostituisce il contenuto dell'editor con `SELECT * FROM <tabella> LIMIT 1;`. La query **non viene eseguita**: premi **Run** per lanciarla. Il testo precedente si recupera con `Ctrl/Cmd+Z`.
 - **Colonne**: lo stesso clic espande la tabella e ne mostra le colonne in ordine, con il tipo a destra; la sola freccia la apre o la chiude senza toccare l'editor. Le colonne della chiave primaria sono in grassetto con un'etichetta gialla "P"; il tooltip mostra la definizione completa (tipo, `NULL`/`NOT NULL`, chiave, default, extra, commento).
 - Un doppio clic su una colonna, oppure `Invio`, sostituisce il contenuto dell'editor con `SELECT <colonna> FROM <tabella> LIMIT 1;`, senza eseguirla e annullabile con `Ctrl/Cmd+Z`. Un clic singolo su una colonna non tocca l'editor.
@@ -155,6 +157,7 @@ Una query nei segnalibri appartiene a **una connessione salvata** e al database 
 - Senza selezione viene eseguito **l'intero contenuto** dell'editor.
 - Un editor vuoto (o con soli spazi) non esegue nulla.
 - È ammessa **una sola istruzione**; un `;` finale è tollerato. Con più istruzioni la query viene rifiutata: per eseguirne una, selezionala.
+- Una query che non è di lettura (per esempio `UPDATE`, `DELETE`, `INSERT`), o che il validatore rifiuta per un altro motivo, non viene inviata al server: oltre al messaggio rosso sotto i risultati, una finestra **Read queries only** (Solo query di lettura) spiega che vengono eseguite solo query di lettura e perché la query è stata rifiutata. In modalità attenzione elenca anche i database che l'account potrebbe modificare. La finestra non blocca l'applicazione e compare solo quando una query viene rifiutata, mai alla connessione.
 
 ### Copia
 
@@ -227,7 +230,7 @@ La **Caution mode** (modalità attenzione) si accetta **database per database**,
 - **Test connection** elenca in rosso i database della connessione che l'account può modificare, ciascuno con i suoi privilegi e una casella ("shop — INSERT, UPDATE"). Spunta ogni database che accetti; la scelta viene salvata con la connessione e resta valida nei test successivi;
 - un database modificabile non spuntato fa rifiutare la connessione. Se i privilegi cambiano (un nuovo database, un nuovo grant), la connessione viene rifiutata finché non si accettano i nuovi database con un nuovo test;
 - **non cambia nient'altro**: vale lo stesso validatore (solo query di lettura) e la sessione deve essere confermata READ ONLY, altrimenti la connessione viene chiusa;
-- mentre si è connessi, lo stato in basso a destra mostra in rosso "CAUTION: write access (<database>)" (ATTENZIONE: accesso in scrittura) e il messaggio di connessione elenca i database e i loro privilegi;
+- mentre si è connessi, lo stato in basso a destra mostra in rosso "CAUTION: write access (<database>)" (ATTENZIONE: accesso in scrittura), il messaggio di connessione elenca i database e i loro privilegi e nella barra laterale quei database sono in rosa con un'icona di avviso (quelli di sola lettura sono in verde);
 - per tutta la sessione le parti grigie della finestra (sfondo di barra degli strumenti, barra laterale e barra di stato, margini) diventano rosa, come promemoria costante che l'account può modificare qualche database; editor e tabelle mantengono i loro colori. La tinta segue il tema del sistema (rosa tenue con i temi chiari, rosa scuro con quelli scuri) e sparisce alla disconnessione;
 - le connessioni salvate in modalità attenzione dalla versione 1.7 o precedenti la mantengono per il loro database.
 

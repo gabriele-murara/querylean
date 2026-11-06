@@ -225,6 +225,7 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
   - nei segnali del worker un database vuoto significa "il database predefinito della sessione" (connessione a database singolo, query non qualificate come prima); con `all_databases` si passa sempre il nome e `TableInfo.database` qualifica le anteprime (`` `db`.`tab` ``).
 - **Tutti i database** (1.8):
   - il database attivo si cambia solo con `ConnectionManager.use_database` (`cmd_init_db`, comando di protocollo, mai SQL `USE`) e resta nelle riconnessioni (`ConnectionParams.with_database`); solo con `all_databases`;
+  - la barra colora i database per accesso (`TableSidebar.set_write_access`: verde `READ_ONLY_COLOR`, rosa `WRITE_COLOR` + `ToolbarIcons.warning()` in colonna 1); `MainWindow` lo ricalcola a ogni elenco con `AccountCheck(check.privileges, databases)`, quindi vale anche per i database comparsi dopo la connessione; senza check (None) nessun colore;
   - il target dei segnalibri usa `ConnectionConfig.scope_label()` (`*` per tutti i database), quindi non dipende dal database attivo.
 - **Autocompletamento** (1.7):
   - `Ctrl+Spazio` (su macOS il Control fisico, che Qt riporta come `MetaModifier`) apre le proposte; `Ctrl/Cmd+Invio` resta l'esecuzione e chiude l'elenco;
@@ -232,6 +233,7 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
   - non si propongono mai parole di `ReadOnlyRules.FORBIDDEN_WORDS` né funzioni vietate (`SqlVocabulary`); ogni nuova parola chiave o funzione proposta deve passare il validatore (`tests/test_sql_vocabulary.py`);
   - l'inserimento sostituisce la parola sotto il cursore in un solo passo annullabile; nessuna query viene eseguita dall'autocompletamento;
   - le colonne mancanti si chiedono con `SqlEditor.columns_needed` → `MainWindow.load_columns`; quando arrivano, `refresh_completion` aggiorna l'elenco.
+- **Query rifiutate dal validatore** (kind `rejected`): oltre al messaggio rosso, `MainWindow.read_only_notice` (finestra aperta con `open()`, mai bloccante) spiega che si eseguono solo query di lettura; compare **solo** in quel caso, mai alla connessione (lì basta la tinta rosa della modalità attenzione).
 - **Errori**: all'utente solo messaggi comprensibili (`DatabaseError.message`), mai stack trace; i dettagli vanno nel log.
 - **Tabella risultati**: non modificabile. NULL è mostrato come `NULL` in corsivo e si distingue da `""`. Nella copia TSV il NULL diventa una cella vuota.
 

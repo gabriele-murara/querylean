@@ -9,6 +9,7 @@ from querylean.config.config_manager import ConfigManager
 from querylean.config.connection_config import ConnectionConfig
 from querylean.database.connection.connection_manager import ConnectionManager
 from querylean.security.keyring_secret_store import KeyringSecretStore
+from querylean.ui.icons.toolbar_icons import ToolbarIcons
 from querylean.ui.main.connection_state import ConnectionState
 from querylean.ui.main.main_window import MainWindow
 from querylean.ui.worker.db_thread import DbThread
@@ -39,6 +40,7 @@ class TestMainWindow(MainWindowTestBase):
         ]
         for action in window.toolbar_actions():
             assert not action.icon().isNull()
+        assert not ToolbarIcons.warning().isNull()
 
     def test_connect_action_icon_follows_state(self, qtbot, window):
         before = window.connect_action.icon().cacheKey()

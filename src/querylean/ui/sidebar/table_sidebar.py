@@ -4,7 +4,7 @@ connected user."""
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QObject, QPoint, QSize, Qt, Signal
-from PySide6.QtGui import QFont, QGuiApplication, QPalette
+from PySide6.QtGui import QColor, QFont, QGuiApplication, QIcon, QPalette
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
@@ -34,7 +34,9 @@ class TableSidebar(QWidget):
 
     A click on a database emits ``database_selected(name)`` and expands
     it; its tables are requested with ``tables_requested(database)`` until
-    ``set_tables`` provides them. The active database is in bold.
+    ``set_tables`` provides them. The active database is in bold. Once the
+    write access is known (``set_write_access``), read-only databases are
+    green and those the account can change are pink with a warning icon.
 
     Expanding a table shows its columns with type, keys and a tooltip with
     the full definition; columns not loaded yet are requested with
@@ -68,6 +70,8 @@ class TableSidebar(QWidget):
     COLUMN_TEXT = "Prepare SELECT of the column"
     ADD_TEXT = "Add to the SELECT"
     USE_TEXT = "Use as active database"
+    READ_ONLY_COLOR = "#2e7d32"
+    WRITE_COLOR = "#c2185b"
     COPY_TEXT = "Copy name"
     __TABLE_ROLE = Qt.ItemDataRole.UserRole
     __COLUMN_ROLE = Qt.ItemDataRole.UserRole + 1
@@ -81,6 +85,8 @@ class TableSidebar(QWidget):
         self.setMinimumWidth(TableSidebar.__MIN_WIDTH)
         self.__schema: SchemaModel | None = None
         self.__active = ""
+        # Write privileges by database (None while unknown).
+        self.__write_access: dict[str, str] | None = None
         self.__status_text = ""
         self.__status_error = False
 
@@ -259,6 +265,19 @@ class TableSidebar(QWidget):
                 item.setExpanded(True)
         self.__apply_filter()
 
+    def set_write_access(self, writable: dict[str, str] | None) -> None:
+        """Databases the account can change, with their privileges (the
+        others are read-only); None when unknown."""
+        self.__write_access = None if writable is None else dict(writable)
+        self.__mark_active()
+
+    def is_writable(self, database: str) -> bool | None:
+        """True when the account can change ``database``, False when it is
+        read-only, None when unknown."""
+        if self.__write_access is None:
+            return None
+        return database in self.__write_access
+
     def set_active_database(self, database: str) -> None:
         """Show ``database`` as the active one."""
         self.__active = database
@@ -343,6 +362,7 @@ class TableSidebar(QWidget):
         """Empty the tree and show ``message`` (e.g. when disconnected)."""
         self.__tree.clear()
         self.__active = ""
+        self.__write_access = None
         self.__refresh_button.setEnabled(False)
         self.__set_status(message)
 
@@ -375,9 +395,31 @@ class TableSidebar(QWidget):
         bold.setBold(True)
         plain = QFont(self.__tree.font())
         for item in self.__database_items():
-            active = item.text(0) == self.__active
+            name = item.text(0)
+            active = name == self.__active
             item.setFont(0, bold if active else plain)
             item.setText(1, "active" if active else "")
+            self.__mark_access(item, name)
+
+    def __mark_access(self, item: QTreeWidgetItem, name: str) -> None:
+        """Color, warning icon and tooltip of a database by write access."""
+        writes = self.__write_access
+        if writes is None:
+            item.setData(0, Qt.ItemDataRole.ForegroundRole, None)
+            item.setIcon(1, QIcon())
+            item.setToolTip(0, "Database {}".format(name))
+            return
+        if name in writes:
+            item.setForeground(0, QColor(TableSidebar.WRITE_COLOR))
+            item.setIcon(1, ToolbarIcons.warning())
+            tip = "Database {}: the account can change data ({}). Caution "
+            tip += "mode: only read queries are run."
+            item.setToolTip(0, tip.format(name, writes[name]))
+        else:
+            item.setForeground(0, QColor(TableSidebar.READ_ONLY_COLOR))
+            item.setIcon(1, QIcon())
+            item.setToolTip(0, "Database {}: read-only".format(name))
+        item.setToolTip(1, item.toolTip(0))
 
     def __count_status(self, tables: list[TableInfo]) -> None:
         if len(self.__database_items()) > 1:

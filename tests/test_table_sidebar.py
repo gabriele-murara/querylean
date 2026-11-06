@@ -298,3 +298,35 @@ class TestTableSidebar:
         ]
         sidebar = self.make(qtbot, tables=tables)
         assert "Showing only the first" in sidebar.status_label.text()
+
+    def test_write_access_colors_and_warning(self, qtbot):
+        sidebar = TableSidebar()
+        qtbot.addWidget(sidebar)
+        sidebar.set_write_access({"shop": "INSERT, UPDATE"})
+        sidebar.set_databases(["app", "shop"], "app")
+        app = sidebar.database_item("app")
+        shop = sidebar.database_item("shop")
+        assert sidebar.is_writable("app") is False
+        assert sidebar.is_writable("shop") is True
+        assert app.foreground(0).color().name() == TableSidebar.READ_ONLY_COLOR
+        assert shop.foreground(0).color().name() == TableSidebar.WRITE_COLOR
+        assert app.icon(1).isNull()
+        assert not shop.icon(1).isNull()
+        assert "read-only" in app.toolTip(0)
+        assert "INSERT, UPDATE" in shop.toolTip(0)
+        # The marks survive a change of the active database.
+        sidebar.set_active_database("shop")
+        assert not shop.icon(1).isNull()
+        assert shop.text(1) == "active"
+
+    def test_unknown_write_access_has_no_colors(self, qtbot):
+        sidebar = TableSidebar()
+        qtbot.addWidget(sidebar)
+        sidebar.set_databases(["app"])
+        item = sidebar.database_item("app")
+        assert sidebar.is_writable("app") is None
+        assert item.icon(1).isNull()
+        assert item.data(0, Qt.ItemDataRole.ForegroundRole) is None
+        sidebar.set_write_access({"app": "DELETE"})
+        sidebar.show_message(TableSidebar.NOT_CONNECTED)
+        assert sidebar.is_writable("app") is None

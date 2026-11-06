@@ -159,3 +159,51 @@ class TestMainWindowDatabases(MainWindowTestBase):
             timeout=self.WAIT_MS,
         )
         assert window.schema.database == "shop"
+
+    def test_hybrid_access_is_shown_per_database(
+        self, qtbot, window, connector
+    ):
+        handler = SchemaHandler(schemas={"shop": self.SHOP, "crm": self.CRM})
+
+        def configure(conn):
+            conn.handler = handler
+            conn.databases = ["information_schema", "shop", "crm"]
+            conn.grants = [
+                "GRANT SELECT ON *.* TO `ro`@`%`",
+                "GRANT INSERT ON `shop`.* TO `ro`@`%`",
+            ]
+
+        connector.configure = configure
+        window.save_connection(
+            ConnectionConfig(
+                host="db",
+                username="ro",
+                all_databases=True,
+                caution_databases=["shop"],
+            ),
+            "pw",
+            remember=False,
+        )
+        window.toggle_connection()
+        qtbot.waitUntil(
+            lambda: len(window.sidebar.databases()) == 3,
+            timeout=self.WAIT_MS,
+        )
+        sidebar = window.sidebar
+        assert sidebar.is_writable("shop") is True
+        assert sidebar.is_writable("crm") is False
+        assert sidebar.is_writable("information_schema") is False
+        assert not sidebar.database_item("shop").icon(1).isNull()
+        assert sidebar.database_item("crm").icon(1).isNull()
+        # A reload recomputes the access, also for new databases.
+        connector.connections[0].databases = ["shop", "crm", "new"]
+        window.refresh_tables()
+        qtbot.waitUntil(
+            lambda: "new" in sidebar.databases(), timeout=self.WAIT_MS
+        )
+        assert sidebar.is_writable("new") is False
+
+    def test_read_only_account_is_all_green(self, qtbot, window, handler):
+        self.open(qtbot, window)
+        assert window.sidebar.is_writable("shop") is False
+        assert window.sidebar.is_writable("crm") is False

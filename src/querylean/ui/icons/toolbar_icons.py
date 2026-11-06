@@ -38,6 +38,7 @@ class ToolbarIcons:
     __ABOUT = "#1565c0"
     __STAR = "#f9a825"
     __BOOKMARKS = "#6a1b9a"
+    __WARNING = "#f57c00"
 
     @staticmethod
     def play() -> QIcon:
@@ -83,6 +84,11 @@ class ToolbarIcons:
     def bookmarks() -> QIcon:
         """Bookmark ribbon ("Bookmarked queries")."""
         return ToolbarIcons.__render(ToolbarIcons.__draw_bookmarks)
+
+    @staticmethod
+    def warning() -> QIcon:
+        """Orange triangle with "!" (a database the account can change)."""
+        return ToolbarIcons.__render(ToolbarIcons.__draw_warning)
 
     @staticmethod
     def about() -> QIcon:
@@ -242,6 +248,16 @@ class ToolbarIcons:
                 ]
             )
         )
+
+    @staticmethod
+    def __draw_warning(painter: QPainter) -> None:
+        ToolbarIcons.__fill(painter, ToolbarIcons.__WARNING)
+        painter.drawPolygon(
+            QPolygonF([QPointF(32, 4), QPointF(62, 58), QPointF(2, 58)])
+        )
+        ToolbarIcons.__fill(painter, "white")
+        painter.drawRoundedRect(QRectF(28, 20, 8, 22), 3, 3)
+        painter.drawEllipse(QRectF(28, 46, 8, 8))
 
     @staticmethod
     def __draw_about(painter: QPainter) -> None:

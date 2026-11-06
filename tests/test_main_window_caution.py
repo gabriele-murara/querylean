@@ -139,3 +139,52 @@ class TestMainWindowCaution(MainWindowTestBase):
         label = window.state_label.text()
         assert "{} (shop)".format(MainWindow.CAUTION_LABEL) in label
         assert "shop (INSERT)" in window.message_label.text()
+
+    def test_no_dialog_on_connection(self, qtbot, window, connector):
+        self.write_account(connector)
+        self.save(window, caution=True)
+        window.toggle_connection()
+        qtbot.waitUntil(
+            lambda: window.state == ConnectionState.CONNECTED,
+            timeout=self.WAIT_MS,
+        )
+        assert window.caution_active
+        assert window.read_only_notice is None
+
+    def test_write_query_shows_the_dialog(self, qtbot, window, connector):
+        self.write_account(connector)
+        self.save(window, caution=True)
+        window.toggle_connection()
+        qtbot.waitUntil(
+            lambda: window.state == ConnectionState.CONNECTED,
+            timeout=self.WAIT_MS,
+        )
+        self.run(qtbot, window, "UPDATE t SET a = 1")
+        notice = window.read_only_notice
+        assert notice is not None
+        qtbot.waitUntil(notice.isVisible, timeout=self.WAIT_MS)
+        assert notice.windowTitle() == MainWindow.READ_ONLY_NOTICE_TITLE
+        assert "only read queries" in notice.text()
+        assert "read operations only" in notice.informativeText()
+        assert "app (UPDATE)" in notice.informativeText()
+        # The error stays below the results too.
+        assert "read operations only" in window.message_label.text()
+        notice.accept()
+        # A read query does not show it.
+        self.run(qtbot, window, "SELECT n FROM t")
+        assert not notice.isVisible()
+
+    def test_read_only_account_also_gets_the_dialog(self, qtbot, window):
+        self.save(window, caution=False)
+        window.toggle_connection()
+        qtbot.waitUntil(
+            lambda: window.state == ConnectionState.CONNECTED,
+            timeout=self.WAIT_MS,
+        )
+        assert window.read_only_notice is None
+        self.run(qtbot, window, "DELETE FROM t")
+        notice = window.read_only_notice
+        assert notice is not None and notice.isVisible()
+        # No account warning without caution mode.
+        assert "could change data" not in notice.informativeText()
+        notice.accept()

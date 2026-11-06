@@ -107,6 +107,8 @@ In the connection form the **Database** field can be replaced by the checkbox "A
 
 After connecting, the **Tables** side bar shows a tree: databases (the configured one, or all the accessible ones), their tables and views (`SHOW FULL TABLES`, only those the account can access) and the columns. Views are in italics and the number of tables (or of databases) is shown at the bottom.
 
+The database names show the write access of the account: **green** for the databases it can only read, **pink** with an orange warning icon (⚠) for those it can change (accepted in [caution mode](#caution-mode)). The tooltip lists the privileges. The access is computed from the grants read at connection, also for databases that appear after a reload.
+
 - A **click** on a table (also a double click, or `Enter` on the selected one) replaces the editor content with `SELECT * FROM <table> LIMIT 1;`. The query is **not executed**: press **Run** to start it. The previous text can be restored with `Ctrl/Cmd+Z`.
 - **Columns**: the same click expands the table and shows its columns in order, with the type on the right; the arrow alone expands or collapses it without touching the editor. Primary key columns are in bold with a yellow "P" badge; the tooltip shows the full definition (type, `NULL`/`NOT NULL`, key, default, extra, comment).
 - A double click on a column, or `Enter`, replaces the editor content with `SELECT <column> FROM <table> LIMIT 1;`, not executed and undoable with `Ctrl/Cmd+Z`. A single click on a column does not touch the editor.
@@ -155,6 +157,7 @@ A bookmarked query belongs to **one saved connection** and to the database it po
 - Without a selection, **the whole content** of the editor is run.
 - An empty editor (or one with only whitespace) runs nothing.
 - **Only one statement** is allowed; a trailing `;` is tolerated. With several statements the query is rejected: to run one of them, select it.
+- A query that is not a read (for example `UPDATE`, `DELETE`, `INSERT`), or that the validator rejects for any other reason, is not sent to the server: besides the red message below the results, a **Read queries only** dialog explains that only read queries are run and why the query was refused. In caution mode it also lists the databases the account could change. The dialog does not block the application and appears only when a query is refused, never on connection.
 
 ### Copy
 
@@ -227,7 +230,7 @@ The check covers the databases of the connection: the configured one, or all tho
 - **Test connection** lists, in red, the databases of the connection that the account can change, each with its privileges and a checkbox ("shop — INSERT, UPDATE"). Check every database you accept; the choice is saved with the connection and survives new tests;
 - a writable database left unchecked makes the connection refused. If the privileges change (a new database, a new grant), the connection is refused until you accept the new databases with a new test;
 - **nothing else changes**: the same validator applies (only read queries) and the session must be confirmed READ ONLY, otherwise the connection is closed;
-- while connected, the state at the bottom right shows "CAUTION: write access (<databases>)" in red, and the connection message lists the databases and their privileges;
+- while connected, the state at the bottom right shows "CAUTION: write access (<databases>)" in red, the connection message lists the databases and their privileges, and in the side bar those databases are pink with a warning icon (the read-only ones are green);
 - for the whole session the grey parts of the window (toolbar, side bar and status bar background, margins) turn pink, a constant reminder that the account can change some database; editor and tables keep their colors. The tint follows the system theme (a soft pink on light themes, a dark rose on dark ones) and disappears on disconnection;
 - connections saved with caution mode by version 1.7 or earlier keep it for their database.
 
