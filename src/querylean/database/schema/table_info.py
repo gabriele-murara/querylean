@@ -13,9 +13,12 @@ class TableInfo:
 
     __QUOTED = re.compile(r"`((?:[^`]|``)*)`")
 
-    def __init__(self, name: str, is_view: bool = False) -> None:
+    def __init__(
+        self, name: str, is_view: bool = False, database: str = ""
+    ) -> None:
         self.__name = name
         self.__is_view = is_view
+        self.__database = database
 
     @property
     def name(self) -> str:
@@ -28,10 +31,26 @@ class TableInfo:
         return self.__is_view
 
     @property
+    def database(self) -> str:
+        """Database of the table when listed from a named database (empty
+        for the default database of the session): statements then qualify
+        the table (`` `db`.`name` ``)."""
+        return self.__database
+
+    @property
+    def reference(self) -> str:
+        """The table as written in statements: `` `name` `` or
+        `` `db`.`name` ``."""
+        name = MySqlIdentifier.quote(self.__name)
+        if not self.__database:
+            return name
+        return "{}.{}".format(MySqlIdentifier.quote(self.__database), name)
+
+    @property
     def select_statement(self) -> str:
         """Preview query of the table: ``SELECT * FROM `name` LIMIT 1;``."""
         msg = "SELECT * FROM {} LIMIT 1;"
-        return msg.format(MySqlIdentifier.quote(self.__name))
+        return msg.format(self.reference)
 
     def column_statement(self, column: str) -> str:
         """Preview of a column: ``SELECT `column` FROM `name` LIMIT 1;``."""
@@ -44,7 +63,7 @@ class TableInfo:
             return self.select_statement
         names = ", ".join(MySqlIdentifier.quote(c) for c in columns)
         msg = "SELECT {} FROM {} LIMIT 1;"
-        return msg.format(names, MySqlIdentifier.quote(self.__name))
+        return msg.format(names, self.reference)
 
     def selected_columns(self, statement: str) -> list[str] | None:
         """Columns of ``statement`` when it is a preview of this table
@@ -52,7 +71,7 @@ class TableInfo:
         for ``SELECT *``); None for any other text."""
         text = statement.strip()
         prefix = "SELECT "
-        suffix = " FROM {} LIMIT 1;".format(MySqlIdentifier.quote(self.__name))
+        suffix = " FROM {} LIMIT 1;".format(self.reference)
         if not text.startswith(prefix) or not text.endswith(suffix):
             return None
         body = text[len(prefix) : len(text) - len(suffix)]
@@ -77,10 +96,12 @@ class TableInfo:
             isinstance(other, TableInfo)
             and self.__name == other.name
             and self.__is_view == other.is_view
+            and self.__database == other.database
         )
 
     def __hash__(self) -> int:
-        return hash((self.__name, self.__is_view))
+        return hash((self.__name, self.__is_view, self.__database))
 
     def __repr__(self) -> str:
-        return "TableInfo({!r}, is_view={})".format(self.__name, self.__is_view)
+        text = "TableInfo({!r}, is_view={}, database={!r})"
+        return text.format(self.__name, self.__is_view, self.__database)

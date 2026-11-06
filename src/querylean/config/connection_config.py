@@ -2,13 +2,23 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
 
 class ConnectionConfig:
     """Connection settings. Setters normalise values: strings are stripped and
     numbers are clamped to their allowed range, so an instance is always valid
-    to use."""
+    to use.
+
+    With ``all_databases`` the connection covers every database the account
+    can access and ``database`` is optional (the initial active database).
+    ``caution_databases`` lists the databases the user accepted in caution
+    mode although the account can change them."""
+
+    # Shown instead of the database name when the connection covers all
+    # the databases.
+    ALL_DATABASES_LABEL = "*"
 
     DEFAULT_HOST = "localhost"
     DEFAULT_PORT = 3306
@@ -18,6 +28,7 @@ class ConnectionConfig:
     MAX_ROW_LIMIT = 10_000
     MAX_TIMEOUT_SECONDS = 3600
     MAX_PORT = 65535
+    __LEGACY_CAUTION = "caution_mode"
 
     def __init__(
         self,
@@ -29,7 +40,8 @@ class ConnectionConfig:
         query_timeout: int = DEFAULT_QUERY_TIMEOUT,
         row_limit: int = DEFAULT_ROW_LIMIT,
         name: str = "",
-        caution_mode: bool = False,
+        all_databases: bool = False,
+        caution_databases: Iterable[str] = (),
     ) -> None:
         self.__name = ""
         self.__host = ""
@@ -39,7 +51,8 @@ class ConnectionConfig:
         self.__connect_timeout = ConnectionConfig.DEFAULT_CONNECT_TIMEOUT
         self.__query_timeout = ConnectionConfig.DEFAULT_QUERY_TIMEOUT
         self.__row_limit = ConnectionConfig.DEFAULT_ROW_LIMIT
-        self.__caution_mode = False
+        self.__all_databases = False
+        self.__caution_databases: tuple[str, ...] = ()
         self.host = host
         self.port = port
         self.database = database
@@ -48,7 +61,8 @@ class ConnectionConfig:
         self.query_timeout = query_timeout
         self.row_limit = row_limit
         self.name = name
-        self.caution_mode = caution_mode
+        self.all_databases = all_databases
+        self.caution_databases = caution_databases
 
     # --------------------------------------------------------------- properties
     @property
@@ -82,7 +96,7 @@ class ConnectionConfig:
 
     @property
     def database(self) -> str:
-        """Default schema."""
+        """Default schema (optional with ``all_databases``)."""
         return self.__database
 
     @database.setter
@@ -141,19 +155,48 @@ class ConnectionConfig:
         )
 
     @property
-    def caution_mode(self) -> bool:
-        """Allow an account with privileges beyond reading. Queries are
-        still limited to reads; only the account check is relaxed."""
-        return self.__caution_mode
+    def all_databases(self) -> bool:
+        """Cover every database the account can access."""
+        return self.__all_databases
 
-    @caution_mode.setter
-    def caution_mode(self, value: bool) -> None:
-        self.__caution_mode = value is True
+    @all_databases.setter
+    def all_databases(self, value: bool) -> None:
+        self.__all_databases = value is True
+
+    @property
+    def caution_databases(self) -> tuple[str, ...]:
+        """Databases accepted in caution mode: the account may change them,
+        queries are still limited to reads."""
+        return self.__caution_databases
+
+    @caution_databases.setter
+    def caution_databases(self, value: Iterable[str]) -> None:
+        names: list[str] = []
+        if isinstance(value, str):
+            value = (value,)
+        for item in value or ():
+            if isinstance(item, str) and item.strip() and item not in names:
+                names.append(item.strip())
+        self.__caution_databases = tuple(names)
+
+    @property
+    def caution_mode(self) -> bool:
+        """True when at least one database is accepted in caution mode."""
+        return bool(self.__caution_databases)
 
     # ---------------------------------------------------------------- behaviour
     def default_name(self) -> str:
-        """``<user>@<host>/<database>``: the name used when none is set."""
-        return "{}@{}/{}".format(self.__username, self.__host, self.__database)
+        """``<user>@<host>/<database>`` (``/*`` for all the databases): the
+        name used when none is set."""
+        return "{}@{}/{}".format(
+            self.__username, self.__host, self.scope_label()
+        )
+
+    def scope_label(self) -> str:
+        """The database, or ``*`` when the connection covers them all."""
+        if self.__all_databases:
+            return ConnectionConfig.ALL_DATABASES_LABEL
+        return self.__database
 
     def display_name(self) -> str:
         """The configured name, or ``default_name()`` when it is empty."""
@@ -164,7 +207,7 @@ class ConnectionConfig:
         missing = []
         if not self.__host:
             missing.append("Host")
-        if not self.__database:
+        if not self.__database and not self.__all_databases:
             missing.append("Database")
         if not self.__username:
             missing.append("Username")
@@ -189,7 +232,8 @@ class ConnectionConfig:
             "connect_timeout": self.__connect_timeout,
             "query_timeout": self.__query_timeout,
             "row_limit": self.__row_limit,
-            "caution_mode": self.__caution_mode,
+            "all_databases": self.__all_databases,
+            "caution_databases": list(self.__caution_databases),
         }
 
     @staticmethod
@@ -206,6 +250,13 @@ class ConnectionConfig:
                 isinstance(value, type(default))
             ):
                 setattr(config, name, value)
+        # Up to 1.7 caution mode accepted the account for its one database.
+        if (
+            data.get(ConnectionConfig.__LEGACY_CAUTION) is True
+            and "caution_databases" not in data
+            and config.database
+        ):
+            config.caution_databases = (config.database,)
         return config
 
     def __eq__(self, other: object) -> bool:
@@ -215,7 +266,12 @@ class ConnectionConfig:
         )
 
     def __hash__(self) -> int:
-        return hash(tuple(self.to_dict().items()))
+        return hash(
+            tuple(
+                (key, tuple(value) if isinstance(value, list) else value)
+                for key, value in self.to_dict().items()
+            )
+        )
 
     def __repr__(self) -> str:
         fields = ", ".join(

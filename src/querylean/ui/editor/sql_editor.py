@@ -32,12 +32,14 @@ class SqlEditor(QPlainTextEdit):
     proposals (a single proposal is inserted at once); while typing they
     open by themselves after a dot or after the first letters of a name.
     Enter or Tab accepts, Esc closes, the arrows move in the list. When a
-    proposal needs columns that are not loaded yet, ``columns_needed`` is
-    emitted and ``refresh_completion`` updates the list once they arrive.
+    proposal needs columns (or tables) that are not loaded yet,
+    ``columns_needed`` (or ``tables_needed``) is emitted and
+    ``refresh_completion`` updates the list once they arrive.
     """
 
     execute_requested = Signal()
-    columns_needed = Signal(str)  # table name
+    columns_needed = Signal(str, str)  # database, table
+    tables_needed = Signal(str)  # database
 
     PLACEHOLDER = "Write a SELECT query: Ctrl+Space completes, Ctrl+Enter "
     PLACEHOLDER += "runs (Cmd+Enter on macOS)"
@@ -122,12 +124,13 @@ class SqlEditor(QPlainTextEdit):
         if result is None:
             return None
         self.__request_columns(result)
-        self.__awaiting_columns = manual and bool(result.missing_tables)
+        waiting = result.missing_tables or result.missing_databases
+        self.__awaiting_columns = manual and bool(waiting)
         items = result.items
         if not items:
             self.__completer.hide_popup()
             return result
-        if manual and len(items) == 1 and not result.missing_tables:
+        if manual and len(items) == 1 and not waiting:
             self.apply_completion(items[0])
             return result
         self.__manual = manual
@@ -168,6 +171,9 @@ class SqlEditor(QPlainTextEdit):
             )
         cursor.endEditBlock()
         self.setTextCursor(cursor)
+        # "db." continues with the tables of that database.
+        if item.insert_text.endswith(".") and self.__auto_completion:
+            self.__auto_timer.start()
 
     def query_text(self) -> str:
         """The selection if present, otherwise the whole content."""
@@ -260,8 +266,10 @@ class SqlEditor(QPlainTextEdit):
         )
 
     def __request_columns(self, result: CompletionResult) -> None:
-        for table in result.missing_tables:
-            self.columns_needed.emit(table)
+        for database, table in result.missing_tables:
+            self.columns_needed.emit(database, table)
+        for database in result.missing_databases:
+            self.tables_needed.emit(database)
 
     def __auto_complete(self) -> None:
         """Open the proposals while typing, when they are useful."""

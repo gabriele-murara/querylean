@@ -20,7 +20,14 @@ class TestQueryBookmark:
         other = base.copy()
         other.name = "Production"
         other.row_limit = 50
-        other.caution_mode = True
+        other.caution_databases = ["app"]
+        assert QueryBookmark.target_of(base) == QueryBookmark.target_of(other)
+
+    def test_target_of_all_databases_ignores_the_active_one(self):
+        base = ConnectionConfig(host="db", username="ro", all_databases=True)
+        other = base.copy()
+        other.database = "shop"
+        assert QueryBookmark.target_of(base) == "ro@db:3306/*"
         assert QueryBookmark.target_of(base) == QueryBookmark.target_of(other)
 
     @pytest.mark.parametrize(

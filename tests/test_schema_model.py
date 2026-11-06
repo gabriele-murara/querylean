@@ -34,3 +34,24 @@ class TestSchemaModel:
         assert schema.database == ""
         assert schema.tables == []
         assert schema.columns_of("a") is None
+
+    def test_several_databases(self):
+        schema = SchemaModel()
+        schema.database = "app"
+        schema.set_databases(["app", "Shop"])
+        schema.set_tables([TableInfo("users")])
+        schema.set_tables([TableInfo("orders", database="Shop")], "Shop")
+        assert schema.find_database("shop") == "Shop"
+        assert schema.find_database("nowhere") is None
+        assert schema.tables == [TableInfo("users")]
+        assert schema.table("orders") is None
+        assert schema.table("ORDERS", "shop") is not None
+        assert schema.tables_of("crm") is None
+        assert not schema.has_tables("crm")
+        schema.set_columns("orders", (ColumnInfo("id"),), "Shop")
+        assert schema.columns_of("orders") is None
+        assert schema.columns_of("orders", "shop") == (ColumnInfo("id"),)
+        # Replacing the tables of one database keeps the others.
+        schema.set_tables([], "Shop")
+        assert schema.table("users") is not None
+        assert schema.table("orders", "Shop") is None

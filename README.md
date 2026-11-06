@@ -15,10 +15,11 @@ at a time, a SQL editor and a table of copyable results.
   - highlighting of keywords, strings, numbers and comments;
   - execution with `Ctrl+Enter` (Linux) or `Cmd+Enter` (macOS);
   - [autocompletion](#autocompletion) of tables, columns, aliases, keywords and functions with `Ctrl+Space`, also opening by itself while typing.
-- Side bar with the tables and views of the database you have access to: a click on a table prepares `SELECT * FROM <table> LIMIT 1;` in the editor and shows its columns (type, keys, comments).
+- A connection uses one database or [all the databases](#all-the-databases) the account can access.
+- Side bar with databases, tables and views you have access to: a click on a table prepares `SELECT * FROM <table> LIMIT 1;` in the editor and shows its columns (type, keys, comments).
 - Bookmarked queries: a query saved with a name for one connection can be run again from the **Bookmarked queries** menu, only on that connection.
 - Only read statements are allowed (`SELECT`, `WITH … SELECT`, `UNION`, `SHOW`, `DESCRIBE`/`DESC`, `EXPLAIN SELECT`). Every query goes through a parser-based validator.
-- On connection the account privileges are checked: an account that can change data is refused, unless the connection is in [caution mode](#caution-mode).
+- On connection the account privileges are checked database by database: a database the account can change is refused until you accept it in [caution mode](#caution-mode).
 - Queries run outside the GUI thread, with an activity indicator, timeouts and a blinking **Stop** button that appears only when a query takes more than a second.
 - Read-only results table:
   - `NULL` is distinct from the empty string;
@@ -69,7 +70,7 @@ The toolbar contains, in order: **Run** (▶), **Save query** (☆) and **Bookma
 
 While a query runs, an activity bar and the text of the query appear below the results. If the query is still running after one second, a red **Stop** button (■) appears next to the activity bar and blinks until the query ends: a click interrupts it. Quick queries never show it.
 
-1. **Connections** → **New connection…**: fill in name (optional), host, port, database, username, password and timeouts, then use **Test connection** and **Save**. Saving does not open the connection (see [Connections](#connections)).
+1. **Connections** → **New connection…**: fill in name (optional), host, port, database (or check "All the databases the account can access"), username, password and timeouts, then use **Test connection** and **Save**. Saving does not open the connection (see [Connections](#connections)).
 2. **Connect** opens the active connection, the one checked in the **Connections** menu: the state goes from *Disconnected* to *Connecting* and then to *Connected* or *Connection error*. If the password is not in the keychain, it is asked for.
 3. Write the query, helped by the [autocompletion](#autocompletion), and press **Run** or `Ctrl/Cmd+Enter`. Alternatively click a table in the side bar (see [Table side bar](#table-side-bar)). Below the results you see rows and time, then "Query executed:" followed by the query just executed, on one line. Beyond 160 characters the query is cut with "…"; the full text is in the message tooltip.
 4. Select cells or rows and press `Ctrl/Cmd+C`. The context menu also offers the "with headers" and "whole rows" variants.
@@ -77,7 +78,7 @@ While a query runs, an activity bar and the text of the query appear below the r
 
 ### Connections
 
-The **Connections** button opens a menu with **New connection…** and, below it, the saved connections in alphabetical order. Each connection is shown with its name or, when the name is empty, as `<user>@<host>/<database>`. The active connection is checked.
+The **Connections** button opens a menu with **New connection…** and, below it, the saved connections in alphabetical order. Each connection is shown with its name or, when the name is empty, as `<user>@<host>/<database>` (`<user>@<host>/*` for all the databases). The active connection is checked.
 
 Each item has a sub-menu:
 
@@ -89,22 +90,33 @@ The toolbar **Connect** button uses the active connection; if none exists, it op
 
 Each connection is a JSON file of its own (see [Local files](#local-files)) and never contains the password.
 
-A connection with **Caution mode** enabled is shown in the menu as "<name> (caution mode)" (see [Caution mode](#caution-mode)).
+A connection with at least one database accepted in caution mode is shown in the menu as "<name> (caution mode)" (see [Caution mode](#caution-mode)).
+
+### All the databases
+
+In the connection form the **Database** field can be replaced by the checkbox "All the databases the account can access":
+
+- with a database (checkbox off) the connection uses only that database, as in previous versions: the side bar shows it alone, already expanded, and the privilege check considers only it;
+- with the checkbox on the connection covers every database listed by `SHOW DATABASES` (only those the account can access). The **Database** field becomes optional: if filled in, it is the active database at connection;
+- the **active database** is the one unqualified names refer to (`SELECT * FROM users`). It is shown in bold in the side bar, and the state at the bottom right shows it as "db: <name>". A click on a database (or on one of its tables), or **Use as active database** in its context menu, makes it active. The application changes it with the MySQL protocol command `COM_INIT_DB`, not with SQL from the editor (`USE` is not a read query and stays forbidden); reconnections keep it;
+- without an active database MySQL refuses unqualified names ("No database selected"): click a database first, or write `db.table`;
+- with all the databases the queries prepared by the side bar always qualify the table (`` SELECT * FROM `shop`.`orders` LIMIT 1; ``), so they work whatever the active database is;
+- the autocompletion proposes the databases after `FROM`/`JOIN` (inserted with their dot), the tables after `db.` and the columns after `db.table.`; the tables and columns of a database are read when it is expanded, made active or needed by the completion.
 
 ### Table side bar
 
-After connecting, the **Tables** side bar lists the tables and views of the configured database (`SHOW FULL TABLES`), that is only those the account can access. Views are in italics and the number of items is shown at the bottom.
+After connecting, the **Tables** side bar shows a tree: databases (the configured one, or all the accessible ones), their tables and views (`SHOW FULL TABLES`, only those the account can access) and the columns. Views are in italics and the number of tables (or of databases) is shown at the bottom.
 
 - A **click** on a table (also a double click, or `Enter` on the selected one) replaces the editor content with `SELECT * FROM <table> LIMIT 1;`. The query is **not executed**: press **Run** to start it. The previous text can be restored with `Ctrl/Cmd+Z`.
 - **Columns**: the same click expands the table and shows its columns in order, with the type on the right; the arrow alone expands or collapses it without touching the editor. Primary key columns are in bold with a yellow "P" badge; the tooltip shows the full definition (type, `NULL`/`NOT NULL`, key, default, extra, comment).
 - A double click on a column, or `Enter`, replaces the editor content with `SELECT <column> FROM <table> LIMIT 1;`, not executed and undoable with `Ctrl/Cmd+Z`. A single click on a column does not touch the editor.
 - **Shift + double click** on a column (or `Shift+Enter`) adds it to the columns of the prepared query: `SELECT * FROM <table> LIMIT 1;` becomes `SELECT <column> …`, then `SELECT <column>, <other column> …`. A column already in the list is not repeated; if the editor holds another text (a query on another table or written by hand), a new `SELECT <column> FROM <table> LIMIT 1;` replaces it. Each addition is undone with `Ctrl/Cmd+Z`.
 - The context menu (right click) offers **Prepare SELECT** (tables), **Prepare SELECT of the column** and **Add to the SELECT** (columns), and **Copy name**.
-- **Filter tables…** at the top shows only the tables whose name contains the text (case insensitive); the bottom line then shows "N of M tables".
+- **Filter tables…** at the top shows only the tables whose name, or whose database name, contains the text (case insensitive); the bottom line then shows "N of M tables".
 - The table name is always between backticks, with any inner backticks doubled, so names with spaces or reserved words work too.
-- The ⟳ button reloads the list, for example after a table has been created. On disconnection the list is emptied.
+- The ⟳ button reloads databases and tables, for example after a table has been created. On disconnection the tree is emptied.
 - Reading the list goes through the validator, respects the query timeout and shows at most 10,000 items. An error (for example missing privileges) is shown in the side bar, without closing the connection.
-- The columns of the whole database are read once after connecting, with a single query on `information_schema.COLUMNS` (through the validator, at most 10,000 columns); the tables left out, or whose listing failed, are read on demand with `SHOW FULL COLUMNS FROM <table>` when they are expanded or needed by the completion. A table whose columns cannot be read shows "No columns available." (the reason is in the tooltip).
+- The columns of a database are read once, when its tables are, with a single query on `information_schema.COLUMNS` (through the validator, at most 10,000 columns); the tables left out, or whose listing failed, are read on demand with `SHOW FULL COLUMNS FROM <table>` when they are expanded or needed by the completion. A table whose columns cannot be read shows "No columns available." (the reason is in the tooltip).
 
 ### Autocompletion
 
@@ -128,7 +140,7 @@ The editor proposes what fits at the cursor, as in the major database tools:
 
 ### Bookmarked queries
 
-A bookmarked query belongs to **one saved connection** and to the database it points to (`<user>@<host>:<port>/<database>`).
+A bookmarked query belongs to **one saved connection** and to the database it points to (`<user>@<host>:<port>/<database>`, or `/*` with all the databases).
 
 - **Save query** saves the selection or, without a selection, the whole editor content. It asks for a name (at most 100 characters) and saves the query for the open connection. An existing bookmark with the same name (case insensitive) is replaced after confirmation. Only queries accepted by the validator can be saved: a write query is refused already at this step.
 - The **Bookmarked queries** menu lists, in alphabetical order, only the queries of the open connection; the query text is in the tooltip. A click puts the query in the editor (undoable with `Ctrl/Cmd+Z`) and runs it at once, through the validator like any other query.
@@ -203,19 +215,21 @@ On every connection, including **Test connection** and transparent reconnections
 - read privileges are only `USAGE`, `SELECT`, `SHOW VIEW` and `SHOW DATABASES`; any other privilege (`INSERT`, `ALL PRIVILEGES`, `EXECUTE`, `PROXY`, `WITH GRANT OPTION`, dynamic privileges such as `BACKUP_ADMIN`, …) makes the account "with write privileges";
 - column privileges (`UPDATE (col)`) count like the others;
 - role grants (`` GRANT `role` TO … ``), unrecognized lines or a failure of `SHOW GRANTS` make the account "not verified", and it is treated like one with write privileges;
-- `REVOKE` lines (partial revokes) only remove privileges and are ignored.
+- `REVOKE` lines (partial revokes) only remove privileges and are ignored;
+- each privilege beyond reading applies to the database of its grant: `db.*`, `db.table`, `PROCEDURE db.name`. Database names in grants follow the MySQL wildcards (`%`, `_`, escaped with `\`) and match case-insensitively, so they never cover fewer databases than the server. Global grants (`*.*`), objects outside a database (`PROXY`) and unverified accounts apply to **every** database. `information_schema` is never writable.
 
-An account that is not read-only is refused with a message listing the privileges found. The log records only the privilege names, never the grant lines (on MariaDB they can contain the password hash).
+The check covers the databases of the connection: the configured one, or all those listed by `SHOW DATABASES`. A database the account can change and that was not accepted in [caution mode](#caution-mode) is refused, with a message listing the databases and their privileges. Writes allowed only on other databases do not matter. The log records only the privilege names, never the grant lines (on MariaDB they can contain the password hash).
 
 ### Caution mode
 
-**Caution mode** is a per-connection option, in the **New connection…**/**Edit…** form ("Caution mode: allow an account with write privileges"). When enabled:
+**Caution mode** is accepted **database by database**, in the **New connection…**/**Edit…** form:
 
-- an account with write privileges, or whose privileges cannot be verified, is accepted;
+- **Test connection** lists, in red, the databases of the connection that the account can change, each with its privileges and a checkbox ("shop — INSERT, UPDATE"). Check every database you accept; the choice is saved with the connection and survives new tests;
+- a writable database left unchecked makes the connection refused. If the privileges change (a new database, a new grant), the connection is refused until you accept the new databases with a new test;
 - **nothing else changes**: the same validator applies (only read queries) and the session must be confirmed READ ONLY, otherwise the connection is closed;
-- while connected with such an account, the state at the bottom right shows "CAUTION: account with write privileges" in red, and the connection message lists the privileges found;
-- for the whole session the grey parts of the window (toolbar, side bar and status bar background, margins) turn pink, a constant reminder that the account is not read-only; editor and tables keep their colors. The tint follows the system theme (a soft pink on light themes, a dark rose on dark ones) and disappears on disconnection;
-- **Test connection** reports the privileges found.
+- while connected, the state at the bottom right shows "CAUTION: write access (<databases>)" in red, and the connection message lists the databases and their privileges;
+- for the whole session the grey parts of the window (toolbar, side bar and status bar background, margins) turn pink, a constant reminder that the account can change some database; editor and tables keep their colors. The tint follows the system theme (a soft pink on light themes, a dark rose on dark ones) and disappears on disconnection;
+- connections saved with caution mode by version 1.7 or earlier keep it for their database.
 
 With a read-only account caution mode has no visible effect. Use it only when a SELECT-only account is not available.
 
@@ -485,6 +499,7 @@ To verify a download: `sha256sum -c SHA256SUMS --ignore-missing`.
 - Columns, tables and aliases whose name is a write word (`update`, `delete`, `insert`, …) are rejected even when quoted or qualified; names that only contain such a word (`updated_at`, `delete_flag`) are allowed. The `INSERT()` string function is rejected too. Words inside strings and comments are not checked.
 - `--` sequences not followed by whitespace outside strings (e.g. `1--1`) are rejected to avoid ambiguity with comments: write `1 - -1`.
 - MariaDB support is not guaranteed: `MAX_EXECUTION_TIME` does not exist there, so only the watchdog is used.
+- With all the databases, the bookmarked queries and the side bar refer to the whole server: a bookmark with unqualified names runs on the active database of the moment.
 
 ## License
 

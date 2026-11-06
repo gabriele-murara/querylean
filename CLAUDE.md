@@ -11,7 +11,7 @@
 
 Fanno eccezione le variabili d'ambiente, che per convenzione sono maiuscole (`QUERYLEAN_TEST_*`). "QueryLean" (`AppInfo.DISPLAY_NAME`) è solo il nome visibile all'utente: titolo della finestra, `QueryLean.app`, voce del menu.
 
-Client desktop minimale (Linux/macOS, **no Windows**) per eseguire **solo query MySQL di lettura**, con più connessioni salvate e una sola aperta alla volta. Le specifiche complete sono in `PROJECT.md`, la documentazione utente e di build in `README.md` (inglese) e `README_ITA.md` (italiano).
+Client desktop minimale (Linux/macOS, **no Windows**) per eseguire **solo query MySQL di lettura**, con più connessioni salvate e una sola aperta alla volta; una connessione usa un database oppure tutti quelli accessibili. Le specifiche complete sono in `PROJECT.md`, la documentazione utente e di build in `README.md` (inglese) e `README_ITA.md` (italiano).
 
 **I due README vanno tenuti allineati.** Ogni modifica che tocca la documentazione si applica a **entrambi** i file nella stessa modifica, con lo stesso contenuto e la stessa struttura delle sezioni. Riguarda funzionalità, comandi, packaging, dimensioni, limiti e CI. Non si aggiorna mai uno solo dei due.
 
@@ -106,7 +106,7 @@ Il logger è implementato **nel progetto** (`querylean/log/`) e non importato da
 src/querylean/
   app/                 AppInfo (NAME, DISPLAY_NAME, AUTHOR, …, version()), VersionFile, BundleResources (percorsi nel bundle: `_MEIPASS` o radice), Application.run() (entry point, excepthook), SmokeTest
   log/                 AppLogger, LogManager, SecretRedactor
-  config/              ConnectionConfig (anche name, display_name, caution_mode), ConnectionProfile (id + config), ConnectionStore (connections/<id>.json),
+  config/              ConnectionConfig (anche name, display_name, all_databases, caution_databases), ConnectionProfile (id + config), ConnectionStore (connections/<id>.json),
                        UiPreferences, AppConfig (active_connection + ui), ConfigManager (config.json + migrazione; espone connections e bookmarks), ConfigError
   bookmarks/           QueryBookmark (nome, sql, target `user@host:port/database`), BookmarkStore (bookmarks/<id connessione>.json)
   completion/          SqlScanner/ScanToken (tokenizer tollerante), StatementAnalyzer → StatementContext (+ TableReference),
@@ -117,10 +117,12 @@ src/querylean/
                        ResultExporters (elenco e ricerca per estensione/filtro), ExportReport, ExportError
   database/
     errors/            DatabaseError(message, kind), QueryCancelled, QueryTimeout, ErrorTranslator
-    connection/        ConnectionParams (kwargs del driver, password mascherata), ConnectionManager (sessione READ ONLY verificata, controllo dei grant, config della sessione)
-    privileges/        GrantAnalyzer (analisi fail-closed di SHOW GRANTS), AccountPrivileges (esito: read_only, write_privileges, verified)
+    connection/        ConnectionParams (kwargs del driver, password mascherata, with_database), ConnectionManager (sessione READ ONLY verificata, controllo dei grant per database, use_database con COM_INIT_DB)
+    privileges/        GrantAnalyzer (analisi fail-closed di SHOW GRANTS) → AccountPrivileges (GrantScope per grant: database/jolly e privilegi),
+                       AccountCheck (database della connessione scrivibili, accettati, rifiutati)
     execution/         QueryExecutor (execute/cancel), QueryResult
-    schema/            TableCatalog (SHOW FULL TABLES tramite QueryExecutor), TableInfo (select_statement), MySqlIdentifier (quoting con backtick),
+    schema/            DatabaseCatalog (SHOW DATABASES), TableCatalog (SHOW FULL TABLES [FROM db] tramite QueryExecutor), TableInfo (database, reference, select_statement),
+                       MySqlIdentifier (quoting con backtick), MySqlLiteral (stringhe con ' e \ escapati),
                        ColumnCatalog (information_schema.COLUMNS e SHOW FULL COLUMNS tramite QueryExecutor), ColumnInfo
     validation/        ReadOnlyValidator → stadi ValidationStage su ValidationContext;
                        MySqlLexer, SqlToken, LexedStatement, ReadOnlyRules, ValidationResult
@@ -130,7 +132,7 @@ src/querylean/
     icons/             ToolbarIcons, CompletionIcons (icone disegnate con QPainter: nessun asset da impacchettare)
     editor/            SqlEditor (autocompletamento), SqlCompleter (popup), CompletionDelegate, SqlHighlighter, LineNumberArea
     results/           ResultsTable, ResultsModel, ValueFormatter
-    sidebar/           TableSidebar (albero tabelle → colonne con filtro; table_chosen → MainWindow.use_table, column_chosen → MainWindow.use_column, column_added → add_column)
+    sidebar/           TableSidebar (albero database → tabelle → colonne con filtro; database_selected → MainWindow.select_database; table_chosen → MainWindow.use_table, column_chosen → MainWindow.use_column, column_added → add_column)
     worker/            DbWorker (QObject nel thread DB), DbThread (avvio/arresto), ExportThread (scrittura dell'export)
 tests/                 test_<classe>.py; fakes/; support/; integration/
 ```
@@ -179,10 +181,12 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
 - **Parole vietate "a prescindere"** (scelta dell'utente, 1.4): le parole di `ReadOnlyRules.FORBIDDEN_WORDS` si rifiutano ovunque fuori da stringhe e commenti, anche qualificate (`t.update`) o come identificatori quotati (`` `delete` ``), quindi anche come nomi di colonna, tabella o alias. Uniche eccezioni: `SHOW CREATE` e le funzioni `REPLACE(`/`TRUNCATE(` (`FUNCTION_NAME_EXCEPTIONS`, solo senza quote né qualificazione). La gestione di campi e alias con questi nomi è rimandata: non aggiungere eccezioni senza richiesta.
 - **Controllo della sessione e dell'account** (`ConnectionManager.__open`, a ogni connessione, test e riconnessione):
   - dopo il setup si rilegge `@@SESSION.transaction_read_only` (poi `tx_read_only`): se non vale 1 la connessione si chiude, **anche in modalità attenzione**;
-  - `SHOW GRANTS` → `GrantAnalyzer`: sono di lettura solo `USAGE`, `SELECT`, `SHOW VIEW`, `SHOW DATABASES`; ruoli, righe sconosciute o errori rendono l'account non verificato (= non read-only). Non allargare l'elenco senza richiesta;
-  - un account non read-only si rifiuta (`DatabaseError` kind `write_account`) se la connessione non ha `caution_mode`;
+  - `SHOW GRANTS` → `GrantAnalyzer`: sono di lettura solo `USAGE`, `SELECT`, `SHOW VIEW`, `SHOW DATABASES`; ruoli, righe sconosciute o errori rendono l'account non verificato (= scrivibile su **ogni** database). Non allargare l'elenco senza richiesta;
+  - ogni grant diventa un `GrantScope`: database del grant (`db.*`, `db.tab`, `PROCEDURE db.x`) con i jolly MySQL `%`/`_` (escape `\`) confrontati senza distinzione di maiuscole, oppure `None` (= tutti) per `*.*`, `PROXY` e oggetti non riconducibili a un database. Nel dubbio il grant deve coprire **più** database, mai meno;
+  - il perimetro è il database configurato oppure, con `all_databases`, quelli di `SHOW DATABASES` (lettura interna nel `__open`; se fallisce la connessione si chiude). `information_schema` non è mai scrivibile;
+  - `AccountCheck`: ogni database scrivibile del perimetro non presente in `ConnectionConfig.caution_databases` fa rifiutare la connessione (`DatabaseError` kind `write_account`); `test_connection` non rifiuta ma restituisce il check, che la finestra usa per far accettare i database uno per uno;
   - nel log solo i nomi dei privilegi, mai le righe dei grant (su MariaDB contengono l'hash della password).
-- **Modalità attenzione** (`ConnectionConfig.caution_mode`, default `False`): rilassa **solo** il controllo dell'account. Validatore, sessione READ ONLY e tutte le altre barriere restano identici. La GUI la segnala (`MainWindow.caution_active`, `CAUTION_LABEL` nello stato, titolo del menu con `ConnectionsMenu.CAUTION_TITLE`, sfondo della finestra tinto di rosa con `CautionPalette`: solo il ruolo `Window` della palette, mai editor e tabelle; si ripristina con `setPalette(QPalette())` quando la sessione non è più in attenzione).
+- **Modalità attenzione** (`ConnectionConfig.caution_databases`, per database; `caution_mode` è derivato e il vecchio flag delle connessioni ≤ 1.7 diventa il loro database): rilassa **solo** il controllo dell'account per i database accettati. Validatore, sessione READ ONLY e tutte le altre barriere restano identici. La GUI la segnala (`MainWindow.caution_active`, `CAUTION_LABEL` nello stato, titolo del menu con `ConnectionsMenu.CAUTION_TITLE`, sfondo della finestra tinto di rosa con `CautionPalette`: solo il ruolo `Window` della palette, mai editor e tabelle; si ripristina con `setPalette(QPalette())` quando la sessione non è più in attenzione).
 - **Connessioni salvate**:
   - una connessione = un file `connections/<id>.json` (0600) scritto con `PrivateJsonFile`; `config.json` tiene solo `active_connection` e le preferenze;
   - un file illeggibile viene saltato (con log), non deve impedire il caricamento delle altre;
@@ -217,7 +221,11 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
   - i nomi entrano nella query solo tramite `MySqlIdentifier.quote`;
   - un clic (ma anche doppio clic/`Invio`) sulla tabella sostituisce il testo dell'editor in modo annullabile (`SqlEditor.replace_query`, nessun nuovo passo se il testo è già quello) e non esegue la query; lo stesso clic espande la tabella e ne mostra le colonne, la sola freccia la espande senza toccare l'editor; doppio clic/`Invio` su una colonna sostituisce allo stesso modo il testo con `TableInfo.column_statement` (`SELECT `col` FROM `tab` LIMIT 1;`), senza eseguirla; con Shift (`column_added`) la colonna si aggiunge alla lista della query di anteprima riconosciuta da `TableInfo.selected_columns` (solo il formato scritto da `columns_statement`), altrimenti si riparte da `SELECT `col``;
   - le colonne si leggono con `ColumnCatalog` tramite `QueryExecutor`, nel thread del worker: tutte insieme alla connessione (`columns_requested`, una query su `information_schema.COLUMNS`, al massimo 10.000 righe; la tabella troncata si scarta), poi su richiesta tabella per tabella (`table_columns_requested`, `SHOW FULL COLUMNS FROM` con `MySqlIdentifier.quote`). `MainWindow.load_columns` evita richieste doppie; un errore memorizza le colonne come vuote (nessun nuovo tentativo fino al refresh o alla riconnessione);
-  - `SchemaModel` vive in `MainWindow`, è condiviso da barra e autocompletamento e si svuota quando la sessione non è più `CONNECTED`; le risposte arrivate dopo la chiusura vanno ignorate.
+  - `SchemaModel` vive in `MainWindow`, è condiviso da barra e autocompletamento (chiavi per database, `database` = database attivo) e si svuota quando la sessione non è più `CONNECTED`; le risposte arrivate dopo la chiusura vanno ignorate;
+  - nei segnali del worker un database vuoto significa "il database predefinito della sessione" (connessione a database singolo, query non qualificate come prima); con `all_databases` si passa sempre il nome e `TableInfo.database` qualifica le anteprime (`` `db`.`tab` ``).
+- **Tutti i database** (1.8):
+  - il database attivo si cambia solo con `ConnectionManager.use_database` (`cmd_init_db`, comando di protocollo, mai SQL `USE`) e resta nelle riconnessioni (`ConnectionParams.with_database`); solo con `all_databases`;
+  - il target dei segnalibri usa `ConnectionConfig.scope_label()` (`*` per tutti i database), quindi non dipende dal database attivo.
 - **Autocompletamento** (1.7):
   - `Ctrl+Spazio` (su macOS il Control fisico, che Qt riporta come `MetaModifier`) apre le proposte; `Ctrl/Cmd+Invio` resta l'esecuzione e chiude l'elenco;
   - l'analisi usa `SqlScanner`, tollerante e separato dal lexer del validatore: non va mai usato per validare, e il validatore non va mai rilassato per l'autocompletamento;
@@ -235,7 +243,8 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
 - Nei test unitari il database è finto: `tests/fakes/` (`FakeConnector`, `FakeConnection`, `FakeCursor`), da iniettare con `ConnectionManager(connector)`.
   - Per simulare `KILL QUERY` si usa `FakeConnection.on_kill`.
   - I controlli di sessione rispondono da `FakeConnection.session_variables` e `FakeConnection.grants` (default: sessione READ ONLY e account con solo SELECT), senza passare dall'`handler`.
-  - `SchemaHandler` risponde a `SHOW FULL TABLES` e alle due letture delle colonne (`tables`, `columns`, `error`, `columns_error`, `statements`).
+  - `SchemaHandler` risponde a `SHOW FULL TABLES [FROM db]` e alle due letture delle colonne (`tables`, `columns` per il database predefinito, `schemas` per gli altri, `error`, `columns_error`, `statements`).
+  - `FakeConnection.databases` risponde a `SHOW DATABASES` (anche al controllo interno) e `cmd_init_db` registra i cambi di database in `init_db`.
   - Per il keyring ci sono `MemoryKeyring` e `LockedKeyring`.
 - I test GUI estendono `support/main_window_test_base.MainWindowTestBase`, che fornisce le fixture `connector`/`window` e gli helper `configure`/`connect`/`run`. Vanno attesi con `qtbot.waitUntil`.
 - **Non aggiungere funzionalità escluse** da `PROJECT.md` §16: multi-connessione, browser schemi, cronologia, autocomplete, plugin, telemetria, ecc. Eccezioni richieste dall'utente:
@@ -244,7 +253,8 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
   - 1.3: più connessioni salvate (profili), ma **una sola connessione aperta alla volta**. Niente connessioni simultanee, schede o finestre multiple.
   - 1.4: modalità attenzione per account con privilegi di scrittura (sempre e solo query di lettura) e validatore più severo.
   - 1.6: query nei segnalibri per connessione (salva con nome, menu "Bookmarked queries" che le esegue). Niente cronologia automatica, cartelle, import/export o condivisione tra connessioni;
-  - 1.7: colonne delle tabelle nella barra laterale (albero tabella → colonne, filtro, menu contestuale) e autocompletamento SQL nell'editor (tabelle, colonne, alias, parole chiave, funzioni). Niente indici, chiavi esterne, altri database, snippet o formattazione automatica del codice.
+  - 1.7: colonne delle tabelle nella barra laterale (albero tabella → colonne, filtro, menu contestuale) e autocompletamento SQL nell'editor (tabelle, colonne, alias, parole chiave, funzioni). Niente indici, chiavi esterne, altri database, snippet o formattazione automatica del codice;
+  - 1.8: connessione a tutti i database accessibili (albero database → tabelle → colonne, database attivo) e modalità attenzione accettata per singolo database. Niente connessioni simultanee né altri server.
 
 ## Packaging
 

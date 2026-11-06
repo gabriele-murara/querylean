@@ -13,6 +13,7 @@ from querylean.config.connection_config import ConnectionConfig
 from querylean.database.connection.connection_params import ConnectionParams
 from querylean.database.errors.database_error import DatabaseError
 from querylean.database.errors.error_translator import ErrorTranslator
+from querylean.database.privileges.account_check import AccountCheck
 from querylean.database.privileges.account_privileges import AccountPrivileges
 from querylean.database.privileges.grant_analyzer import GrantAnalyzer
 from querylean.log.log_manager import LogManager
@@ -42,6 +43,7 @@ class ConnectionManager:
         "SELECT @@SESSION.tx_read_only",
     )
     GRANTS_STATEMENT = "SHOW GRANTS"
+    DATABASES_STATEMENT = "SHOW DATABASES"
     # Error kind of a refused account with privileges beyond reading.
     WRITE_ACCOUNT_KIND = "write_account"
     __SETUP_FAILED = "Connection opened, but the session could not be made "
@@ -49,10 +51,13 @@ class ConnectionManager:
     __NOT_CONFIRMED = "Connection opened, but the server did not confirm "
     __NOT_CONFIRMED += "that the session is read-only, so it was closed. "
     __NOT_CONFIRMED += "See the log for details."
-    __WRITE_ACCOUNT = "Connection refused: {}. {} accepts only accounts "
-    __WRITE_ACCOUNT += "with read privileges (SELECT). To use this account "
-    __WRITE_ACCOUNT += "anyway, enable “Caution mode” in the connection "
-    __WRITE_ACCOUNT += "(Connections → Edit…)."
+    __WRITE_ACCOUNT = "Connection refused: the account can change data in "
+    __WRITE_ACCOUNT += "{}. {} uses such databases only in caution mode: "
+    __WRITE_ACCOUNT += "open Connections → Edit…, press “Test connection” "
+    __WRITE_ACCOUNT += "and accept them."
+    __DATABASES_FAILED = "Connection opened, but the list of databases "
+    __DATABASES_FAILED += "could not be read, so their privileges cannot be "
+    __DATABASES_FAILED += "checked. See the log for details."
     # User-facing message shown when a query is requested without a session.
     NOT_CONNECTED = "Not connected: press “Connect” before running a "
     NOT_CONNECTED += "query."
@@ -63,7 +68,7 @@ class ConnectionManager:
         self.__conn: Any = None
         self.__params: ConnectionParams | None = None
         self.__connection_id: int | None = None
-        self.__account_privileges: AccountPrivileges | None = None
+        self.__account_check: AccountCheck | None = None
         self.__lock = threading.Lock()  # guards __params and __connection_id
 
     # --------------------------------------------------------------- properties
@@ -74,9 +79,23 @@ class ConnectionManager:
             return self.__connection_id
 
     @property
+    def account_check(self) -> AccountCheck | None:
+        """Write access of the account to the databases of the current
+        session, if any."""
+        return self.__account_check
+
+    @property
     def account_privileges(self) -> AccountPrivileges | None:
         """Privileges of the account of the current session, if any."""
-        return self.__account_privileges
+        check = self.__account_check
+        return None if check is None else check.privileges
+
+    @property
+    def active_database(self) -> str:
+        """Default database of the current session (empty when none)."""
+        with self.__lock:
+            params = self.__params
+        return "" if params is None else params.config.database
 
     @property
     def config(self) -> ConnectionConfig | None:
@@ -97,8 +116,8 @@ class ConnectionManager:
         ``DatabaseError``."""
         self.disconnect()
         params = ConnectionParams(config, password)
-        conn, privileges = self.__open(params)
-        self.__account_privileges = privileges
+        conn, check = self.__open(params, enforce=True)
+        self.__account_check = check
         with self.__lock:
             self.__conn = conn
             self.__params = params
@@ -107,18 +126,21 @@ class ConnectionManager:
 
     def test_connection(
         self, config: ConnectionConfig, password: str
-    ) -> tuple[str, AccountPrivileges]:
+    ) -> tuple[str, AccountCheck]:
         """Check reachability, credentials, the read-only session and the
-        account privileges, like ``connect``. Returns the server version and
-        the privileges."""
-        conn, privileges = self.__open(ConnectionParams(config, password))
+        privileges like ``connect``, without refusing writable databases
+        that are not accepted yet. Returns the server version and the check
+        (with the databases to accept)."""
+        conn, check = self.__open(
+            ConnectionParams(config, password), enforce=False
+        )
         try:
             version = (
                 conn.get_server_info()
                 if hasattr(conn, "get_server_info")
                 else ""
             )
-            return str(version or ""), privileges
+            return str(version or ""), check
         finally:
             ConnectionManager.__close_quietly(conn)
 
@@ -128,7 +150,7 @@ class ConnectionManager:
             conn, self.__conn = self.__conn, None
             self.__params = None
             self.__connection_id = None
-        self.__account_privileges = None
+        self.__account_check = None
         if conn is not None:
             ConnectionManager.__close_quietly(conn)
             self.__log.info("Disconnected")
@@ -157,13 +179,28 @@ class ConnectionManager:
                 pass
             ConnectionManager.__shutdown_quietly(self.__conn)
             self.__conn = None
-        conn, privileges = self.__open(self.__params)
-        self.__account_privileges = privileges
+        conn, check = self.__open(self.__params, enforce=True)
+        self.__account_check = check
         with self.__lock:
             self.__conn = conn
             self.__connection_id = getattr(conn, "connection_id", None)
         self.__log.info("Session reopened (id {})", self.__connection_id)
         return conn
+
+    def use_database(self, database: str) -> None:
+        """Make ``database`` the default database of the session (protocol
+        command ``COM_INIT_DB``, not SQL); reconnections keep it. Raises
+        ``DatabaseError``."""
+        conn = self.ensure_connected()
+        try:
+            conn.cmd_init_db(database)
+        except Exception as exc:
+            self.__log.warning("Changing the database failed: {!r}", exc)
+            raise ErrorTranslator.translate_query_error(exc) from None
+        with self.__lock:
+            if self.__params is not None:
+                self.__params = self.__params.with_database(database)
+        self.__log.info("Active database changed")
 
     def kill_running_query(self) -> bool:
         """Send ``KILL QUERY`` for the current session from a separate
@@ -191,14 +228,16 @@ class ConnectionManager:
             ConnectionManager.__close_quietly(conn)
 
     # ---------------------------------------------------------------- internals
-    def __open(self, params: ConnectionParams) -> tuple[Any, AccountPrivileges]:
+    def __open(
+        self, params: ConnectionParams, *, enforce: bool
+    ) -> tuple[Any, AccountCheck]:
         LogManager.register_secret(params.password)
         cfg = params.config
         self.__log.info(
             "Connecting to {}:{}/{} as {}",
             cfg.host,
             cfg.port,
-            cfg.database,
+            cfg.scope_label(),
             cfg.username,
         )
         try:
@@ -210,11 +249,11 @@ class ConnectionManager:
             ) from None
         try:
             ConnectionManager.__prepare_session(conn)
-            privileges = ConnectionManager.__check_account(conn, cfg)
+            check = ConnectionManager.__check_account(conn, cfg, enforce)
         except BaseException:
             ConnectionManager.__close_quietly(conn)
             raise
-        return conn, privileges
+        return conn, check
 
     @staticmethod
     def __prepare_session(conn: Any) -> None:
@@ -251,10 +290,11 @@ class ConnectionManager:
 
     @staticmethod
     def __check_account(
-        conn: Any, config: ConnectionConfig
-    ) -> AccountPrivileges:
-        """Read the account grants; refuse an account that is not provably
-        read-only unless the connection is in caution mode."""
+        conn: Any, config: ConnectionConfig, enforce: bool
+    ) -> AccountCheck:
+        """Read the account grants and find the databases of the connection
+        it can change; with ``enforce``, refuse those not accepted in
+        caution mode."""
         try:
             rows = ConnectionManager.__fetch(
                 conn, ConnectionManager.GRANTS_STATEMENT
@@ -266,25 +306,52 @@ class ConnectionManager:
                 "Could not read the account grants: {!r}", exc
             )
             privileges = AccountPrivileges.unverified()
-        if privileges.read_only:
-            ConnectionManager.__log.info("Account privileges: read-only")
-            return privileges
+        databases = (
+            ConnectionManager.__databases(conn)
+            if config.all_databases
+            else [config.database]
+        )
+        check = AccountCheck(privileges, databases, config.caution_databases)
+        if not check.caution:
+            ConnectionManager.__log.info(
+                "Account privileges: read-only on the {} database(s)",
+                len(databases),
+            )
+            return check
         # Only privilege names are logged: grant lines can contain password
         # hashes (MariaDB).
         ConnectionManager.__log.warning(
-            "Account not read-only: write privileges {}, verified {}",
+            "Writable databases: {} of {}; write privileges {}, verified {}",
+            len(check.write_databases),
+            len(databases),
             list(privileges.write_privileges),
             privileges.verified,
         )
-        if config.caution_mode:
+        if not check.refused:
             ConnectionManager.__log.warning(
-                "Caution mode: account with privileges beyond reading allowed"
+                "Caution mode: every writable database was accepted"
             )
-            return privileges
+            return check
+        if not enforce:
+            return check
         msg = ConnectionManager.__WRITE_ACCOUNT.format(
-            privileges.describe(), AppInfo.DISPLAY_NAME
+            check.describe(check.refused), AppInfo.DISPLAY_NAME
         )
         raise DatabaseError(msg, kind=ConnectionManager.WRITE_ACCOUNT_KIND)
+
+    @staticmethod
+    def __databases(conn: Any) -> list[str]:
+        """Databases the account can access (``SHOW DATABASES``)."""
+        try:
+            rows = ConnectionManager.__fetch(
+                conn, ConnectionManager.DATABASES_STATEMENT
+            )
+        except Exception as exc:
+            ConnectionManager.__log.warning(
+                "Could not list the databases: {!r}", exc
+            )
+            raise DatabaseError(ConnectionManager.__DATABASES_FAILED) from None
+        return [ConnectionManager.__text(row[0]) for row in rows if row]
 
     @staticmethod
     def __fetch(conn: Any, statement: str) -> list[Any]:

@@ -195,7 +195,7 @@ class TestSqlEditorCompletion:
         editor.setTextCursor(cursor)
         with qtbot.waitSignal(editor.columns_needed) as blocker:
             self.ctrl_space(qtbot, editor)
-        assert blocker.args == ["invoices"]
+        assert blocker.args == ["app", "invoices"]
         assert not editor.completer.visible
         schema.set_columns(
             "invoices", (ColumnInfo("number"), ColumnInfo("issued"))

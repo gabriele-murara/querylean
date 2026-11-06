@@ -23,6 +23,12 @@ class ConnectionParams:
         self.__config = config.copy()
         self.__password = password
 
+    def with_database(self, database: str) -> ConnectionParams:
+        """Same parameters with ``database`` as the default database."""
+        config = self.__config.copy()
+        config.database = database
+        return ConnectionParams(config, self.__password)
+
     @property
     def config(self) -> ConnectionConfig:
         """Copy of the connection configuration."""
@@ -39,10 +45,9 @@ class ConnectionParams:
         socket_timeout = (
             cfg.query_timeout + ConnectionParams.SOCKET_TIMEOUT_GRACE
         )
-        return {
+        kwargs: dict[str, Any] = {
             "host": cfg.host,
             "port": cfg.port,
-            "database": cfg.database,
             "user": cfg.username,
             "password": self.__password,
             "connection_timeout": cfg.connect_timeout,
@@ -64,6 +69,11 @@ class ConnectionParams:
             "get_warnings": False,
             "raise_on_warnings": False,
         }
+        # Without a database (all the databases) the session has none until
+        # one is chosen.
+        if cfg.database:
+            kwargs["database"] = cfg.database
+        return kwargs
 
     def __repr__(self) -> str:
         text = "ConnectionParams(config={!r}, password='***')"

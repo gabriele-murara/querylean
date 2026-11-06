@@ -15,10 +15,11 @@ volta, un editor SQL e una tabella di risultati copiabili.
   - evidenziazione di keyword, stringhe, numeri e commenti;
   - esecuzione con `Ctrl+Invio` (Linux) o `Cmd+Invio` (macOS);
   - [autocompletamento](#autocompletamento) di tabelle, colonne, alias, parole chiave e funzioni con `Ctrl+Spazio`, che si apre anche da solo mentre si scrive.
-- Barra laterale con le tabelle e le viste del database a cui si ha accesso: un clic su una tabella prepara nell'editor `SELECT * FROM <tabella> LIMIT 1;` e ne mostra le colonne (tipo, chiavi, commenti).
+- Una connessione usa un database oppure [tutti i database](#tutti-i-database) a cui l'account ha accesso.
+- Barra laterale con i database, le tabelle e le viste a cui si ha accesso: un clic su una tabella prepara nell'editor `SELECT * FROM <tabella> LIMIT 1;` e ne mostra le colonne (tipo, chiavi, commenti).
 - Query nei segnalibri: una query salvata con un nome per una connessione si riesegue dal menu **Bookmarked queries**, solo su quella connessione.
 - Sono ammesse solo istruzioni di lettura (`SELECT`, `WITH … SELECT`, `UNION`, `SHOW`, `DESCRIBE`/`DESC`, `EXPLAIN SELECT`). Ogni query passa da un validatore basato sul parsing.
-- Alla connessione vengono controllati i privilegi dell'account: un account che può modificare i dati viene rifiutato, a meno che la connessione sia in [modalità attenzione](#modalità-attenzione).
+- Alla connessione vengono controllati i privilegi dell'account database per database: un database che l'account può modificare viene rifiutato finché non lo si accetta in [modalità attenzione](#modalità-attenzione).
 - L'esecuzione avviene fuori dal thread della GUI, con indicatore di attività, timeout e un pulsante **Stop** (Interrompi) lampeggiante che compare solo quando una query dura più di un secondo.
 - Tabella dei risultati non modificabile:
   - `NULL` è distinto dalla stringa vuota;
@@ -69,7 +70,7 @@ La barra in alto contiene, nell'ordine: **Run** (Esegui, ▶), **Save query** (S
 
 Mentre una query è in esecuzione, sotto i risultati compaiono una barra di attività e il testo della query. Se dopo un secondo la query è ancora in corso, accanto alla barra di attività compare un pulsante rosso **Stop** (Interrompi, ■) che lampeggia fino alla fine della query: un clic la interrompe. Le query veloci non lo mostrano mai.
 
-1. **Connections** → **New connection…** (Connessioni → Nuova connessione…): compila nome (facoltativo), host, porta, database, username, password e i timeout, poi usa **Test connection** (Test connessione) e **Save** (Salva). Salvare non apre la connessione (vedi [Connessioni](#connessioni)).
+1. **Connections** → **New connection…** (Connessioni → Nuova connessione…): compila nome (facoltativo), host, porta, database (oppure spunta "All the databases the account can access", Tutti i database a cui l'account ha accesso), username, password e i timeout, poi usa **Test connection** (Test connessione) e **Save** (Salva). Salvare non apre la connessione (vedi [Connessioni](#connessioni)).
 2. **Connect** apre la connessione attiva, quella con la spunta nel menu **Connections**: lo stato passa da *Disconnected* (Disconnesso) a *Connecting* (Connessione in corso) e poi a *Connected* (Connesso) o *Connection error* (Errore di connessione). Se la password non è nel portachiavi, viene richiesta.
 3. Scrivi la query, aiutato dall'[autocompletamento](#autocompletamento), e premi **Run** oppure `Ctrl/Cmd+Invio`. In alternativa fai clic su una tabella nella barra laterale (vedi [Barra delle tabelle](#barra-delle-tabelle)). Sotto i risultati compaiono righe e tempo, poi "Query executed:" (Query eseguita:) seguito dalla query appena eseguita, su una riga. Oltre i 160 caratteri la query è troncata con "…"; il testo completo è nel tooltip del messaggio.
 4. Seleziona celle o righe e premi `Ctrl/Cmd+C`. Il menu contestuale offre anche le varianti "con intestazioni" e "righe intere".
@@ -77,7 +78,7 @@ Mentre una query è in esecuzione, sotto i risultati compaiono una barra di atti
 
 ### Connessioni
 
-Il pulsante **Connections** (Connessioni) apre un menu con **New connection…** (Nuova connessione…) e, sotto, le connessioni salvate in ordine alfabetico. Ogni connessione è mostrata con il suo nome oppure, se il nome è vuoto, come `<utente>@<host>/<database>`. La connessione attiva ha la spunta.
+Il pulsante **Connections** (Connessioni) apre un menu con **New connection…** (Nuova connessione…) e, sotto, le connessioni salvate in ordine alfabetico. Ogni connessione è mostrata con il suo nome oppure, se il nome è vuoto, come `<utente>@<host>/<database>` (`<utente>@<host>/*` per tutti i database). La connessione attiva ha la spunta.
 
 Ogni voce ha un sottomenu:
 
@@ -89,22 +90,33 @@ Il pulsante **Connect** (Connetti) della barra usa la connessione attiva; se non
 
 Ogni connessione è un file JSON a sé (vedi [File locali](#file-locali)) e non contiene mai la password.
 
-Una connessione con la **Caution mode** (modalità attenzione) attiva compare nel menu come "<nome> (caution mode)" (vedi [Modalità attenzione](#modalità-attenzione)).
+Una connessione con almeno un database accettato in **Caution mode** (modalità attenzione) compare nel menu come "<nome> (caution mode)" (vedi [Modalità attenzione](#modalità-attenzione)).
+
+### Tutti i database
+
+Nella finestra della connessione il campo **Database** può essere sostituito dalla casella "All the databases the account can access" (Tutti i database a cui l'account ha accesso):
+
+- con un database (casella spenta) la connessione usa solo quel database, come nelle versioni precedenti: la barra laterale mostra solo quello, già espanso, e il controllo dei privilegi considera solo quello;
+- con la casella attiva la connessione comprende tutti i database elencati da `SHOW DATABASES` (solo quelli a cui l'account ha accesso). Il campo **Database** diventa facoltativo: se compilato, è il database attivo alla connessione;
+- il **database attivo** è quello a cui si riferiscono i nomi non qualificati (`SELECT * FROM users`). È in grassetto nella barra laterale e lo stato in basso a destra lo mostra come "db: <nome>". Un clic su un database (o su una sua tabella), oppure **Use as active database** (Usa come database attivo) nel suo menu contestuale, lo rende attivo. L'applicazione lo cambia con il comando di protocollo MySQL `COM_INIT_DB`, non con SQL dall'editor (`USE` non è una query di lettura e resta vietato); le riconnessioni lo mantengono;
+- senza un database attivo MySQL rifiuta i nomi non qualificati ("No database selected"): fai prima clic su un database, oppure scrivi `db.tabella`;
+- con tutti i database le query preparate dalla barra laterale qualificano sempre la tabella (`` SELECT * FROM `shop`.`orders` LIMIT 1; ``), quindi funzionano qualunque sia il database attivo;
+- l'autocompletamento propone i database dopo `FROM`/`JOIN` (inseriti con il loro punto), le tabelle dopo `db.` e le colonne dopo `db.tabella.`; tabelle e colonne di un database vengono lette quando lo si espande, lo si rende attivo o servono all'autocompletamento.
 
 ### Barra delle tabelle
 
-Dopo la connessione la barra **Tables** (Tabelle) elenca tabelle e viste del database configurato (`SHOW FULL TABLES`), cioè solo quelle a cui l'account ha accesso. Le viste sono in corsivo e in fondo c'è il numero di elementi.
+Dopo la connessione la barra **Tables** (Tabelle) mostra un albero: i database (quello configurato, oppure tutti quelli accessibili), le loro tabelle e viste (`SHOW FULL TABLES`, solo quelle a cui l'account ha accesso) e le colonne. Le viste sono in corsivo e in fondo c'è il numero di tabelle (o di database).
 
 - Un **clic** su una tabella (anche un doppio clic, oppure `Invio` sulla voce selezionata) sostituisce il contenuto dell'editor con `SELECT * FROM <tabella> LIMIT 1;`. La query **non viene eseguita**: premi **Run** per lanciarla. Il testo precedente si recupera con `Ctrl/Cmd+Z`.
 - **Colonne**: lo stesso clic espande la tabella e ne mostra le colonne in ordine, con il tipo a destra; la sola freccia la apre o la chiude senza toccare l'editor. Le colonne della chiave primaria sono in grassetto con un'etichetta gialla "P"; il tooltip mostra la definizione completa (tipo, `NULL`/`NOT NULL`, chiave, default, extra, commento).
 - Un doppio clic su una colonna, oppure `Invio`, sostituisce il contenuto dell'editor con `SELECT <colonna> FROM <tabella> LIMIT 1;`, senza eseguirla e annullabile con `Ctrl/Cmd+Z`. Un clic singolo su una colonna non tocca l'editor.
 - **Shift + doppio clic** su una colonna (oppure `Shift+Invio`) la aggiunge alle colonne della query preparata: `SELECT * FROM <tabella> LIMIT 1;` diventa `SELECT <colonna> …`, poi `SELECT <colonna>, <altra colonna> …`. Una colonna già presente non viene ripetuta; se nell'editor c'è un altro testo (una query su un'altra tabella o scritta a mano), viene sostituito da una nuova `SELECT <colonna> FROM <tabella> LIMIT 1;`. Ogni aggiunta si annulla con `Ctrl/Cmd+Z`.
 - Il menu contestuale (clic destro) offre **Prepare SELECT** (Prepara la SELECT, sulle tabelle), **Prepare SELECT of the column** (Prepara la SELECT della colonna) e **Add to the SELECT** (Aggiungi alla SELECT, sulle colonne), e **Copy name** (Copia il nome).
-- **Filter tables…** (Filtra le tabelle…) in alto mostra solo le tabelle il cui nome contiene il testo (senza distinzione tra maiuscole e minuscole); la riga in fondo indica allora "N of M tables" (N di M tabelle).
+- **Filter tables…** (Filtra le tabelle…) in alto mostra solo le tabelle il cui nome, o il nome del loro database, contiene il testo (senza distinzione tra maiuscole e minuscole); la riga in fondo indica allora "N of M tables" (N di M tabelle).
 - Il nome della tabella è sempre tra backtick, con gli eventuali backtick interni raddoppiati, quindi funzionano anche nomi con spazi o parole riservate.
-- Il pulsante ⟳ ricarica l'elenco, per esempio dopo la creazione di una tabella. Alla disconnessione l'elenco si svuota.
+- Il pulsante ⟳ ricarica database e tabelle, per esempio dopo la creazione di una tabella. Alla disconnessione l'albero si svuota.
 - La lettura dell'elenco passa dal validatore, rispetta il timeout delle query e mostra al massimo 10.000 voci. Un errore (per esempio permessi insufficienti) viene mostrato nella barra, senza chiudere la connessione.
-- Le colonne di tutto il database vengono lette una volta dopo la connessione, con una sola query su `information_schema.COLUMNS` (passando dal validatore, al massimo 10.000 colonne); le tabelle rimaste fuori, o il cui elenco non è riuscito, vengono lette su richiesta con `SHOW FULL COLUMNS FROM <tabella>` quando si espandono o servono all'autocompletamento. Una tabella di cui non si possono leggere le colonne mostra "No columns available." (Nessuna colonna disponibile; il motivo è nel tooltip).
+- Le colonne di un database vengono lette una volta, insieme alle sue tabelle, con una sola query su `information_schema.COLUMNS` (passando dal validatore, al massimo 10.000 colonne); le tabelle rimaste fuori, o il cui elenco non è riuscito, vengono lette su richiesta con `SHOW FULL COLUMNS FROM <tabella>` quando si espandono o servono all'autocompletamento. Una tabella di cui non si possono leggere le colonne mostra "No columns available." (Nessuna colonna disponibile; il motivo è nel tooltip).
 
 ### Autocompletamento
 
@@ -128,7 +140,7 @@ L'editor propone ciò che ha senso nel punto del cursore, come i principali stru
 
 ### Query nei segnalibri
 
-Una query nei segnalibri appartiene a **una connessione salvata** e al database a cui punta (`<utente>@<host>:<porta>/<database>`).
+Una query nei segnalibri appartiene a **una connessione salvata** e al database a cui punta (`<utente>@<host>:<porta>/<database>`, oppure `/*` con tutti i database).
 
 - **Save query** (Salva query) salva la selezione oppure, senza selezione, tutto il contenuto dell'editor. Chiede un nome (al massimo 100 caratteri) e salva la query per la connessione aperta. Un segnalibro esistente con lo stesso nome (senza distinzione tra maiuscole e minuscole) viene sostituito dopo una conferma. Si possono salvare solo query accettate dal validatore: una query di scrittura viene rifiutata già a questo punto.
 - Il menu **Bookmarked queries** (Query nei segnalibri) elenca, in ordine alfabetico, solo le query della connessione aperta; il testo della query è nel tooltip. Un clic mette la query nell'editor (annullabile con `Ctrl/Cmd+Z`) e la esegue subito, passando dal validatore come ogni altra query.
@@ -203,19 +215,21 @@ A ogni connessione, compresi **Test connection** (Test connessione) e le riconne
 - i privilegi di lettura sono solo `USAGE`, `SELECT`, `SHOW VIEW` e `SHOW DATABASES`; qualsiasi altro privilegio (`INSERT`, `ALL PRIVILEGES`, `EXECUTE`, `PROXY`, `WITH GRANT OPTION`, privilegi dinamici come `BACKUP_ADMIN`, …) rende l'account "con privilegi di scrittura";
 - i privilegi su colonne (`UPDATE (col)`) contano come gli altri;
 - l'assegnazione di ruoli (`` GRANT `ruolo` TO … ``), righe non riconosciute o un errore di `SHOW GRANTS` rendono l'account "non verificato", e viene trattato come uno con privilegi di scrittura;
-- le righe `REVOKE` (revoche parziali) tolgono soltanto privilegi e vengono ignorate.
+- le righe `REVOKE` (revoche parziali) tolgono soltanto privilegi e vengono ignorate;
+- ogni privilegio oltre la lettura vale per il database del suo grant: `db.*`, `db.tabella`, `PROCEDURE db.nome`. I nomi di database nei grant seguono i caratteri jolly di MySQL (`%`, `_`, con `\` come escape) e si confrontano senza distinzione tra maiuscole e minuscole, quindi non coprono mai meno database del server. I grant globali (`*.*`), gli oggetti fuori da un database (`PROXY`) e gli account non verificati valgono per **tutti** i database. `information_schema` non è mai modificabile.
 
-Un account che non è di sola lettura viene rifiutato con un messaggio che elenca i privilegi trovati. Nel log finiscono solo i nomi dei privilegi, mai le righe dei grant (su MariaDB possono contenere l'hash della password).
+Il controllo riguarda i database della connessione: quello configurato, oppure tutti quelli elencati da `SHOW DATABASES`. Un database che l'account può modificare e che non è stato accettato in [modalità attenzione](#modalità-attenzione) viene rifiutato, con un messaggio che elenca i database e i loro privilegi. Le scritture consentite solo su altri database non contano. Nel log finiscono solo i nomi dei privilegi, mai le righe dei grant (su MariaDB possono contenere l'hash della password).
 
 ### Modalità attenzione
 
-La **Caution mode** (modalità attenzione) è un'opzione di ogni connessione, nella finestra **New connection…**/**Edit…** ("Caution mode: allow an account with write privileges"). Se è attiva:
+La **Caution mode** (modalità attenzione) si accetta **database per database**, nella finestra **New connection…**/**Edit…**:
 
-- viene accettato un account con privilegi di scrittura o con privilegi non verificabili;
+- **Test connection** elenca in rosso i database della connessione che l'account può modificare, ciascuno con i suoi privilegi e una casella ("shop — INSERT, UPDATE"). Spunta ogni database che accetti; la scelta viene salvata con la connessione e resta valida nei test successivi;
+- un database modificabile non spuntato fa rifiutare la connessione. Se i privilegi cambiano (un nuovo database, un nuovo grant), la connessione viene rifiutata finché non si accettano i nuovi database con un nuovo test;
 - **non cambia nient'altro**: vale lo stesso validatore (solo query di lettura) e la sessione deve essere confermata READ ONLY, altrimenti la connessione viene chiusa;
-- mentre si è connessi con un account di questo tipo, lo stato in basso a destra mostra in rosso "CAUTION: account with write privileges" (ATTENZIONE: account con privilegi di scrittura) e il messaggio di connessione elenca i privilegi trovati;
-- per tutta la sessione le parti grigie della finestra (sfondo di barra degli strumenti, barra laterale e barra di stato, margini) diventano rosa, come promemoria costante che l'account non è di sola lettura; editor e tabelle mantengono i loro colori. La tinta segue il tema del sistema (rosa tenue con i temi chiari, rosa scuro con quelli scuri) e sparisce alla disconnessione;
-- **Test connection** segnala i privilegi trovati.
+- mentre si è connessi, lo stato in basso a destra mostra in rosso "CAUTION: write access (<database>)" (ATTENZIONE: accesso in scrittura) e il messaggio di connessione elenca i database e i loro privilegi;
+- per tutta la sessione le parti grigie della finestra (sfondo di barra degli strumenti, barra laterale e barra di stato, margini) diventano rosa, come promemoria costante che l'account può modificare qualche database; editor e tabelle mantengono i loro colori. La tinta segue il tema del sistema (rosa tenue con i temi chiari, rosa scuro con quelli scuri) e sparisce alla disconnessione;
+- le connessioni salvate in modalità attenzione dalla versione 1.7 o precedenti la mantengono per il loro database.
 
 Con un account di sola lettura la modalità attenzione non ha effetti visibili. Va usata solo quando non è disponibile un account con il solo `SELECT`.
 
@@ -485,6 +499,7 @@ Per verificare un download: `sha256sum -c SHA256SUMS --ignore-missing`.
 - Colonne, tabelle e alias il cui nome è una parola di scrittura (`update`, `delete`, `insert`, …) vengono rifiutati anche se quotati o qualificati; i nomi che contengono soltanto una di queste parole (`updated_at`, `delete_flag`) sono ammessi. Viene rifiutata anche la funzione di stringa `INSERT()`. Le parole dentro stringhe e commenti non vengono controllate.
 - Sequenze `--` non seguite da spazio fuori dalle stringhe (es. `1--1`) vengono rifiutate per evitare ambiguità con i commenti: scrivi `1 - -1`.
 - Il supporto a MariaDB non è garantito: `MAX_EXECUTION_TIME` non esiste e si usa solo il watchdog.
+- Con tutti i database, le query nei segnalibri e la barra laterale si riferiscono all'intero server: un segnalibro con nomi non qualificati viene eseguito sul database attivo del momento.
 
 ## Licenza
 

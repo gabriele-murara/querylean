@@ -16,14 +16,15 @@ class FakeConnection:
     """In-memory connection whose behaviour is controlled by the test.
 
     The session checks of ``ConnectionManager`` are answered from
-    ``session_variables`` and ``grants`` (a read-only session and account by
-    default), without reaching ``handler``.
+    ``session_variables``, ``grants`` and ``databases`` (a read-only session
+    and account by default), without reaching ``handler``.
     """
 
     READ_ONLY_GRANTS = (
         "GRANT USAGE ON *.* TO `ro`@`%`",
         "GRANT SELECT ON `app`.* TO `ro`@`%`",
     )
+    DATABASES = ("information_schema", "app")
     __ids = itertools.count(100)
 
     def __init__(self, **kwargs: Any) -> None:
@@ -44,6 +45,8 @@ class FakeConnection:
             "tx_read_only": 1,
         }
         self.__grants: Any = list(FakeConnection.READ_ONLY_GRANTS)
+        self.__databases: Any = list(FakeConnection.DATABASES)
+        self.__init_db: list[str] = []
 
     @property
     def kwargs(self) -> dict[str, Any]:
@@ -146,6 +149,30 @@ class FakeConnection:
     @grants.setter
     def grants(self, value: Any) -> None:
         self.__grants = value
+
+    @property
+    def databases(self) -> Any:
+        """Names returned by ``SHOW DATABASES``, or an exception."""
+        return self.__databases
+
+    @databases.setter
+    def databases(self, value: Any) -> None:
+        self.__databases = value
+
+    @property
+    def init_db(self) -> list[str]:
+        """Databases chosen with ``cmd_init_db``, in order."""
+        return self.__init_db
+
+    def cmd_init_db(self, database: str) -> None:
+        """Change the default database like ``COM_INIT_DB``."""
+        if isinstance(self.__databases, list) and (
+            database not in self.__databases
+        ):
+            raise mysql_errors.ProgrammingError(
+                msg="Unknown database '{}'".format(database), errno=1049
+            )
+        self.__init_db.append(database)
 
     def cursor(self) -> FakeCursor:
         """New cursor on this connection."""

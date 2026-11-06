@@ -7,18 +7,21 @@ from querylean.completion.statement_context import StatementContext
 
 
 class CompletionResult:
-    """Ranked proposals, the range they replace and the tables whose
-    columns were needed but are not loaded yet."""
+    """Ranked proposals, the range they replace and the tables (and
+    databases) whose columns (and tables) were needed but are not loaded
+    yet."""
 
     def __init__(
         self,
         context: StatementContext,
         items: tuple[CompletionItem, ...] = (),
-        missing_tables: tuple[str, ...] = (),
+        missing_tables: tuple[tuple[str, str], ...] = (),
+        missing_databases: tuple[str, ...] = (),
     ) -> None:
         self.__context = context
         self.__items = tuple(items)
         self.__missing_tables = tuple(missing_tables)
+        self.__missing_databases = tuple(missing_databases)
 
     @property
     def context(self) -> StatementContext:
@@ -46,9 +49,15 @@ class CompletionResult:
         return self.__context.prefix
 
     @property
-    def missing_tables(self) -> tuple[str, ...]:
-        """Tables whose columns should be loaded to complete better."""
+    def missing_tables(self) -> tuple[tuple[str, str], ...]:
+        """``(database, table)`` pairs whose columns should be loaded to
+        complete better."""
         return self.__missing_tables
+
+    @property
+    def missing_databases(self) -> tuple[str, ...]:
+        """Databases whose tables should be loaded to complete better."""
+        return self.__missing_databases
 
     def __repr__(self) -> str:
         text = "CompletionResult({!r}, {} items, missing={!r})"

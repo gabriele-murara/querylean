@@ -42,7 +42,7 @@ from querylean.database.connection.connection_manager import (
 )
 from querylean.database.execution.query_executor import QueryExecutor
 from querylean.database.execution.query_result import QueryResult
-from querylean.database.privileges.account_privileges import AccountPrivileges
+from querylean.database.privileges.account_check import AccountCheck
 from querylean.database.schema.column_info import ColumnInfo
 from querylean.database.schema.table_info import TableInfo
 from querylean.database.validation.read_only_validator import (
@@ -94,7 +94,9 @@ class MainWindow(QMainWindow):
     __SIDEBAR_WIDTH = 220
     __ERROR_STYLE = "color: #c62828;"
     # Shown next to the state while connected in caution mode.
-    CAUTION_LABEL = "CAUTION: account with write privileges"
+    CAUTION_LABEL = "CAUTION: write access"
+    # Databases named in the state line before "…".
+    __CAUTION_NAMES = 3
     CAUTION_COLOR = "#c62828"
     SAVE_QUERY_TEXT = "Save query"
     __SAVE_QUERY_TIP = "Bookmark the selection or the whole query for the "
@@ -123,7 +125,8 @@ class MainWindow(QMainWindow):
         self.__switching = False
         self.__state = ConnectionState.DISCONNECTED
         # Privileges of the account of the open session (None when closed).
-        self.__privileges: AccountPrivileges | None = None
+        # Write access of the account to the databases of the open session.
+        self.__check: AccountCheck | None = None
         # Saved connection and settings of the open session: bookmarks are
         # read and run only for them.
         self.__session_id = ""
@@ -133,7 +136,11 @@ class MainWindow(QMainWindow):
         # Tables and columns of the open session (side bar, completion) and
         # the tables whose columns are being read.
         self.__schema = SchemaModel()
-        self.__pending_columns: set[str] = set()
+        # Requests in progress: tables by database, columns by (database,
+        # table) (case insensitive), and the database being activated.
+        self.__pending_tables: set[str] = set()
+        self.__pending_columns: set[tuple[str, str]] = set()
+        self.__pending_database = ""
         self.__running = False
         self.__closed = False
         # Result shown in the table (exported by "Export").
@@ -218,13 +225,25 @@ class MainWindow(QMainWindow):
 
     @property
     def caution_active(self) -> bool:
-        """True while connected with an account that is not read-only
-        (allowed by the caution mode of the connection)."""
+        """True while connected with an account that can change some
+        database of the session (accepted in caution mode)."""
         return (
             self.__state == ConnectionState.CONNECTED
-            and self.__privileges is not None
-            and not self.__privileges.read_only
+            and self.__check is not None
+            and self.__check.caution
         )
+
+    @property
+    def account_check(self) -> AccountCheck | None:
+        """Write access of the account to the databases of the open
+        session."""
+        return self.__check
+
+    @property
+    def all_databases(self) -> bool:
+        """True when the open session covers all the databases."""
+        config = self.__session_config
+        return config is not None and config.all_databases
 
     @property
     def session_target(self) -> str:
@@ -709,24 +728,72 @@ class MainWindow(QMainWindow):
             self.worker.cancel_query(QueryExecutor.CANCEL_BY_USER)
 
     def refresh_tables(self) -> None:
-        """Reload the table list of the side bar (only when connected)."""
+        """Reload databases, tables and columns of the side bar (only when
+        connected)."""
         if self.__state != ConnectionState.CONNECTED:
             return
+        active = self.__schema.database
+        self.__schema.clear()
+        self.__schema.database = active
+        self.__pending_tables.clear()
+        self.__pending_columns.clear()
+        config = self.__session_config
+        if config is not None and config.all_databases:
+            self.__sidebar.set_loading(TableSidebar.LOADING_DATABASES)
+            self.worker.databases_requested.emit(self.__timeout())
+            return
+        database = config.database if config is not None else active
+        self.__schema.set_databases([database])
         self.__sidebar.set_loading()
-        timeout = self.__active_config().query_timeout
-        self.worker.tables_requested.emit(timeout)
-        self.worker.columns_requested.emit(timeout)
+        # Showing the single database expands it, which requests its tables.
+        self.__sidebar.set_databases([database], database)
 
-    def load_columns(self, table: str) -> None:
-        """Read the columns of ``table`` (for the side bar and the
-        completion) unless they are known or already being read."""
+    def load_tables(self, database: str) -> None:
+        """Read the tables (and all the columns) of ``database`` unless they
+        are known or already being read."""
+        if self.__state != ConnectionState.CONNECTED or not database:
+            return
+        tables = self.__schema.tables_of(database)
+        if tables is not None:
+            self.__sidebar.set_tables(tables, database)
+            return
+        key = database.casefold()
+        if key in self.__pending_tables:
+            return
+        self.__pending_tables.add(key)
+        wire = self.__wire(database)
+        self.worker.tables_requested.emit(wire, self.__timeout())
+        self.worker.columns_requested.emit(wire, self.__timeout())
+
+    def load_columns(self, database: str, table: str) -> None:
+        """Read the columns of ``table`` in ``database`` (for the side bar
+        and the completion) unless they are known or already being read."""
         if self.__state != ConnectionState.CONNECTED:
             return
-        if table in self.__pending_columns or self.__schema.has_columns(table):
+        database = database or self.__schema.database
+        key = (database.casefold(), table.casefold())
+        if key in self.__pending_columns or self.__schema.has_columns(
+            table, database
+        ):
             return
-        self.__pending_columns.add(table)
-        timeout = self.__active_config().query_timeout
-        self.worker.table_columns_requested.emit(table, timeout)
+        self.__pending_columns.add(key)
+        self.worker.table_columns_requested.emit(
+            self.__wire(database), table, self.__timeout()
+        )
+
+    def select_database(self, database: str) -> None:
+        """Make ``database`` the active one (only when the session covers
+        all the databases): unqualified names in queries refer to it."""
+        if (
+            self.__state != ConnectionState.CONNECTED
+            or not self.all_databases
+            or not database
+            or database == self.__schema.database
+            or database == self.__pending_database
+        ):
+            return
+        self.__pending_database = database
+        self.worker.database_requested.emit(database)
 
     def use_column(self, table: TableInfo, column: str) -> None:
         """Put ``SELECT column FROM table LIMIT 1;`` in the editor,
@@ -932,6 +999,7 @@ class MainWindow(QMainWindow):
         self.__editor.execute_requested.connect(self.execute_query)
         self.__editor.completion_engine = CompletionEngine(self.__schema)
         self.__editor.columns_needed.connect(self.load_columns)
+        self.__editor.tables_needed.connect(self.load_tables)
 
         self.__results = ResultsTable()
         self.__rows_label = QLabel()
@@ -988,6 +1056,8 @@ class MainWindow(QMainWindow):
         self.__sidebar.refresh_requested.connect(self.refresh_tables)
         self.__sidebar.set_schema(self.__schema)
         self.__sidebar.columns_requested.connect(self.load_columns)
+        self.__sidebar.tables_requested.connect(self.load_tables)
+        self.__sidebar.database_selected.connect(self.select_database)
         self.__sidebar.column_chosen.connect(self.use_column)
         self.__sidebar.column_added.connect(self.add_column)
 
@@ -1023,23 +1093,36 @@ class MainWindow(QMainWindow):
         worker.columns_failed.connect(self.__on_columns_failed)
         worker.table_columns_loaded.connect(self.__on_table_columns_loaded)
         worker.table_columns_failed.connect(self.__on_table_columns_failed)
+        worker.databases_loaded.connect(self.__on_databases_loaded)
+        worker.databases_failed.connect(self.__on_databases_failed)
+        worker.database_changed.connect(self.__on_database_changed)
+        worker.database_failed.connect(self.__on_database_failed)
 
     # ------------------------------------------------------------------ state
     def __set_state(self, state: ConnectionState) -> None:
         self.__state = state
         if state != ConnectionState.CONNECTED:
-            self.__privileges = None
+            self.__check = None
             self.__schema.clear()
+            self.__pending_tables.clear()
             self.__pending_columns.clear()
+            self.__pending_database = ""
             self.__editor.hide_completion()
         if state in (ConnectionState.DISCONNECTED, ConnectionState.ERROR):
             self.__session_id = ""
             self.__session_config = None
             self.__set_bookmarks([])
         text = "<b style='color:{}'>●</b> {}".format(state.color, state.label)
-        if self.caution_active:
-            text = "{} · <b style='color:{}'>{}</b>".format(
-                text, MainWindow.CAUTION_COLOR, MainWindow.CAUTION_LABEL
+        if self.caution_active and self.__check is not None:
+            names = self.__check.write_databases
+            shown = ", ".join(names[: MainWindow.__CAUTION_NAMES])
+            if len(names) > MainWindow.__CAUTION_NAMES:
+                shown = "{}, …".format(shown)
+            text = "{} · <b style='color:{}'>{} ({})</b>".format(
+                text,
+                MainWindow.CAUTION_COLOR,
+                MainWindow.CAUTION_LABEL,
+                html.escape(shown),
             )
         profile = self.active_connection
         if profile is not None and state in (
@@ -1047,6 +1130,10 @@ class MainWindow(QMainWindow):
             ConnectionState.CONNECTING,
         ):
             text = "{} · {}".format(text, html.escape(profile.display_name))
+        if state == ConnectionState.CONNECTED and self.__schema.database:
+            text = "{} · db: <b>{}</b>".format(
+                text, html.escape(self.__schema.database)
+            )
         self.__state_label.setText(text)
         self.__apply_palette()
         if state != ConnectionState.CONNECTED:
@@ -1263,24 +1350,23 @@ class MainWindow(QMainWindow):
             )
             self.worker.cancel_query(QueryExecutor.CANCEL_BY_TIMEOUT)
 
-    def __on_connected(self, privileges: AccountPrivileges | None) -> None:
-        cfg = self.__active_config()
-        self.__privileges = privileges
+    def __on_connected(self, check: AccountCheck | None) -> None:
+        session = self.__session_config or self.__active_config()
+        self.__check = check
+        self.__schema.clear()
+        self.__schema.database = session.database
         self.__set_state(ConnectionState.CONNECTED)
-        msg = "Connected to {}:{}/{}.".format(cfg.host, cfg.port, cfg.database)
-        if self.caution_active and privileges is not None:
-            caution = "{} Caution mode: {}. Only read queries are allowed, "
-            caution += "but the account could change data: double-check "
-            caution += "what you run."
-            self.show_message(
-                caution.format(msg, privileges.describe()), error=True
-            )
+        msg = "Connected to {}:{}/{}.".format(
+            session.host, session.port, session.scope_label()
+        )
+        if self.caution_active and check is not None:
+            caution = "{} Caution mode: the account can change data in {}. "
+            caution += "Only read queries are allowed, but double-check what "
+            caution += "you run."
+            self.show_message(caution.format(msg, check.describe()), error=True)
         else:
             self.show_message(msg)
         self.__reload_bookmarks()
-        self.__schema.clear()
-        session = self.__session_config or cfg
-        self.__schema.database = session.database
         self.__editor.setFocus()
         self.refresh_tables()
 
@@ -1336,47 +1422,104 @@ class MainWindow(QMainWindow):
             self.__set_state(ConnectionState.ERROR)
             self.worker.disconnect_requested.emit()
 
-    def __on_tables_loaded(self, tables: list[TableInfo]) -> None:
-        # A response that arrives after a disconnection is stale.
-        if self.__state == ConnectionState.CONNECTED:
-            self.__schema.set_tables(tables)
-            self.__sidebar.set_tables(tables)
-            self.__editor.refresh_completion()
+    def __timeout(self) -> int:
+        return self.__active_config().query_timeout
 
-    def __on_tables_failed(self, message: str) -> None:
+    def __wire(self, database: str) -> str:
+        """Database as sent to the worker: empty (the default database of
+        the session) unless the session covers all the databases."""
+        return database if self.all_databases else ""
+
+    def __local(self, wire: str) -> str:
+        """Database of a worker response (empty means the configured
+        one)."""
+        if wire:
+            return wire
+        config = self.__session_config
+        return config.database if config is not None else ""
+
+    def __on_databases_loaded(self, databases: list[str]) -> None:
+        if self.__state != ConnectionState.CONNECTED:
+            return  # stale: the session was closed meanwhile
+        self.__schema.set_databases(databases)
+        self.__sidebar.set_databases(databases, self.__schema.database)
+        if self.__schema.database:
+            self.load_tables(self.__schema.database)
+        self.__editor.refresh_completion()
+
+    def __on_databases_failed(self, message: str) -> None:
         if self.__state == ConnectionState.CONNECTED:
             self.__sidebar.set_error(message)
 
+    def __on_database_changed(self, database: str) -> None:
+        if self.__pending_database == database:
+            self.__pending_database = ""
+        if self.__state != ConnectionState.CONNECTED:
+            return
+        self.__schema.database = database
+        self.__sidebar.set_active_database(database)
+        self.__set_state(self.__state)
+        self.show_message("Active database: {}.".format(database))
+        self.load_tables(database)
+        self.__editor.refresh_completion()
+
+    def __on_database_failed(self, database: str, message: str) -> None:
+        if self.__pending_database == database:
+            self.__pending_database = ""
+        if self.__state == ConnectionState.CONNECTED:
+            self.show_message(message, error=True)
+
+    def __on_tables_loaded(self, wire: str, tables: list[TableInfo]) -> None:
+        database = self.__local(wire)
+        self.__pending_tables.discard(database.casefold())
+        # A response that arrives after a disconnection is stale.
+        if self.__state == ConnectionState.CONNECTED:
+            self.__schema.set_tables(tables, database)
+            self.__sidebar.set_tables(tables, database)
+            self.__editor.refresh_completion()
+
+    def __on_tables_failed(self, wire: str, message: str) -> None:
+        database = self.__local(wire)
+        self.__pending_tables.discard(database.casefold())
+        if self.__state == ConnectionState.CONNECTED:
+            # Remembered as empty, so they are not requested again.
+            self.__schema.set_tables([], database)
+            self.__sidebar.set_tables_error(database, message)
+
     def __on_columns_loaded(
-        self, columns: dict[str, tuple[ColumnInfo, ...]]
+        self, wire: str, columns: dict[str, tuple[ColumnInfo, ...]]
     ) -> None:
         if self.__state != ConnectionState.CONNECTED:
             return  # stale: the session was closed meanwhile
-        self.__schema.set_all_columns(columns)
+        self.__schema.set_all_columns(columns, self.__local(wire))
         self.__sidebar.refresh_columns()
         self.__editor.refresh_completion()
 
-    def __on_columns_failed(self, message: str) -> None:
+    def __on_columns_failed(self, wire: str, message: str) -> None:
         # Columns are then read table by table, when needed.
         self.__log.info("Columns not listed at once: {}", message)
 
     def __on_table_columns_loaded(
-        self, table: str, columns: tuple[ColumnInfo, ...]
+        self, wire: str, table: str, columns: tuple[ColumnInfo, ...]
     ) -> None:
-        self.__pending_columns.discard(table)
+        database = self.__local(wire)
+        self.__pending_columns.discard((database.casefold(), table.casefold()))
         if self.__state != ConnectionState.CONNECTED:
             return
-        self.__schema.set_columns(table, columns)
+        self.__schema.set_columns(table, columns, database)
         self.__sidebar.refresh_columns()
         self.__editor.refresh_completion()
 
-    def __on_table_columns_failed(self, table: str, message: str) -> None:
-        self.__pending_columns.discard(table)
+    def __on_table_columns_failed(
+        self, wire: str, table: str, message: str
+    ) -> None:
+        database = self.__local(wire)
+        self.__pending_columns.discard((database.casefold(), table.casefold()))
         if self.__state != ConnectionState.CONNECTED:
             return
         # Remembered as empty, so they are not requested again and again.
-        self.__schema.set_columns(table, ())
-        self.__sidebar.set_columns_error(table, message)
+        self.__schema.set_columns(table, (), database)
+        self.__sidebar.set_columns_error(table, message, database)
 
     # ------------------------------------------------------------------- export
     def __ask_export_path(

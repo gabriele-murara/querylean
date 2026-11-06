@@ -42,7 +42,7 @@ class TestMainWindowColumns(MainWindowTestBase):
     def test_columns_load_on_connect(self, qtbot, window, handler):
         self.connect(qtbot, window)
         self.wait_columns(qtbot, window)
-        assert ColumnCatalog.ALL_STATEMENT in handler.statements
+        assert ColumnCatalog.all_statement() in handler.statements
         assert window.schema.database == "app"
         names = [c.name for c in window.schema.columns_of("customers")]
         assert names == ["id", "full name"]
@@ -80,7 +80,7 @@ class TestMainWindowColumns(MainWindowTestBase):
         statement = ColumnCatalog.table_statement("order items")
         assert handler.statements.count(statement) == 1
         # Known now: not requested again.
-        window.load_columns("order items")
+        window.load_columns("app", "order items")
         assert handler.statements.count(statement) == 1
 
     def test_column_errors_are_shown_once(self, qtbot, window, handler):
@@ -200,5 +200,5 @@ class TestMainWindowColumns(MainWindowTestBase):
         )
         assert window.schema.tables == []
         assert window.schema.columns_of("customers") is None
-        window.load_columns("customers")  # ignored when disconnected
+        window.load_columns("app", "customers")  # ignored when disconnected
         assert window.schema.columns_of("customers") is None

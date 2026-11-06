@@ -43,9 +43,15 @@ class TestColumnCatalog:
 
     def test_statements_pass_the_validator(self):
         validator = ReadOnlyValidator()
-        assert validator.validate(ColumnCatalog.ALL_STATEMENT).ok
+        assert validator.validate(ColumnCatalog.all_statement()).ok
+        statement = ColumnCatalog.all_statement("it's\\db")
+        assert "TABLE_SCHEMA = 'it''s\\\\db'" in statement
+        assert validator.validate(statement).ok
         statement = ColumnCatalog.table_statement("odd`name")
         assert statement == "SHOW FULL COLUMNS FROM `odd``name`"
+        assert validator.validate(statement).ok
+        statement = ColumnCatalog.table_statement("t", "my db")
+        assert statement == "SHOW FULL COLUMNS FROM `my db`.`t`"
         assert validator.validate(statement).ok
 
     def test_list_all(self, catalog):

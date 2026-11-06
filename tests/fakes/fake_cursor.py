@@ -39,13 +39,15 @@ class FakeCursor:
                 conn.on_kill()
             return
         self.__internal = sql.startswith(FakeCursor.__VARIABLE) or (
-            sql == "SHOW GRANTS"
+            sql in ("SHOW GRANTS", "SHOW DATABASES")
         )
         if sql.startswith(FakeCursor.__VARIABLE):
             name = sql[len(FakeCursor.__VARIABLE) :]
             outcome = FakeCursor.__variable(conn.session_variables, name)
         elif sql == "SHOW GRANTS":
             outcome = FakeCursor.__grant_rows(conn.grants)
+        elif sql == "SHOW DATABASES":
+            outcome = FakeCursor.__database_rows(conn.databases)
         elif conn.handler is not None:
             outcome = conn.handler(sql)
         else:
@@ -97,6 +99,12 @@ class FakeCursor:
         if isinstance(value, BaseException):
             return value
         return [name], [(value,)]
+
+    @staticmethod
+    def __database_rows(databases: Any) -> Any:
+        if isinstance(databases, BaseException):
+            return databases
+        return ["Database"], [(name,) for name in databases]
 
     @staticmethod
     def __grant_rows(grants: Any) -> Any:

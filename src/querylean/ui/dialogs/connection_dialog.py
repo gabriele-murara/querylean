@@ -11,6 +11,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QPushButton,
     QSpinBox,
     QVBoxLayout,
@@ -19,14 +21,19 @@ from PySide6.QtWidgets import (
 
 from querylean.app.app_info import AppInfo
 from querylean.config.connection_config import ConnectionConfig
+from querylean.database.privileges.account_check import AccountCheck
 from querylean.ui.worker.db_worker import DbWorker
 
 
 class ConnectionDialog(QDialog):
-    """Edits name, host, port, database, credentials, timeouts, row limit
-    and caution mode; offers "Test connection" (asynchronous, through the
-    worker) and "Save". The name is optional: when empty the connection is
-    listed as ``<user>@<host>/<database>``, shown as placeholder."""
+    """Edits name, host, port, database (or all the databases), credentials,
+    timeouts and row limit; offers "Test connection" (asynchronous, through
+    the worker) and "Save". The name is optional: when empty the connection
+    is listed as ``<user>@<host>/<database>``, shown as placeholder.
+
+    Caution mode is per database: the test lists the databases of the
+    connection that the account can change, each with a checkbox; only the
+    checked ones are accepted (``ConnectionConfig.caution_databases``)."""
 
     NEW_TITLE = "New connection"
     EDIT_TITLE = "Edit connection"
@@ -56,6 +63,12 @@ class ConnectionDialog(QDialog):
             1, ConnectionConfig.MAX_PORT, config.port
         )
         self.__database = QLineEdit(config.database)
+        self.__database_label = QLabel()
+        self.__all_databases = QCheckBox(
+            "All the databases the account can access"
+        )
+        self.__all_databases.setChecked(config.all_databases)
+        self.__all_databases.toggled.connect(self.__on_toggle_all)
         self.__username = QLineEdit(config.username)
         self.__password = QLineEdit(password)
         self.__password.setEchoMode(QLineEdit.EchoMode.Password)
@@ -84,14 +97,11 @@ class ConnectionDialog(QDialog):
         )
         self.__row_limit.setSingleStep(ConnectionDialog.__ROW_LIMIT_STEP)
 
-        self.__caution_mode = QCheckBox(
-            "Caution mode: allow an account with write privileges"
-        )
-        self.__caution_mode.setChecked(config.caution_mode)
-        self.__caution_mode.toggled.connect(self.__on_toggle_caution)
-        warning_text = "The account can change data. {} still runs only "
-        warning_text += "read queries, but a mistake or a bug could have "
-        warning_text += "consequences: prefer a SELECT-only account."
+        warning_text = "Caution mode: the account can change data in these "
+        warning_text += "databases. Check each one you accept to use. {} "
+        warning_text += "still runs only read queries, but a mistake or a bug "
+        warning_text += "could have consequences: prefer a SELECT-only "
+        warning_text += "account."
         self.__caution_warning = QLabel(
             warning_text.format(AppInfo.DISPLAY_NAME)
         )
@@ -99,13 +109,18 @@ class ConnectionDialog(QDialog):
         self.__caution_warning.setStyleSheet(
             "color: {};".format(ConnectionDialog.__ERROR_COLOR)
         )
-        self.__caution_warning.setVisible(config.caution_mode)
+        self.__caution_list = QListWidget()
+        self.__caution_list.setMaximumHeight(110)
+        for database in config.caution_databases:
+            self.__add_caution(database, "accepted earlier", checked=True)
+        self.__update_caution()
 
         form = QFormLayout()
         form.addRow("Name", self.__name)
         form.addRow("Host *", self.__host)
         form.addRow("Port *", self.__port)
-        form.addRow("Database *", self.__database)
+        form.addRow(self.__database_label, self.__database)
+        form.addRow("", self.__all_databases)
         form.addRow("Username *", self.__username)
         form.addRow("Password *", self.__password)
         form.addRow("", self.__show_password)
@@ -113,13 +128,12 @@ class ConnectionDialog(QDialog):
         form.addRow("Connection timeout", self.__connect_timeout)
         form.addRow("Query timeout", self.__query_timeout)
         form.addRow("Maximum rows", self.__row_limit)
-        form.addRow("", self.__caution_mode)
-        form.addRow("", self.__caution_warning)
 
         hint_text = "Use a MySQL account with SELECT privileges only: "
         hint_text += "read-only mode is guaranteed mainly by the account "
-        hint_text += "privileges. An account with more privileges is "
-        hint_text += "refused unless caution mode is enabled."
+        hint_text += "privileges. A database the account can change is "
+        hint_text += "refused until you accept it: press “Test connection” "
+        hint_text += "and check it in the caution mode list."
         hint = QLabel(hint_text)
         hint.setWordWrap(True)
         hint.setStyleSheet("color: palette(placeholder-text);")
@@ -147,6 +161,8 @@ class ConnectionDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.addLayout(form)
+        layout.addWidget(self.__caution_warning)
+        layout.addWidget(self.__caution_list)
         layout.addWidget(hint)
         layout.addWidget(self.__status)
         layout.addLayout(bottom)
@@ -154,7 +170,7 @@ class ConnectionDialog(QDialog):
         worker.test_finished.connect(self.__on_test_finished)
         for field in (self.__host, self.__database, self.__username):
             field.textChanged.connect(self.__update_name_placeholder)
-        self.__update_name_placeholder()
+        self.__on_toggle_all(config.all_databases)
 
     # ------------------------------------------------------------------ widgets
     @property
@@ -213,14 +229,46 @@ class ConnectionDialog(QDialog):
         return self.__row_limit
 
     @property
-    def caution_mode(self) -> QCheckBox:
-        """Whether an account with write privileges is allowed."""
-        return self.__caution_mode
+    def all_databases(self) -> QCheckBox:
+        """Whether the connection covers all the accessible databases."""
+        return self.__all_databases
+
+    @property
+    def caution_list(self) -> QListWidget:
+        """Writable databases, each checkable to accept it in caution
+        mode."""
+        return self.__caution_list
 
     @property
     def caution_warning(self) -> QLabel:
-        """Warning shown while caution mode is checked."""
+        """Warning shown above the writable databases."""
         return self.__caution_warning
+
+    def caution_databases(self) -> list[str]:
+        """Databases listed for caution mode, in order."""
+        return [
+            self.__caution_list.item(i).data(Qt.ItemDataRole.UserRole)
+            for i in range(self.__caution_list.count())
+        ]
+
+    def accepted_databases(self) -> list[str]:
+        """Databases checked (accepted) in caution mode."""
+        return [
+            self.__caution_list.item(i).data(Qt.ItemDataRole.UserRole)
+            for i in range(self.__caution_list.count())
+            if self.__caution_list.item(i).checkState() == Qt.CheckState.Checked
+        ]
+
+    def set_accepted(self, database: str, accepted: bool = True) -> None:
+        """Check or uncheck ``database`` in the caution mode list."""
+        for i in range(self.__caution_list.count()):
+            item = self.__caution_list.item(i)
+            if item.data(Qt.ItemDataRole.UserRole) == database:
+                item.setCheckState(
+                    Qt.CheckState.Checked
+                    if accepted
+                    else Qt.CheckState.Unchecked
+                )
 
     @property
     def status(self) -> QLabel:
@@ -249,7 +297,8 @@ class ConnectionDialog(QDialog):
             connect_timeout=self.__connect_timeout.value(),
             query_timeout=self.__query_timeout.value(),
             row_limit=self.__row_limit.value(),
-            caution_mode=self.__caution_mode.isChecked(),
+            all_databases=self.__all_databases.isChecked(),
+            caution_databases=self.accepted_databases(),
         )
 
     def password_value(self) -> str:
@@ -299,12 +348,51 @@ class ConnectionDialog(QDialog):
         msg = "Optional, default: {}"
         self.__name.setPlaceholderText(msg.format(self.config().default_name()))
 
-    def __on_test_finished(self, ok: bool, message: str) -> None:
+    def __on_test_finished(
+        self, ok: bool, message: str, check: AccountCheck | None = None
+    ) -> None:
         self.__test_button.setEnabled(True)
         self.__set_status(ok, message)
+        if ok and check is not None:
+            self.__show_check(check)
 
-    def __on_toggle_caution(self, checked: bool) -> None:
-        self.__caution_warning.setVisible(checked)
+    def __show_check(self, check: AccountCheck) -> None:
+        """List the writable databases found by the test, keeping the
+        choices already made."""
+        accepted = set(self.accepted_databases())
+        self.__caution_list.clear()
+        for database in check.write_databases:
+            self.__add_caution(
+                database, check.reason(database), checked=database in accepted
+            )
+        self.__update_caution()
+
+    def __add_caution(
+        self, database: str, reason: str, *, checked: bool
+    ) -> None:
+        item = QListWidgetItem("{} — {}".format(database, reason))
+        item.setData(Qt.ItemDataRole.UserRole, database)
+        item.setFlags(
+            Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable
+        )
+        item.setCheckState(
+            Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
+        )
+        tip = "Check to accept {} in caution mode: the account can change it"
+        item.setToolTip(tip.format(database))
+        self.__caution_list.addItem(item)
+
+    def __update_caution(self) -> None:
+        shown = self.__caution_list.count() > 0
+        self.__caution_warning.setVisible(shown)
+        self.__caution_list.setVisible(shown)
+
+    def __on_toggle_all(self, checked: bool) -> None:
+        self.__database_label.setText("Database" if checked else "Database *")
+        self.__database.setPlaceholderText(
+            "Optional: active database at connection" if checked else ""
+        )
+        self.__update_name_placeholder()
 
     def __on_toggle_password(self, visible: bool) -> None:
         self.__password.setEchoMode(

@@ -20,6 +20,7 @@ from querylean.database.errors.query_cancelled import QueryCancelled
 from querylean.database.errors.query_timeout import QueryTimeout
 from querylean.database.execution.query_executor import QueryExecutor
 from querylean.database.schema.column_catalog import ColumnCatalog
+from querylean.database.schema.database_catalog import DatabaseCatalog
 from querylean.database.schema.table_catalog import TableCatalog
 
 
@@ -195,3 +196,36 @@ class TestMysqlIntegration:
         with pytest.raises(DatabaseError) as info:
             ConnectionManager().connect(config, "definitely-wrong-password")
         assert info.value.kind == "auth"
+
+    def test_all_databases_with_a_select_only_account(self, config):
+        database = config.database
+        scope = config.copy()
+        scope.database = ""
+        scope.all_databases = True
+        manager = ConnectionManager()
+        password = os.environ["QUERYLEAN_TEST_PASSWORD"]
+        _, check = manager.test_connection(scope, password)
+        assert database in check.databases
+        assert check.write_databases == ()
+        manager.connect(scope, password)
+        try:
+            executor = QueryExecutor(manager)
+            databases = DatabaseCatalog(executor).list_databases(10)
+            assert database in databases
+            # Without an active database unqualified names fail...
+            tables = TableCatalog(executor).list_tables(10, database)
+            assert "people" in {t.name for t in tables}
+            people = next(t for t in tables if t.name == "people")
+            result = executor.execute(people.select_statement, 10, 10)
+            assert len(result.rows) == 1
+            columns = ColumnCatalog(executor).list_all(10, database)
+            assert [c.name for c in columns["people"]][:2] == ["id", "name"]
+            # ...until a database is made active.
+            manager.use_database(database)
+            result = executor.execute("SELECT COUNT(*) FROM people", 10, 10)
+            assert result.rows[0][0] == 3
+            manager.abort_session()
+            result = executor.execute("SELECT COUNT(*) FROM people", 10, 10)
+            assert result.rows[0][0] == 3
+        finally:
+            manager.disconnect()

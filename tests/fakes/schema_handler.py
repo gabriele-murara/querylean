@@ -1,4 +1,4 @@
-"""Fake server answers for a database with tables and a view."""
+"""Fake server answers for databases with tables and views."""
 
 from __future__ import annotations
 
@@ -14,9 +14,11 @@ class SchemaHandler:
     returns one row for any other statement.
 
     ``tables`` holds ``(name, type)`` pairs; ``columns`` maps a table name
-    to ``(name, type, null, key, default, extra, comment)`` rows.
+    to ``(name, type, null, key, default, extra, comment)`` rows. They
+    answer the statements about the default database; ``schemas`` maps
+    other database names to their own ``(tables, columns)``.
     ``error``, when set, is returned (raised by the cursor) for the table
-    listing, ``columns_error`` for both column listings.
+    listings, ``columns_error`` for the column listings.
     """
 
     SHOW_COLUMNS = [
@@ -35,9 +37,12 @@ class SchemaHandler:
         self,
         tables: list[tuple[Any, Any]] | None = None,
         columns: dict[str, list[tuple[Any, ...]]] | None = None,
+        schemas: dict[str, tuple[list[Any], dict[str, list[Any]]]]
+        | None = None,
     ) -> None:
         self.__tables = list(tables or [])
         self.__columns = dict(columns or {})
+        self.__schemas = dict(schemas or {})
         self.__error: BaseException | None = None
         self.__columns_error: BaseException | None = None
         self.__statements: list[str] = []
@@ -51,6 +56,11 @@ class SchemaHandler:
     def columns(self) -> dict[str, list[tuple[Any, ...]]]:
         """Column rows by table (mutable)."""
         return self.__columns
+
+    @property
+    def schemas(self) -> dict[str, tuple[list[Any], dict[str, list[Any]]]]:
+        """Tables and columns of the other databases (mutable)."""
+        return self.__schemas
 
     @property
     def statements(self) -> list[str]:
@@ -77,13 +87,31 @@ class SchemaHandler:
 
     def __call__(self, sql: str) -> Any:
         self.__statements.append(sql)
-        if sql == ColumnCatalog.ALL_STATEMENT:
+        targets = [("", self.__tables, self.__columns)]
+        targets += [
+            (name, tables, columns)
+            for name, (tables, columns) in self.__schemas.items()
+        ]
+        for database, tables, columns in targets:
+            outcome = self.__answer(sql, database, tables, columns)
+            if outcome is not None:
+                return outcome
+        return ["n"], [(1,)]
+
+    def __answer(
+        self,
+        sql: str,
+        database: str,
+        tables: list[Any],
+        columns: dict[str, list[Any]],
+    ) -> Any:
+        if sql == ColumnCatalog.all_statement(database):
             if self.__columns_error is not None:
                 return self.__columns_error
             rows = [
                 (table, *row)
-                for table in sorted(self.__columns)
-                for row in self.__columns[table]
+                for table in sorted(columns)
+                for row in columns[table]
             ]
             return [
                 "TABLE_NAME",
@@ -95,16 +123,16 @@ class SchemaHandler:
                 "EXTRA",
                 "COMMENT",
             ], rows
-        for table, rows in self.__columns.items():
-            if sql == ColumnCatalog.table_statement(table):
+        for table, rows in columns.items():
+            if sql == ColumnCatalog.table_statement(table, database):
                 if self.__columns_error is not None:
                     return self.__columns_error
                 return SchemaHandler.SHOW_COLUMNS, [
                     (r[0], r[1], None, r[2], r[3], r[4], r[5], "select", r[6])
                     for r in rows
                 ]
-        if sql == TableCatalog.LIST_STATEMENT:
+        if sql == TableCatalog.list_statement(database):
             if self.__error is not None:
                 return self.__error
-            return ["Tables_in_app", "Table_type"], list(self.__tables)
-        return ["n"], [(1,)]
+            return ["Tables_in_db", "Table_type"], list(tables)
+        return None

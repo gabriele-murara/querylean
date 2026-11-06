@@ -1,5 +1,5 @@
-"""Side bar with the tables available to the connected user and their
-columns."""
+"""Side bar with the databases, tables and columns available to the
+connected user."""
 
 from __future__ import annotations
 
@@ -28,37 +28,50 @@ from querylean.ui.icons.toolbar_icons import ToolbarIcons
 
 
 class TableSidebar(QWidget):
-    """Title "Tables" with a refresh button, a filter, the tree of tables
-    and views (views in italics) and a status line.
+    """Title "Tables" with a refresh button, a filter, the tree of
+    databases, tables and views (views in italics), columns, and a status
+    line.
+
+    A click on a database emits ``database_selected(name)`` and expands
+    it; its tables are requested with ``tables_requested(database)`` until
+    ``set_tables`` provides them. The active database is in bold.
 
     Expanding a table shows its columns with type, keys and a tooltip with
     the full definition; columns not loaded yet are requested with
-    ``columns_requested(table)``. A click on a table emits
-    ``table_chosen(TableInfo)`` and expands it; double click and Enter emit
-    ``table_chosen`` too. Double click (or Enter) on a column emits
+    ``columns_requested(database, table)``. A click on a table emits
+    ``database_selected`` (its database) and ``table_chosen(TableInfo)``
+    and expands it; double click and Enter emit ``table_chosen`` too.
+    Double click (or Enter) on a column emits
     ``column_chosen(TableInfo, name)``; with Shift held it emits
     ``column_added(TableInfo, name)`` instead. The context menu offers the
     same actions and the copy of the name.
     """
 
+    database_selected = Signal(str)
+    tables_requested = Signal(str)  # database
     table_chosen = Signal(object)
     column_chosen = Signal(object, str)  # TableInfo, column name
     column_added = Signal(object, str)  # TableInfo, column name (Shift)
-    columns_requested = Signal(str)
+    columns_requested = Signal(str, str)  # database, table
     refresh_requested = Signal()
 
     NOT_CONNECTED = "Connect to see the tables."
     LOADING = "Loading the tables…"
+    LOADING_DATABASES = "Loading the databases…"
     NO_TABLES = "No tables available."
+    NO_DATABASES = "No databases available."
+    LOADING_TABLES = "Loading the tables…"
     LOADING_COLUMNS = "Loading the columns…"
     NO_COLUMNS = "No columns available."
     FILTER_PLACEHOLDER = "Filter tables…"
     PREPARE_TEXT = "Prepare SELECT"
     COLUMN_TEXT = "Prepare SELECT of the column"
     ADD_TEXT = "Add to the SELECT"
+    USE_TEXT = "Use as active database"
     COPY_TEXT = "Copy name"
     __TABLE_ROLE = Qt.ItemDataRole.UserRole
     __COLUMN_ROLE = Qt.ItemDataRole.UserRole + 1
+    __DATABASE_ROLE = Qt.ItemDataRole.UserRole + 2
     __MIN_WIDTH = 160
     __ICON_SIZE = 16
 
@@ -67,7 +80,7 @@ class TableSidebar(QWidget):
         self.setObjectName("table-sidebar")
         self.setMinimumWidth(TableSidebar.__MIN_WIDTH)
         self.__schema: SchemaModel | None = None
-        self.__table_count = 0
+        self.__active = ""
         self.__status_text = ""
         self.__status_error = False
 
@@ -80,7 +93,7 @@ class TableSidebar(QWidget):
         size = TableSidebar.__ICON_SIZE
         self.__refresh_button.setIconSize(QSize(size, size))
         self.__refresh_button.setAutoRaise(True)
-        self.__refresh_button.setToolTip("Refresh the list of tables")
+        self.__refresh_button.setToolTip("Refresh the databases and tables")
         self.__refresh_button.clicked.connect(self.refresh_requested)
 
         header = QHBoxLayout()
@@ -130,7 +143,7 @@ class TableSidebar(QWidget):
 
     @property
     def tree_widget(self) -> QTreeWidget:
-        """Tree of tables (top level) and columns (children)."""
+        """Tree of databases (top level), tables and columns."""
         return self.__tree
 
     @property
@@ -148,21 +161,40 @@ class TableSidebar(QWidget):
         """Status line (loading, errors, counts)."""
         return self.__status_label
 
+    @property
+    def active_database(self) -> str:
+        """Database shown in bold (the default one of the session)."""
+        return self.__active
+
     def set_schema(self, schema: SchemaModel | None) -> None:
         """Model the columns are read from when a table is expanded."""
         self.__schema = schema
 
-    def tables(self) -> list[TableInfo]:
-        """Listed tables, in display order (filtered ones included)."""
+    # --------------------------------------------------------------- lookup
+    def databases(self) -> list[str]:
+        """Listed databases, in display order."""
+        return [item.text(0) for item in self.__database_items()]
+
+    def database_item(self, name: str) -> QTreeWidgetItem | None:
+        """Item of the database ``name``, if listed."""
+        for item in self.__database_items():
+            if item.data(0, TableSidebar.__DATABASE_ROLE) == name:
+                return item
+        return None
+
+    def tables(self, database: str | None = None) -> list[TableInfo]:
+        """Listed tables of ``database`` (default: all), in display order
+        (filtered ones included)."""
         return [
-            self.__tree.topLevelItem(i).data(0, TableSidebar.__TABLE_ROLE)
-            for i in range(self.__tree.topLevelItemCount())
+            item.data(0, TableSidebar.__TABLE_ROLE)
+            for item in self.__table_items(database)
         ]
 
-    def table_item(self, name: str) -> QTreeWidgetItem | None:
-        """Item of the table ``name``, if listed."""
-        for i in range(self.__tree.topLevelItemCount()):
-            item = self.__tree.topLevelItem(i)
+    def table_item(
+        self, name: str, database: str | None = None
+    ) -> QTreeWidgetItem | None:
+        """Item of the table ``name`` (in ``database`` when given)."""
+        for item in self.__table_items(database):
             if item.data(0, TableSidebar.__TABLE_ROLE).name == name:
                 return item
         return None
@@ -170,14 +202,16 @@ class TableSidebar(QWidget):
     def visible_tables(self) -> list[str]:
         """Names of the tables not hidden by the filter."""
         return [
-            self.__tree.topLevelItem(i).text(0)
-            for i in range(self.__tree.topLevelItemCount())
-            if not self.__tree.topLevelItem(i).isHidden()
+            item.text(0)
+            for item in self.__table_items(None)
+            if not item.isHidden() and not item.parent().isHidden()
         ]
 
-    def column_names(self, table: str) -> list[str]:
+    def column_names(
+        self, table: str, database: str | None = None
+    ) -> list[str]:
         """Columns shown under ``table`` (empty while not loaded)."""
-        item = self.table_item(table)
+        item = self.table_item(table, database)
         if item is None:
             return []
         return [
@@ -186,19 +220,62 @@ class TableSidebar(QWidget):
             if item.child(i).data(0, TableSidebar.__COLUMN_ROLE) is not None
         ]
 
-    def set_loading(self) -> None:
-        """Keep the current list and announce a reload."""
+    # -------------------------------------------------------------- content
+    def set_loading(self, message: str = LOADING) -> None:
+        """Keep the current tree and announce a reload."""
         self.__refresh_button.setEnabled(False)
-        self.__set_status(TableSidebar.LOADING)
+        self.__set_status(message)
 
-    def set_tables(self, tables: list[TableInfo]) -> None:
-        """Show ``tables``; tables that were expanded stay expanded."""
+    def set_databases(self, databases: list[str], active: str = "") -> None:
+        """Show ``databases`` (their tables are added by ``set_tables``);
+        a single database is expanded at once. Databases that were
+        expanded stay expanded."""
         expanded = {
-            self.__tree.topLevelItem(i).text(0)
-            for i in range(self.__tree.topLevelItemCount())
-            if self.__tree.topLevelItem(i).isExpanded()
+            item.text(0)
+            for item in self.__database_items()
+            if item.isExpanded()
         }
         self.__tree.clear()
+        self.__active = active
+        for database in databases:
+            item = QTreeWidgetItem([database, ""])
+            item.setData(0, TableSidebar.__DATABASE_ROLE, database)
+            item.setIcon(0, CompletionIcons.icon(CompletionKind.DATABASE))
+            item.setToolTip(0, "Database {}".format(database))
+            item.setChildIndicatorPolicy(
+                QTreeWidgetItem.ChildIndicatorPolicy.ShowIndicator
+            )
+            self.__tree.addTopLevelItem(item)
+        self.__mark_active()
+        self.__refresh_button.setEnabled(True)
+        if not databases:
+            self.__set_status(TableSidebar.NO_DATABASES)
+        elif len(databases) > 1:
+            self.__set_status("{} databases".format(len(databases)))
+        else:
+            self.__set_status(TableSidebar.LOADING)
+        for item in self.__database_items():
+            if len(databases) == 1 or item.text(0) in expanded:
+                item.setExpanded(True)
+        self.__apply_filter()
+
+    def set_active_database(self, database: str) -> None:
+        """Show ``database`` as the active one."""
+        self.__active = database
+        self.__mark_active()
+
+    def set_tables(self, tables: list[TableInfo], database: str) -> None:
+        """Show ``tables`` under ``database``; tables that were expanded
+        stay expanded."""
+        parent = self.database_item(database)
+        if parent is None:
+            return
+        expanded = {
+            parent.child(i).text(0)
+            for i in range(parent.childCount())
+            if parent.child(i).isExpanded()
+        }
+        TableSidebar.__clear_children(parent)
         italic = QFont(self.__tree.font())
         italic.setItalic(True)
         for table in tables:
@@ -216,56 +293,104 @@ class TableSidebar(QWidget):
                 item.setToolTip(0, "View {}".format(table.name))
             else:
                 item.setToolTip(0, "Table {}".format(table.name))
-            self.__tree.addTopLevelItem(item)
-        self.__table_count = len(tables)
-        self.__refresh_button.setEnabled(True)
+            parent.addChild(item)
         if not tables:
-            self.__set_status(TableSidebar.NO_TABLES)
-        elif len(tables) >= TableCatalog.MAX_TABLES:
-            msg = "Showing only the first {} tables."
-            self.__set_status(msg.format(TableCatalog.MAX_TABLES))
-        else:
-            self.__set_status("{} tables".format(len(tables)))
+            TableSidebar.__placeholder(parent, TableSidebar.NO_TABLES)
+        self.__refresh_button.setEnabled(True)
+        self.__count_status(tables)
         self.__apply_filter()
         for name in expanded:
-            item = self.table_item(name)
+            item = self.table_item(name, database)
             if item is not None:
                 item.setExpanded(True)
+
+    def set_tables_error(self, database: str, message: str) -> None:
+        """Show that the tables of ``database`` could not be read."""
+        parent = self.database_item(database)
+        if parent is None:
+            return
+        TableSidebar.__clear_children(parent)
+        child = TableSidebar.__placeholder(parent, TableSidebar.NO_TABLES)
+        child.setToolTip(0, message)
+        self.__refresh_button.setEnabled(True)
+        self.__set_status(message, error=True)
 
     def refresh_columns(self) -> None:
         """Update the expanded tables (and those waiting for columns) from
         the schema model."""
-        for i in range(self.__tree.topLevelItemCount()):
-            item = self.__tree.topLevelItem(i)
+        for item in self.__table_items(None):
             if item.isExpanded() or item.childCount():
                 self.__fill_columns(item, request=False)
 
-    def set_columns_error(self, table: str, message: str) -> None:
+    def set_columns_error(
+        self, table: str, message: str, database: str | None = None
+    ) -> None:
         """Show that the columns of ``table`` could not be read."""
-        item = self.table_item(table)
+        item = self.table_item(table, database)
         if item is None:
             return
         TableSidebar.__clear_children(item)
-        child = QTreeWidgetItem([TableSidebar.NO_COLUMNS, ""])
+        child = TableSidebar.__placeholder(item, TableSidebar.NO_COLUMNS)
         child.setToolTip(0, message)
-        child.setFlags(Qt.ItemFlag.NoItemFlags)
-        item.addChild(child)
 
     def set_error(self, message: str) -> None:
         """Show a loading error; the refresh button stays available."""
         self.__tree.clear()
-        self.__table_count = 0
         self.__refresh_button.setEnabled(True)
         self.__set_status(message, error=True)
 
     def show_message(self, message: str) -> None:
-        """Empty the list and show ``message`` (e.g. when disconnected)."""
+        """Empty the tree and show ``message`` (e.g. when disconnected)."""
         self.__tree.clear()
-        self.__table_count = 0
+        self.__active = ""
         self.__refresh_button.setEnabled(False)
         self.__set_status(message)
 
     # ------------------------------------------------------------ internals
+    def __database_items(self) -> list[QTreeWidgetItem]:
+        return [
+            self.__tree.topLevelItem(i)
+            for i in range(self.__tree.topLevelItemCount())
+        ]
+
+    def __table_items(self, database: str | None) -> list[QTreeWidgetItem]:
+        items = []
+        for parent in self.__database_items():
+            if database is not None and parent.text(0) != database:
+                continue
+            for i in range(parent.childCount()):
+                child = parent.child(i)
+                if child.data(0, TableSidebar.__TABLE_ROLE) is not None:
+                    items.append(child)
+        return items
+
+    def __database_of(self, item: QTreeWidgetItem) -> str:
+        """Database of a database, table or column item."""
+        while item.parent() is not None:
+            item = item.parent()
+        return str(item.data(0, TableSidebar.__DATABASE_ROLE) or "")
+
+    def __mark_active(self) -> None:
+        bold = QFont(self.__tree.font())
+        bold.setBold(True)
+        plain = QFont(self.__tree.font())
+        for item in self.__database_items():
+            active = item.text(0) == self.__active
+            item.setFont(0, bold if active else plain)
+            item.setText(1, "active" if active else "")
+
+    def __count_status(self, tables: list[TableInfo]) -> None:
+        if len(self.__database_items()) > 1:
+            msg = "{} databases".format(len(self.__database_items()))
+        elif not tables:
+            msg = TableSidebar.NO_TABLES
+        elif len(tables) >= TableCatalog.MAX_TABLES:
+            msg = "Showing only the first {} tables."
+            msg = msg.format(TableCatalog.MAX_TABLES)
+        else:
+            msg = "{} tables".format(len(tables))
+        self.__set_status(msg)
+
     def __set_status(self, text: str, *, error: bool = False) -> None:
         self.__status_text = text
         self.__status_error = error
@@ -273,13 +398,9 @@ class TableSidebar(QWidget):
 
     def __show_status(self) -> None:
         text = self.__status_text
-        shown = len(self.visible_tables())
-        if (
-            not self.__status_error
-            and self.__filter.text().strip()
-            and self.__table_count
-        ):
-            text = "{} of {} tables".format(shown, self.__table_count)
+        total = len(self.__table_items(None))
+        if not self.__status_error and self.__filter.text().strip() and total:
+            text = "{} of {} tables".format(len(self.visible_tables()), total)
         self.__status_label.setStyleSheet(
             "color: #c62828;"
             if self.__status_error
@@ -289,40 +410,58 @@ class TableSidebar(QWidget):
 
     def __apply_filter(self, *_: object) -> None:
         wanted = self.__filter.text().strip().casefold()
-        for i in range(self.__tree.topLevelItemCount()):
-            item = self.__tree.topLevelItem(i)
-            item.setHidden(
-                bool(wanted) and wanted not in item.text(0).casefold()
-            )
+        for parent in self.__database_items():
+            name_matches = not wanted or wanted in parent.text(0).casefold()
+            any_shown = False
+            for i in range(parent.childCount()):
+                child = parent.child(i)
+                if child.data(0, TableSidebar.__TABLE_ROLE) is None:
+                    continue
+                shown = name_matches or wanted in child.text(0).casefold()
+                child.setHidden(not shown)
+                any_shown = any_shown or shown
+            parent.setHidden(not (name_matches or any_shown))
         self.__show_status()
+
+    def __fill_tables(self, item: QTreeWidgetItem) -> None:
+        """Placeholder and request while the tables of a database are not
+        listed."""
+        if item.childCount():
+            return
+        TableSidebar.__placeholder(item, TableSidebar.LOADING_TABLES)
+        self.tables_requested.emit(item.text(0))
 
     def __fill_columns(self, item: QTreeWidgetItem, *, request: bool) -> None:
         """Show the columns of the table ``item`` from the schema model, or
         a placeholder while they are loaded."""
         table = item.data(0, TableSidebar.__TABLE_ROLE)
+        database = self.__database_of(item)
         columns = (
-            self.__schema.columns_of(table.name)
+            self.__schema.columns_of(table.name, database)
             if self.__schema is not None
             else None
         )
         if columns is None:
             if not item.childCount():
-                child = QTreeWidgetItem([TableSidebar.LOADING_COLUMNS, ""])
-                child.setFlags(Qt.ItemFlag.NoItemFlags)
-                item.addChild(child)
+                TableSidebar.__placeholder(item, TableSidebar.LOADING_COLUMNS)
             if request:
-                self.columns_requested.emit(table.name)
+                self.columns_requested.emit(database, table.name)
             return
         TableSidebar.__clear_children(item)
         if not columns:
-            child = QTreeWidgetItem([TableSidebar.NO_COLUMNS, ""])
-            child.setFlags(Qt.ItemFlag.NoItemFlags)
-            item.addChild(child)
+            TableSidebar.__placeholder(item, TableSidebar.NO_COLUMNS)
             return
         bold = QFont(self.__tree.font())
         bold.setBold(True)
         for column in columns:
             item.addChild(TableSidebar.__column_item(column, table, bold))
+
+    @staticmethod
+    def __placeholder(parent: QTreeWidgetItem, text: str) -> QTreeWidgetItem:
+        child = QTreeWidgetItem([text, ""])
+        child.setFlags(Qt.ItemFlag.NoItemFlags)
+        parent.addChild(child)
+        return child
 
     @staticmethod
     def __column_item(
@@ -353,13 +492,21 @@ class TableSidebar(QWidget):
             del child
 
     def __on_expanded(self, item: QTreeWidgetItem) -> None:
-        if item.data(0, TableSidebar.__TABLE_ROLE) is not None:
+        if item.data(0, TableSidebar.__DATABASE_ROLE) is not None:
+            self.__fill_tables(item)
+        elif item.data(0, TableSidebar.__TABLE_ROLE) is not None:
             self.__fill_columns(item, request=True)
 
     def __on_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
+        database = item.data(0, TableSidebar.__DATABASE_ROLE)
+        if database is not None:
+            item.setExpanded(True)
+            self.database_selected.emit(database)
+            return
         table = item.data(0, TableSidebar.__TABLE_ROLE)
         if isinstance(table, TableInfo):
             item.setExpanded(True)
+            self.database_selected.emit(self.__database_of(item))
             self.table_chosen.emit(table)
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
@@ -372,6 +519,11 @@ class TableSidebar(QWidget):
         return super().eventFilter(watched, event)
 
     def __on_activated(self, item: QTreeWidgetItem, _column: int) -> None:
+        database = item.data(0, TableSidebar.__DATABASE_ROLE)
+        if database is not None:
+            item.setExpanded(True)
+            self.database_selected.emit(database)
+            return
         table = item.data(0, TableSidebar.__TABLE_ROLE)
         if isinstance(table, TableInfo):
             self.table_chosen.emit(table)
@@ -394,13 +546,19 @@ class TableSidebar(QWidget):
             menu.exec(self.__tree.viewport().mapToGlobal(pos))
 
     def context_menu(self, item: QTreeWidgetItem) -> QMenu | None:
-        """Menu for ``item``: prepare the SELECT (tables), prepare the
-        SELECT of the column or add it to the SELECT (columns), and copy the
-        name."""
+        """Menu for ``item``: make it the active database (databases),
+        prepare the SELECT (tables), prepare the SELECT of the column or add
+        it to the SELECT (columns), and copy the name."""
+        database = item.data(0, TableSidebar.__DATABASE_ROLE)
         table = item.data(0, TableSidebar.__TABLE_ROLE)
         column = item.data(0, TableSidebar.__COLUMN_ROLE)
         menu = QMenu(self)
-        if isinstance(table, TableInfo):
+        if database is not None:
+            use = menu.addAction(TableSidebar.USE_TEXT)
+            use.setEnabled(database != self.__active)
+            use.triggered.connect(lambda: self.database_selected.emit(database))
+            name = database
+        elif isinstance(table, TableInfo):
             prepare = menu.addAction(TableSidebar.PREPARE_TEXT)
             prepare.triggered.connect(lambda: self.table_chosen.emit(table))
             name = table.name

@@ -34,7 +34,10 @@ class TestMainWindowCaution(MainWindowTestBase):
     def save(self, window, *, caution: bool):
         return window.save_connection(
             ConnectionConfig(
-                host="db", database="app", username="rw", caution_mode=caution
+                host="db",
+                database="app",
+                username="rw",
+                caution_databases=["app"] if caution else [],
             ),
             "pw",
             remember=False,
@@ -49,8 +52,8 @@ class TestMainWindowCaution(MainWindowTestBase):
             timeout=self.WAIT_MS,
         )
         text = window.message_label.text()
-        assert "Connection refused" in text and "UPDATE" in text
-        assert "Caution mode" in text
+        assert "Connection refused" in text and "app (UPDATE)" in text
+        assert "caution mode" in text
         assert not window.caution_active
         assert self.window_color(window) == self.default_color(window)
 
@@ -106,3 +109,33 @@ class TestMainWindowCaution(MainWindowTestBase):
         titles = [a.text() for a in window.connections_menu.actions()]
         expected = ConnectionsMenu.CAUTION_TITLE.format(profile.display_name)
         assert expected in titles
+
+    def test_caution_label_names_the_databases(self, qtbot, window, connector):
+        def configure(conn):
+            conn.grants = [
+                "GRANT SELECT ON *.* TO `rw`@`%`",
+                "GRANT INSERT ON `shop`.* TO `rw`@`%`",
+            ]
+            conn.databases = ["app", "shop"]
+
+        connector.configure = configure
+        window.save_connection(
+            ConnectionConfig(
+                host="db",
+                username="rw",
+                all_databases=True,
+                caution_databases=["shop"],
+            ),
+            "pw",
+            remember=False,
+        )
+        window.toggle_connection()
+        qtbot.waitUntil(
+            lambda: window.state == ConnectionState.CONNECTED,
+            timeout=self.WAIT_MS,
+        )
+        assert window.caution_active
+        assert window.account_check.write_databases == ("shop",)
+        label = window.state_label.text()
+        assert "{} (shop)".format(MainWindow.CAUTION_LABEL) in label
+        assert "shop (INSERT)" in window.message_label.text()

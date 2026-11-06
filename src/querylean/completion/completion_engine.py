@@ -59,14 +59,21 @@ class CompletionEngine:
     def complete(self, text: str, position: int) -> CompletionResult:
         """Ranked proposals for the cursor at ``position`` in ``text``."""
         context = StatementAnalyzer.analyze(text, position)
-        missing: list[str] = []
+        # (database, table) whose columns are not loaded; (database, "")
+        # for a database whose tables are not loaded.
+        missing: list[tuple[str, str]] = []
         groups = self.__candidates(context, missing)
         items = CompletionEngine.__rank(context.prefix, groups)
-        return CompletionResult(context, items, tuple(missing))
+        return CompletionResult(
+            context,
+            items,
+            tuple(m for m in missing if m[1]),
+            tuple(m[0] for m in missing if not m[1]),
+        )
 
     # ------------------------------------------------------------ candidates
     def __candidates(
-        self, context: StatementContext, missing: list[str]
+        self, context: StatementContext, missing: list[tuple[str, str]]
     ) -> list[tuple[int, list[CompletionItem]]]:
         """Proposals grouped by priority (lower first)."""
         kind = context.kind
@@ -87,7 +94,7 @@ class CompletionEngine:
                 )
             ]
         if kind == StatementContext.TABLE_NAME:
-            return [(0, self.__tables(context))]
+            return [(0, self.__tables(context, None, missing, databases=True))]
         if kind == StatementContext.AFTER_TABLE:
             return [
                 (
@@ -131,58 +138,81 @@ class CompletionEngine:
                 )
             )
         if typed:
-            groups.append((5, self.__tables(context)))
+            groups.append(
+                (5, self.__tables(context, None, missing, databases=True))
+            )
         return groups
 
     def __qualified(
-        self, context: StatementContext, missing: list[str]
+        self, context: StatementContext, missing: list[tuple[str, str]]
     ) -> list[CompletionItem]:
         """Columns of the table (or alias) before the dot, or the tables
         of the database before the dot."""
+        schema = self.__schema
         qualifier = context.qualifier
-        database = self.__schema.database.casefold()
         name = qualifier[-1]
-        if len(qualifier) >= 2 and qualifier[-2].casefold() != database:
-            return []
+        if len(qualifier) >= 2:
+            database = schema.find_database(qualifier[-2])
+            if database is None:
+                return []
+            return self.__column_items(context, name, database, missing)
         if context.expects_table:
-            if name.casefold() == database:
-                return self.__tables(context, ctes=False)
-            return []
-        table: str | None = None
+            database = schema.find_database(name)
+            if database is None:
+                return []
+            return self.__tables(context, database, missing, ctes=False)
         for reference in context.references:
             if reference.matches(name):
                 if reference.table is None:
                     return []  # derived table: columns unknown
-                table = reference.table
-                break
-        if table is None:
-            if any(cte.casefold() == name.casefold() for cte in context.ctes):
-                return []
-            if self.__schema.table(name) is not None:
-                table = name
-            elif len(qualifier) == 1 and name.casefold() == database:
-                return self.__tables(context, ctes=False)
-            else:
-                return []
-        columns = self.__columns(table, missing)
+                database = self.__database_of(reference)
+                if database is None:
+                    return []
+                return self.__column_items(
+                    context, reference.table, database, missing
+                )
+        if any(cte.casefold() == name.casefold() for cte in context.ctes):
+            return []
+        if schema.table(name) is not None:
+            return self.__column_items(context, name, schema.database, missing)
+        database = schema.find_database(name)
+        if database is not None:
+            return self.__tables(context, database, missing, ctes=False)
+        return []
+
+    def __column_items(
+        self,
+        context: StatementContext,
+        table: str,
+        database: str,
+        missing: list[tuple[str, str]],
+    ) -> list[CompletionItem]:
         return [
             self.__column_item(context, column, table, None)
-            for column in columns
+            for column in self.__columns(table, database, missing)
         ]
 
+    def __database_of(self, reference: TableReference) -> str | None:
+        """Database of ``reference``: its qualifier, if known, or the
+        active database."""
+        if not reference.schema:
+            return self.__schema.database
+        return self.__schema.find_database(reference.schema)
+
     def __scope_columns(
-        self, context: StatementContext, missing: list[str]
+        self, context: StatementContext, missing: list[tuple[str, str]]
     ) -> list[CompletionItem]:
         """Columns of the tables of the statement. A name found in more
         than one table is inserted qualified (``alias.column``)."""
-        database = self.__schema.database.casefold()
         scope: list[tuple[TableReference, tuple[ColumnInfo, ...]]] = []
         for reference in context.references:
             if reference.table is None:
                 continue
-            if reference.schema and reference.schema.casefold() != database:
+            database = self.__database_of(reference)
+            if database is None:
                 continue
-            scope.append((reference, self.__columns(reference.table, missing)))
+            columns = self.__columns(reference.table, database, missing)
+            scope.append((reference, columns))
         counts: dict[str, int] = {}
         for _, columns in scope:
             for column in columns:
@@ -254,9 +284,18 @@ class CompletionEngine:
         return items
 
     def __tables(
-        self, context: StatementContext, *, ctes: bool = True
+        self,
+        context: StatementContext,
+        database: str | None,
+        missing: list[tuple[str, str]],
+        *,
+        ctes: bool = True,
+        databases: bool = False,
     ) -> list[CompletionItem]:
-        """Tables, views and (with ``ctes``) WITH queries."""
+        """Tables and views of ``database`` (default: the active one),
+        with ``ctes`` the WITH queries and with ``databases`` the other
+        databases (inserted with their dot, to continue with a table)."""
+        schema = self.__schema
         items = []
         if ctes:
             for cte in context.ctes:
@@ -268,7 +307,11 @@ class CompletionEngine:
                         insert_text=self.__name(context, cte),
                     )
                 )
-        for table in self.__schema.tables:
+        tables = schema.tables_of(database)
+        name = schema.database if database is None else database
+        if tables is None and name:
+            missing.append((name, ""))
+        for table in tables or ():
             kind = (
                 CompletionKind.VIEW if table.is_view else CompletionKind.TABLE
             )
@@ -280,18 +323,31 @@ class CompletionEngine:
                     insert_text=self.__name(context, table.name),
                 )
             )
+        if databases and len(schema.databases) > 1 and not context.quoted:
+            for other in schema.databases:
+                items.append(
+                    CompletionItem(
+                        other,
+                        CompletionKind.DATABASE,
+                        detail=CompletionKind.DATABASE.label,
+                        insert_text="{}.".format(
+                            SqlVocabulary.identifier(other)
+                        ),
+                    )
+                )
         return items
 
     def __columns(
-        self, table: str, missing: list[str]
+        self, table: str, database: str, missing: list[tuple[str, str]]
     ) -> tuple[ColumnInfo, ...]:
-        """Columns of ``table``; a listed table whose columns are not loaded
-        is added to ``missing``."""
-        columns = self.__schema.columns_of(table)
+        """Columns of ``table`` in ``database``; a listed table whose
+        columns are not loaded is added to ``missing``."""
+        columns = self.__schema.columns_of(table, database)
         if columns is None:
-            listed = self.__schema.table(table)
-            if listed is not None and listed.name not in missing:
-                missing.append(listed.name)
+            listed = self.__schema.table(table, database)
+            entry = (database, listed.name if listed else "")
+            if listed is not None and entry not in missing:
+                missing.append(entry)
             return ()
         return columns
 

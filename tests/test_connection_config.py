@@ -62,19 +62,50 @@ class TestConnectionConfig:
         assert cfg.username == "ro"
         assert ConnectionConfig.from_dict("not a dict") == ConnectionConfig()
 
-    def test_caution_mode_is_off_by_default_and_serialised(self):
+    def test_caution_databases_default_and_serialised(self):
+        assert ConnectionConfig().caution_databases == ()
         assert ConnectionConfig().caution_mode is False
-        cfg = ConnectionConfig(database="d", username="u", caution_mode=True)
-        assert cfg.to_dict()["caution_mode"] is True
+        cfg = ConnectionConfig(
+            database="d", username="u", caution_databases=["d", "x"]
+        )
+        assert cfg.caution_mode is True
+        assert cfg.to_dict()["caution_databases"] == ["d", "x"]
         assert ConnectionConfig.from_dict(cfg.to_dict()) == cfg
-        assert cfg.copy().caution_mode is True
+        assert cfg.copy().caution_databases == ("d", "x")
+        assert hash(cfg) == hash(cfg.copy())
 
-    def test_caution_mode_accepts_only_booleans(self):
-        for value in (1, "true", "yes", None, [True]):
-            cfg = ConnectionConfig.from_dict({"caution_mode": value})
-            assert cfg.caution_mode is False, value
+    def test_caution_databases_are_cleaned(self):
         cfg = ConnectionConfig()
-        cfg.caution_mode = 1
-        assert cfg.caution_mode is False
-        # Files written before 1.4 have no caution_mode key.
+        cfg.caution_databases = [" a ", "", "a", "b", 3, None]
+        assert cfg.caution_databases == ("a", "b")
+        cfg.caution_databases = "solo"
+        assert cfg.caution_databases == ("solo",)
+        for value in (1, "x", None, {"a": 1}):
+            loaded = ConnectionConfig.from_dict({"caution_databases": value})
+            assert loaded.caution_databases == (), value
+
+    def test_legacy_caution_mode_accepts_its_database(self):
+        # Up to 1.7 caution mode was one flag for the connection.
+        legacy = {"database": "app", "caution_mode": True}
+        assert ConnectionConfig.from_dict(legacy).caution_databases == ("app",)
+        for value in (1, "true", False, None):
+            loaded = ConnectionConfig.from_dict(
+                {"database": "app", "caution_mode": value}
+            )
+            assert loaded.caution_databases == (), value
         assert ConnectionConfig.from_dict({"host": "db"}).caution_mode is False
+        assert "caution_mode" not in ConnectionConfig().to_dict()
+
+    def test_all_databases(self):
+        cfg = ConnectionConfig(host="db", username="ro", all_databases=True)
+        assert cfg.is_complete()  # the database is optional
+        assert cfg.default_name() == "ro@db/*"
+        assert cfg.scope_label() == "*"
+        assert ConnectionConfig.from_dict(cfg.to_dict()).all_databases
+        assert ConnectionConfig.from_dict(
+            {"all_databases": 1}
+        ).all_databases is (False)
+        assert (
+            "Database"
+            in ConnectionConfig(host="db", username="ro").missing_fields()
+        )

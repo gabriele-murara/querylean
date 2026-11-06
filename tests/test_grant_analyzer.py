@@ -101,3 +101,52 @@ class TestGrantAnalyzer:
         )
         assert not privileges.verified
         assert not privileges.read_only
+
+    @pytest.mark.parametrize(
+        ("line", "database"),
+        [
+            ("GRANT INSERT ON *.* TO `u`@`%`", None),
+            ("GRANT INSERT ON `app`.* TO `u`@`%`", "app"),
+            ("GRANT INSERT ON `app`.`t` TO `u`@`%`", "app"),
+            ("GRANT INSERT ON app.* TO u@'%'", "app"),
+            ("GRANT INSERT ON `a``b`.* TO `u`@`%`", "a`b"),
+            ("GRANT INSERT ON `on db`.* TO `u`@`%`", "on db"),
+            ("GRANT EXECUTE ON PROCEDURE `app`.`p` TO `u`@`%`", "app"),
+            ("GRANT EXECUTE ON FUNCTION `app`.`f` TO `u`@`%`", "app"),
+            ("GRANT PROXY ON ''@'' TO 'root'@'localhost'", None),
+            ("GRANT PROXY ON `x`@`%` TO `u`@`%`", None),
+            ("GRANT INSERT ON `app\\_x`.* TO `u`@`%`", "app\\_x"),
+        ],
+    )
+    def test_database_of_each_grant(self, line, database):
+        privileges = GrantAnalyzer.analyze([line])
+        assert [s.database for s in privileges.scopes] == [database]
+
+    def test_privileges_by_database(self):
+        privileges = GrantAnalyzer.analyze(
+            [
+                "GRANT SELECT, PROCESS ON *.* TO `u`@`%`",
+                "GRANT INSERT ON `app`.* TO `u`@`%`",
+                "GRANT SELECT ON `ro`.* TO `u`@`%` WITH GRANT OPTION",
+                "GRANT SELECT ON `clean`.* TO `u`@`%`",
+            ]
+        )
+        assert privileges.privileges_on("app") == ("PROCESS", "INSERT")
+        assert privileges.privileges_on("ro") == (
+            "PROCESS",
+            GrantAnalyzer.GRANT_OPTION,
+        )
+        assert privileges.privileges_on("clean") == ("PROCESS",)
+        assert privileges.writable("clean")
+
+    def test_read_grants_do_not_make_a_database_writable(self):
+        privileges = GrantAnalyzer.analyze(
+            [
+                "GRANT USAGE ON *.* TO `u`@`%`",
+                "GRANT SELECT, SHOW VIEW ON `app`.* TO `u`@`%`",
+                "GRANT INSERT ON `other`.* TO `u`@`%`",
+            ]
+        )
+        assert not privileges.writable("app")
+        assert privileges.writable("other")
+        assert privileges.describe_database("other") == "INSERT"

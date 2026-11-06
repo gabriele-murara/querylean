@@ -26,7 +26,7 @@ class TestMainWindowSidebar(MainWindowTestBase):
     @classmethod
     def wait_tables(cls, qtbot, window, count) -> None:
         qtbot.waitUntil(
-            lambda: window.sidebar.tree_widget.topLevelItemCount() == count,
+            lambda: len(window.sidebar.tables()) == count,
             timeout=cls.WAIT_MS,
         )
 
@@ -63,11 +63,13 @@ class TestMainWindowSidebar(MainWindowTestBase):
         self.wait_tables(qtbot, window, 2)
         window.editor.setPlainText("SELECT 1")
         tree = window.sidebar.tree_widget
-        center = tree.visualItemRect(tree.topLevelItem(0)).center()
+        center = tree.visualItemRect(
+            window.sidebar.table_item("customers")
+        ).center()
         qtbot.mouseClick(tree.viewport(), Qt.MouseButton.LeftButton, pos=center)
         expected = "SELECT * FROM `customers` LIMIT 1;"
         assert window.editor.toPlainText() == expected
-        assert tree.topLevelItem(0).isExpanded()
+        assert window.sidebar.table_item("customers").isExpanded()
         assert window.running is False
         # The second click of a double click changes nothing more.
         qtbot.mousePress(tree.viewport(), Qt.MouseButton.LeftButton, pos=center)
@@ -102,7 +104,7 @@ class TestMainWindowSidebar(MainWindowTestBase):
             lambda: window.state == ConnectionState.DISCONNECTED,
             timeout=self.WAIT_MS,
         )
-        assert window.sidebar.tree_widget.topLevelItemCount() == 0
+        assert len(window.sidebar.tables()) == 0
         assert window.sidebar.status_label.text() == TableSidebar.NOT_CONNECTED
         window.refresh_tables()  # ignored when disconnected
         assert window.sidebar.status_label.text() == TableSidebar.NOT_CONNECTED
@@ -119,7 +121,7 @@ class TestMainWindowSidebar(MainWindowTestBase):
             ),
             timeout=self.WAIT_MS,
         )
-        assert window.sidebar.tree_widget.topLevelItemCount() == 0
+        assert len(window.sidebar.tables()) == 0
         assert window.sidebar.refresh_button.isEnabled()
         assert window.state == ConnectionState.CONNECTED
 

@@ -41,7 +41,7 @@ class QueryBookmark:
     def target_of(config: ConnectionConfig) -> str:
         """Target of the sessions opened with ``config``."""
         return "{}@{}:{}/{}".format(
-            config.username, config.host, config.port, config.database
+            config.username, config.host, config.port, config.scope_label()
         )
 
     @staticmethod

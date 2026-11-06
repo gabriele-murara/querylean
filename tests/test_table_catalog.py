@@ -123,3 +123,22 @@ class TestTableCatalog:
     )
     def test_selected_columns(self, statement, columns):
         assert TableInfo("my t").selected_columns(statement) == columns
+
+    def test_qualified_statements(self):
+        table = TableInfo("t", database="my db")
+        assert table.reference == "`my db`.`t`"
+        assert table.select_statement == "SELECT * FROM `my db`.`t` LIMIT 1;"
+        statement = table.columns_statement(["a", "b"])
+        assert statement == "SELECT `a`, `b` FROM `my db`.`t` LIMIT 1;"
+        assert table.selected_columns(statement) == ["a", "b"]
+        # The same table of another database is another preview.
+        assert TableInfo("t").selected_columns(statement) is None
+        assert ReadOnlyValidator().validate(statement).ok
+        assert TableCatalog.list_statement("my db") == (
+            "SHOW FULL TABLES FROM `my db`"
+        )
+        assert (
+            ReadOnlyValidator()
+            .validate(TableCatalog.list_statement("my db"))
+            .ok
+        )

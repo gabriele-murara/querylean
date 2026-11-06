@@ -219,7 +219,7 @@ class TestCompletionEngine:
     def test_missing_columns_are_reported(self, engine, schema):
         result = self.complete(engine, "SELECT i.| FROM invoices i")
         assert result.items == ()
-        assert result.missing_tables == ("invoices",)
+        assert result.missing_tables == (("app", "invoices"),)
         # Unknown tables are not requested.
         result = self.complete(engine, "SELECT x.| FROM nowhere x")
         assert result.missing_tables == ()
@@ -245,3 +245,33 @@ class TestCompletionEngine:
         engine = CompletionEngine(schema)
         result = self.complete(engine, "SELECT * FROM |")
         assert len(result.items) == CompletionEngine.MAX_ITEMS
+
+    def test_other_databases(self, schema, engine):
+        schema.set_databases(["app", "shop"])
+        schema.set_tables([TableInfo("orders", database="shop")], "shop")
+        schema.set_columns(
+            "orders",
+            (ColumnInfo("total", "int"), ColumnInfo("code", "int")),
+            "shop",
+        )
+        items = self.complete(engine, "SELECT * FROM sh|").items
+        assert [(i.label, i.insert_text) for i in items] == [("shop", "shop.")]
+        assert self.labels(engine, "SELECT * FROM shop.|") == ["orders"]
+        assert self.labels(engine, "SELECT shop.orders.| FROM x") == [
+            "total",
+            "code",
+        ]
+        assert self.labels(engine, "SELECT o.| FROM shop.orders o") == [
+            "total",
+            "code",
+        ]
+        labels = self.labels(engine, "SELECT | FROM shop.orders o, users u")
+        assert "total" in labels and "email" in labels
+        # Tables of an unknown database are not guessed.
+        assert self.labels(engine, "SELECT * FROM nowhere.|") == []
+
+    def test_tables_of_another_database_are_requested(self, schema, engine):
+        schema.set_databases(["app", "crm"])
+        result = self.complete(engine, "SELECT * FROM crm.|")
+        assert result.items == ()
+        assert result.missing_databases == ("crm",)

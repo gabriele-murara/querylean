@@ -119,8 +119,9 @@ class TestConnectionManager:
         assert info.value.kind == "not_connected"
 
     def test_test_connection_closes_its_connection(self, manager, connector):
-        version, privileges = manager.test_connection(self.CFG, "pw")
-        assert version == "8.0.36" and privileges.read_only
+        version, check = manager.test_connection(self.CFG, "pw")
+        assert version == "8.0.36" and check.privileges.read_only
+        assert not check.caution
         assert not connector.connections[0].is_connected()
         assert not manager.is_connected
 
@@ -137,8 +138,12 @@ class TestConnectionManager:
         assert manager.account_privileges.read_only
         executed = connector.connections[0].executed
         assert ConnectionManager.GRANTS_STATEMENT in executed
+        # One database: the list of databases is not read.
+        assert ConnectionManager.DATABASES_STATEMENT not in executed
+        assert manager.account_check.databases == ("app",)
         manager.disconnect()
         assert manager.account_privileges is None
+        assert manager.account_check is None
 
     @pytest.mark.parametrize(
         "grants",
@@ -154,23 +159,137 @@ class TestConnectionManager:
         with pytest.raises(DatabaseError) as info:
             manager.connect(self.CFG, "pw")
         assert info.value.kind == ConnectionManager.WRITE_ACCOUNT_KIND
-        assert "Caution mode" in info.value.message
+        assert "change data in app" in info.value.message
+        assert "Test connection" in info.value.message
         assert not manager.is_connected
         assert connector.connections[0].closed_by is not None
 
-    def test_caution_mode_allows_write_account(self, manager, connector):
+    def test_writes_on_other_databases_do_not_matter(self, manager, connector):
+        grants = [
+            "GRANT SELECT ON `app`.* TO `ro`@`%`",
+            "GRANT INSERT, DELETE ON `other`.* TO `ro`@`%`",
+            "GRANT UPDATE ON `app2`.`t` TO `ro`@`%`",
+        ]
+        connector.configure = lambda conn: setattr(conn, "grants", grants)
+        manager.connect(self.CFG, "pw")
+        assert manager.is_connected
+        assert not manager.account_check.caution
+        assert not manager.account_privileges.read_only
+
+    def test_wildcard_database_grants_count(self, manager, connector):
+        # In grants "_" is a wildcard unless escaped: "a\\_p%" means
+        # names starting with "a_p".
+        grants = ["GRANT INSERT ON `a\\_p%`.* TO `rw`@`%`"]
+        connector.configure = lambda conn: setattr(conn, "grants", grants)
+        manager.connect(self.CFG, "pw")  # "app" does not match
+        assert not manager.account_check.caution
+        cfg = self.CFG.copy()
+        cfg.database = "a_pp"
+        with pytest.raises(DatabaseError):
+            manager.connect(cfg, "pw")
+
+    def test_accepted_database_allows_write_account(self, manager, connector):
         grants = ["GRANT SELECT, DELETE ON `app`.* TO `rw`@`%`"]
         connector.configure = lambda conn: setattr(conn, "grants", grants)
         cfg = self.CFG.copy()
-        cfg.caution_mode = True
+        cfg.caution_databases = ["app"]
         manager.connect(cfg, "pw")
         assert manager.is_connected
         assert manager.account_privileges.write_privileges == ("DELETE",)
+        assert manager.account_check.write_databases == ("app",)
+        assert manager.account_check.refused == ()
         # The session is read-only in caution mode too.
         executed = connector.connections[0].executed
         assert "SET SESSION TRANSACTION READ ONLY" in executed
-        _, privileges = manager.test_connection(cfg, "pw")
-        assert not privileges.read_only
+
+    def test_test_connection_reports_databases_to_accept(
+        self, manager, connector
+    ):
+        grants = ["GRANT ALL PRIVILEGES ON *.* TO `root`@`%`"]
+        connector.configure = lambda conn: setattr(conn, "grants", grants)
+        _, check = manager.test_connection(self.CFG, "pw")
+        assert check.refused == ("app",)
+        assert check.reason("app") == "ALL PRIVILEGES"
+        assert not manager.is_connected
+
+    def test_all_databases_need_each_acceptance(self, manager, connector):
+        def configure(conn):
+            conn.grants = [
+                "GRANT SELECT ON *.* TO `ro`@`%`",
+                "GRANT INSERT ON `shop`.* TO `ro`@`%`",
+                "GRANT UPDATE ON `crm`.`notes` TO `ro`@`%`",
+            ]
+            conn.databases = ["information_schema", "app", "shop", "crm"]
+
+        connector.configure = configure
+        cfg = ConnectionConfig(host="db", username="ro", all_databases=True)
+        _, check = manager.test_connection(cfg, "pw")
+        assert check.databases == ("information_schema", "app", "shop", "crm")
+        assert check.write_databases == ("shop", "crm")
+        assert check.describe() == "shop (INSERT); crm (UPDATE)"
+        cfg.caution_databases = ["shop"]
+        with pytest.raises(DatabaseError) as info:
+            manager.connect(cfg, "pw")
+        assert "crm (UPDATE)" in info.value.message
+        assert "shop" not in info.value.message
+        cfg.caution_databases = ["shop", "crm"]
+        manager.connect(cfg, "pw")
+        assert manager.account_check.write_databases == ("shop", "crm")
+        # No default database: the driver gets none.
+        assert "database" not in connector.connections[-1].kwargs
+
+    def test_global_privileges_cover_every_database(self, manager, connector):
+        def configure(conn):
+            conn.grants = ["GRANT SELECT, PROCESS ON *.* TO `ro`@`%`"]
+            conn.databases = ["information_schema", "app", "shop"]
+
+        connector.configure = configure
+        cfg = ConnectionConfig(host="db", username="ro", all_databases=True)
+        _, check = manager.test_connection(cfg, "pw")
+        # information_schema can never be changed.
+        assert check.write_databases == ("app", "shop")
+
+    def test_unverified_grants_make_every_database_writable(
+        self, manager, connector
+    ):
+        def configure(conn):
+            conn.grants = ["GRANT `reader`@`%` TO `ro`@`%`"]
+            conn.databases = ["app", "shop"]
+
+        connector.configure = configure
+        cfg = ConnectionConfig(host="db", username="ro", all_databases=True)
+        _, check = manager.test_connection(cfg, "pw")
+        assert check.write_databases == ("app", "shop")
+        assert "could not be verified" in check.reason("app")
+
+    def test_database_list_failure_closes_the_connection(
+        self, manager, connector
+    ):
+        connector.configure = lambda conn: setattr(
+            conn,
+            "databases",
+            mysql_errors.ProgrammingError(msg="denied", errno=1227),
+        )
+        cfg = ConnectionConfig(host="db", username="ro", all_databases=True)
+        with pytest.raises(DatabaseError) as info:
+            manager.connect(cfg, "pw")
+        assert "list of databases" in info.value.message
+        assert connector.connections[0].closed_by is not None
+
+    def test_use_database_survives_reconnection(self, manager, connector):
+        cfg = ConnectionConfig(host="db", username="ro", all_databases=True)
+        manager.connect(cfg, "pw")
+        assert manager.active_database == ""
+        manager.use_database("app")
+        assert connector.connections[0].init_db == ["app"]
+        assert manager.active_database == "app"
+        assert manager.config.all_databases
+        manager.abort_session()
+        manager.ensure_connected()
+        assert connector.connections[1].kwargs["database"] == "app"
+        with pytest.raises(DatabaseError):
+            manager.use_database("nowhere")
+        assert manager.active_database == "app"
 
     def test_write_account_refused_again_on_reconnection(
         self, manager, connector
@@ -203,7 +322,7 @@ class TestConnectionManager:
         self, manager, connector, variables
     ):
         cfg = self.CFG.copy()
-        cfg.caution_mode = True
+        cfg.caution_databases = ["app"]
         connector.configure = lambda conn: setattr(
             conn, "session_variables", variables
         )
