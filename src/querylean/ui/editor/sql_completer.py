@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QAbstractItemView, QCompleter, QWidget
 from querylean.completion.completion_item import CompletionItem
 from querylean.ui.editor.completion_delegate import CompletionDelegate
 from querylean.ui.icons.completion_icons import CompletionIcons
+from querylean.ui.safe_text import SafeText
 
 
 class SqlCompleter(QCompleter):
@@ -68,7 +69,7 @@ class SqlCompleter(QCompleter):
                 CompletionIcons.icon(item.kind), Qt.ItemDataRole.DecorationRole
             )
             if item.tooltip:
-                row.setToolTip(item.tooltip)
+                row.setToolTip(SafeText.tooltip(item.tooltip))
             row.setEditable(False)
             self.__model.appendRow(row)
         popup = self.popup()

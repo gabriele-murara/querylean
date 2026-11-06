@@ -6,6 +6,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QMenu, QWidget
 
 from querylean.bookmarks.query_bookmark import QueryBookmark
+from querylean.ui.safe_text import SafeText
 
 
 class BookmarksMenu(QMenu):
@@ -45,7 +46,9 @@ class BookmarksMenu(QMenu):
             return
         for bookmark in bookmarks:
             entry = self.addAction(bookmark.name)
-            entry.setToolTip(BookmarksMenu.__tooltip(bookmark.sql))
+            entry.setToolTip(
+                SafeText.tooltip(BookmarksMenu.__tooltip(bookmark.sql))
+            )
             entry.triggered.connect(
                 lambda _c=False, n=bookmark.name: self.run_requested.emit(n)
             )

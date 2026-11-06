@@ -227,7 +227,7 @@ Il controllo riguarda i database della connessione: quello configurato, oppure t
 
 La **Caution mode** (modalità attenzione) si accetta **database per database**, nella finestra **New connection…**/**Edit…**:
 
-- **Test connection** elenca in rosso i database della connessione che l'account può modificare, ciascuno con i suoi privilegi e una casella ("shop — INSERT, UPDATE"). Spunta ogni database che accetti; la scelta viene salvata con la connessione e resta valida nei test successivi;
+- **Test connection** elenca in rosso i database della connessione che l'account può modificare, ciascuno con i suoi privilegi e una casella ("shop — INSERT, UPDATE"). Spunta ogni database che accetti; la scelta viene salvata con la connessione e resta valida nei test successivi. Cambiare host, porta, username, database o la casella "tutti i database" toglie la spunta a tutti i database: l'accettazione vale solo per il server e l'account per cui è stata data, quindi va ripetuto il test e vanno rispuntati;
 - un database modificabile non spuntato fa rifiutare la connessione. Se i privilegi cambiano (un nuovo database, un nuovo grant), la connessione viene rifiutata finché non si accettano i nuovi database con un nuovo test;
 - **non cambia nient'altro**: vale lo stesso validatore (solo query di lettura) e la sessione deve essere confermata READ ONLY, altrimenti la connessione viene chiusa;
 - mentre si è connessi, lo stato in basso a destra mostra in rosso "CAUTION: write access (<database>)" (ATTENZIONE: accesso in scrittura), il messaggio di connessione elenca i database e i loro privilegi e nella barra laterale quei database sono in rosa con un'icona di avviso (quelli di sola lettura sono in verde);
@@ -258,6 +258,10 @@ Raccomandazioni:
 - Restringi l'host (`'report_ro'@'10.0.0.%'`) quando possibile.
 - Per limitare colonne o righe visibili, crea **viste dedicate** e concedi `SELECT` solo su quelle.
 - Non usare `root` o account amministrativi. L'applicazione non ne richiede.
+
+### Testo dal server
+
+Nomi di database, tabelle e colonne, commenti, messaggi di errore e valori delle celle arrivano dal server e vengono mostrati **alla lettera**: tooltip, righe di stato e finestre non li interpretano mai come HTML, quindi il markup salvato nel database (immagini, link, tabelle) compare come testo e non viene mai interpretato. I nomi dei database si confrontano con i grant esattamente come li restituisce il server (spazi compresi).
 
 ### Password
 

@@ -262,6 +262,21 @@ class TestConnectionManager:
         assert check.write_databases == ("app", "shop")
         assert "could not be verified" in check.reason("app")
 
+    def test_database_names_keep_their_spaces(self, manager, connector):
+        def configure(conn):
+            conn.grants = [
+                "GRANT SELECT ON *.* TO `ro`@`%`",
+                "GRANT INSERT ON `a  b`.* TO `ro`@`%`",
+                "GRANT DELETE ON `pad `.* TO `ro`@`%`",
+            ]
+            conn.databases = ["a  b", "pad ", "pad"]
+
+        connector.configure = configure
+        cfg = ConnectionConfig(host="db", username="ro", all_databases=True)
+        _, check = manager.test_connection(cfg, "pw")
+        # Neither name escapes its grant because of spaces.
+        assert check.write_databases == ("a  b", "pad ")
+
     def test_database_list_failure_closes_the_connection(
         self, manager, connector
     ):

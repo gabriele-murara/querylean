@@ -27,6 +27,11 @@ class TestGrantScope:
             ("a\\%", "ab", False),
             ("my.db", "my.db", True),
             ("my.db", "myxdb", False),
+            # Grant lines are whitespace-normalised: names must still match.
+            ("a b", "a  b", True),
+            ("a b", "a\tb", True),
+            (" x", "  x", True),
+            ("app ", "app ", True),
         ],
     )
     def test_patterns(self, pattern, database, covered):

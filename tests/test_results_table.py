@@ -66,3 +66,12 @@ class TestResultsTable:
         negative = -dt.timedelta(minutes=1, seconds=30)
         assert ValueFormatter.format_value(negative) == "-00:01:30"
         assert ValueFormatter.full_text(Decimal("1.50")) == "1.50"
+
+    def test_long_values_are_shown_literally_in_tooltips(self, qtbot):
+        table = ResultsTable()
+        qtbot.addWidget(table)
+        stored = "<img src='/etc/passwd'><b>{}</b>".format("x" * 200)
+        table.set_result(["note"], [(stored,)])
+        model = table.results_model
+        tip = model.data(model.index(0, 0), Qt.ItemDataRole.ToolTipRole)
+        assert "<img" not in tip and "&lt;img" in tip

@@ -15,6 +15,7 @@ from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import QWidget
 
 from querylean.ui.results.value_formatter import ValueFormatter
+from querylean.ui.safe_text import SafeText
 
 
 class ResultsModel(QAbstractTableModel):
@@ -91,7 +92,8 @@ class ResultsModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.ToolTipRole and value is not None:
             text = ValueFormatter.format_value(value)
             if len(text) > ResultsModel.__TOOLTIP_MIN_CHARS:
-                return text[: ResultsModel.MAX_CELL_CHARS]
+                # Stored data: shown literally, never rendered as HTML.
+                return SafeText.tooltip(text[: ResultsModel.MAX_CELL_CHARS])
             return None
         if value is None:
             if role == Qt.ItemDataRole.FontRole:

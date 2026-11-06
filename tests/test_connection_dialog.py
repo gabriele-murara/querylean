@@ -156,3 +156,31 @@ class TestConnectionDialog(MainWindowTestBase):
         assert dialog.caution_list.item(1).text() == "crm — DELETE"
         dialog.set_accepted("crm")
         assert dialog.config().caution_databases == ("crm",)
+
+    def test_changing_the_target_withdraws_the_acceptance(self, qtbot, window):
+        config = ConnectionConfig(
+            host="db", database="app", username="ro", caution_databases=["app"]
+        )
+        for change in (
+            lambda d: d.host.setText("other"),
+            lambda d: d.port.setValue(3307),
+            lambda d: d.username.setText("root"),
+            lambda d: d.database.setText("app2"),
+            lambda d: d.all_databases.setChecked(True),
+        ):
+            dialog = ConnectionDialog(
+                config, "pw", window.worker, keyring_available=True
+            )
+            qtbot.addWidget(dialog)
+            assert dialog.accepted_databases() == ["app"]
+            change(dialog)
+            assert dialog.accepted_databases() == []
+            assert dialog.config().caution_databases == ()
+        # Other fields keep it.
+        dialog = ConnectionDialog(
+            config, "pw", window.worker, keyring_available=True
+        )
+        qtbot.addWidget(dialog)
+        dialog.name.setText("Production")
+        dialog.query_timeout.setValue(60)
+        assert dialog.accepted_databases() == ["app"]

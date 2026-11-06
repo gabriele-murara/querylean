@@ -1,4 +1,4 @@
-"""A table (or view) of the current database."""
+"""A table or view, with the preview queries built for it."""
 
 from __future__ import annotations
 

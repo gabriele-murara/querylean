@@ -2,6 +2,7 @@
 
 from querylean.bookmarks.query_bookmark import QueryBookmark
 from querylean.ui.main.bookmarks_menu import BookmarksMenu
+from querylean.ui.safe_text import SafeText
 
 
 class TestBookmarksMenu:
@@ -24,7 +25,9 @@ class TestBookmarksMenu:
         menu = BookmarksMenu()
         menu.set_bookmarks(self.BOOKMARKS)
         assert menu.names() == ["Users", "Orders"]
-        assert menu.actions()[0].toolTip() == "SELECT * FROM users"
+        assert menu.actions()[0].toolTip() == SafeText.tooltip(
+            "SELECT * FROM users"
+        )
         deletable = [a.text() for a in menu.delete_menu.actions()]
         assert deletable == ["Users", "Orders"]
         with qtbot.waitSignal(menu.run_requested) as run:

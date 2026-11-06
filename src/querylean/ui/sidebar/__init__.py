@@ -1,1 +1,1 @@
-"""Side bar listing the tables of the current database."""
+"""Side bar with the databases, tables and columns of the session."""

@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 from querylean.app.app_info import AppInfo
 from querylean.config.connection_config import ConnectionConfig
 from querylean.database.privileges.account_check import AccountCheck
+from querylean.ui.safe_text import SafeText
 from querylean.ui.worker.db_worker import DbWorker
 
 
@@ -139,6 +140,8 @@ class ConnectionDialog(QDialog):
         hint.setStyleSheet("color: palette(placeholder-text);")
 
         self.__status = QLabel()
+        # Server messages and database names: never rendered as HTML.
+        self.__status.setTextFormat(Qt.TextFormat.PlainText)
         self.__status.setWordWrap(True)
         self.__status.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
@@ -170,6 +173,11 @@ class ConnectionDialog(QDialog):
         worker.test_finished.connect(self.__on_test_finished)
         for field in (self.__host, self.__database, self.__username):
             field.textChanged.connect(self.__update_name_placeholder)
+            # Databases accepted for another server, account or scope are
+            # not accepted for this one: test again and check them again.
+            field.textChanged.connect(self.__withdraw_acceptance)
+        self.__port.valueChanged.connect(self.__withdraw_acceptance)
+        self.__all_databases.toggled.connect(self.__withdraw_acceptance)
         self.__on_toggle_all(config.all_databases)
 
     # ------------------------------------------------------------------ widgets
@@ -379,8 +387,13 @@ class ConnectionDialog(QDialog):
             Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
         )
         tip = "Check to accept {} in caution mode: the account can change it"
-        item.setToolTip(tip.format(database))
+        item.setToolTip(SafeText.tooltip(tip.format(database)))
         self.__caution_list.addItem(item)
+
+    def __withdraw_acceptance(self, *_: object) -> None:
+        """Uncheck every database: the connection now points elsewhere."""
+        for i in range(self.__caution_list.count()):
+            self.__caution_list.item(i).setCheckState(Qt.CheckState.Unchecked)
 
     def __update_caution(self) -> None:
         shown = self.__caution_list.count() > 0

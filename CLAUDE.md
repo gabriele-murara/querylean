@@ -120,7 +120,7 @@ src/querylean/
     connection/        ConnectionParams (kwargs del driver, password mascherata, with_database), ConnectionManager (sessione READ ONLY verificata, controllo dei grant per database, use_database con COM_INIT_DB)
     privileges/        GrantAnalyzer (analisi fail-closed di SHOW GRANTS) → AccountPrivileges (GrantScope per grant: database/jolly e privilegi),
                        AccountCheck (database della connessione scrivibili, accettati, rifiutati)
-    execution/         QueryExecutor (execute/cancel), QueryResult
+    execution/         QueryExecutor (execute/cancel), QueryResult, DriverValue (testo dei valori del driver: bytes → UTF-8)
     schema/            DatabaseCatalog (SHOW DATABASES), TableCatalog (SHOW FULL TABLES [FROM db] tramite QueryExecutor), TableInfo (database, reference, select_statement),
                        MySqlIdentifier (quoting con backtick), MySqlLiteral (stringhe con ' e \ escapati),
                        ColumnCatalog (information_schema.COLUMNS e SHOW FULL COLUMNS tramite QueryExecutor), ColumnInfo
@@ -133,6 +133,7 @@ src/querylean/
     editor/            SqlEditor (autocompletamento), SqlCompleter (popup), CompletionDelegate, SqlHighlighter, LineNumberArea
     results/           ResultsTable, ResultsModel, ValueFormatter
     sidebar/           TableSidebar (albero database → tabelle → colonne con filtro; database_selected → MainWindow.select_database; table_chosen → MainWindow.use_table, column_chosen → MainWindow.use_column, column_added → add_column)
+    safe_text.py       SafeText (tooltip con testo non fidato: escape HTML)
     worker/            DbWorker (QObject nel thread DB), DbThread (avvio/arresto), ExportThread (scrittura dell'export)
 tests/                 test_<classe>.py; fakes/; support/; integration/
 ```
@@ -234,6 +235,12 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
   - l'inserimento sostituisce la parola sotto il cursore in un solo passo annullabile; nessuna query viene eseguita dall'autocompletamento;
   - le colonne mancanti si chiedono con `SqlEditor.columns_needed` → `MainWindow.load_columns`; quando arrivano, `refresh_completion` aggiorna l'elenco.
 - **Query rifiutate dal validatore** (kind `rejected`): oltre al messaggio rosso, `MainWindow.read_only_notice` (finestra aperta con `open()`, mai bloccante) spiega che si eseguono solo query di lettura; compare **solo** in quel caso, mai alla connessione (lì basta la tinta rosa della modalità attenzione).
+- **Testo non fidato nei widget** (dati del server, query, nomi scritti dall'utente): mai interpretato come HTML.
+  - Tooltip sempre tramite `SafeText.tooltip` (anche le celle della tabella risultati);
+  - `QLabel` con testo variabile in `Qt.TextFormat.PlainText` (stato della barra, stato della finestra di connessione, messaggi); la riga di stato in rich text usa `html.escape`;
+  - `QMessageBox`: `setTextFormat(PlainText)`, oppure `MainWindow.__confirm`/`__warn`, che fanno l'escape.
+- **Nomi dei database**: si usano esattamente come li restituisce il server (`DriverValue.text`, mai `strip`); `GrantScope.covers` confronta anche con gli spazi compattati, come le righe dei grant normalizzate da `GrantAnalyzer`.
+- **Accettazione della modalità attenzione** nella finestra: cambiare host, porta, username, database o `all_databases` toglie la spunta a tutti i database (`__withdraw_acceptance`).
 - **Errori**: all'utente solo messaggi comprensibili (`DatabaseError.message`), mai stack trace; i dettagli vanno nel log.
 - **Tabella risultati**: non modificabile. NULL è mostrato come `NULL` in corsivo e si distingue da `""`. Nella copia TSV il NULL diventa una cella vuota.
 

@@ -1,4 +1,5 @@
-"""Pink tint of the window background for accounts that are not read-only."""
+"""Pink tint of the window background while the account can change some
+database of the session."""
 
 from __future__ import annotations
 

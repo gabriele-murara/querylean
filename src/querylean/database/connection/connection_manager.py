@@ -13,6 +13,7 @@ from querylean.config.connection_config import ConnectionConfig
 from querylean.database.connection.connection_params import ConnectionParams
 from querylean.database.errors.database_error import DatabaseError
 from querylean.database.errors.error_translator import ErrorTranslator
+from querylean.database.execution.driver_value import DriverValue
 from querylean.database.privileges.account_check import AccountCheck
 from querylean.database.privileges.account_privileges import AccountPrivileges
 from querylean.database.privileges.grant_analyzer import GrantAnalyzer
@@ -281,7 +282,7 @@ class ConnectionManager:
                 continue
             value = rows[0][0] if rows and rows[0] else None
             break
-        if ConnectionManager.__text(value) != "1":
+        if DriverValue.text(value).strip() != "1":
             ConnectionManager.__log.warning(
                 "The server did not confirm a read-only session (value {!r})",
                 value,
@@ -299,7 +300,7 @@ class ConnectionManager:
             rows = ConnectionManager.__fetch(
                 conn, ConnectionManager.GRANTS_STATEMENT
             )
-            lines = [ConnectionManager.__text(row[0]) for row in rows if row]
+            lines = [DriverValue.text(row[0]) for row in rows if row]
             privileges = GrantAnalyzer.analyze(lines)
         except Exception as exc:
             ConnectionManager.__log.warning(
@@ -351,7 +352,9 @@ class ConnectionManager:
                 "Could not list the databases: {!r}", exc
             )
             raise DatabaseError(ConnectionManager.__DATABASES_FAILED) from None
-        return [ConnectionManager.__text(row[0]) for row in rows if row]
+        # Names exactly as the server returns them (no stripping): grants
+        # are matched against them.
+        return [DriverValue.text(row[0]) for row in rows if row]
 
     @staticmethod
     def __fetch(conn: Any, statement: str) -> list[Any]:
@@ -362,13 +365,6 @@ class ConnectionManager:
             return list(cursor.fetchall())
         finally:
             cursor.close()
-
-    @staticmethod
-    def __text(value: object) -> str:
-        """Driver value as text (some servers return bytes)."""
-        if isinstance(value, (bytes, bytearray)):
-            return bytes(value).decode("utf-8", errors="replace").strip()
-        return "" if value is None else str(value).strip()
 
     @staticmethod
     def __close_quietly(conn: Any) -> None:

@@ -11,7 +11,8 @@ class QueryBookmark:
     """Query saved with a name for a target database.
 
     ``target`` identifies the database and account the query was saved for
-    (``user@host:port/database``, see ``target_of``): a bookmark is offered
+    (``user@host:port/database``, ``/*`` with all the databases, see
+    ``target_of``): a bookmark is offered
     and executed only on a session with the same target.
     """
 

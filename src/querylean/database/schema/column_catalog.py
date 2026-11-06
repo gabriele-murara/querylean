@@ -1,9 +1,8 @@
-"""Listing of the columns of the tables of the current database."""
+"""Listing of the columns of the tables of a database."""
 
 from __future__ import annotations
 
-from typing import Any
-
+from querylean.database.execution.driver_value import DriverValue
 from querylean.database.execution.query_executor import QueryExecutor
 from querylean.database.schema.column_info import ColumnInfo
 from querylean.database.schema.mysql_identifier import MySqlIdentifier
@@ -75,16 +74,16 @@ class ColumnCatalog:
         for row in result.rows:
             if len(row) < 8:
                 continue
-            last = ColumnCatalog.__text(row[0])
+            last = DriverValue.text(row[0])
             tables.setdefault(last, []).append(
                 ColumnInfo(
-                    ColumnCatalog.__text(row[1]),
-                    ColumnCatalog.__text(row[2]),
-                    nullable=ColumnCatalog.__text(row[3]).upper() == "YES",
-                    key=ColumnCatalog.__text(row[4]),
-                    default=ColumnCatalog.__optional(row[5]),
-                    extra=ColumnCatalog.__text(row[6]),
-                    comment=ColumnCatalog.__text(row[7]),
+                    DriverValue.text(row[1]),
+                    DriverValue.text(row[2]),
+                    nullable=DriverValue.text(row[3]).upper() == "YES",
+                    key=DriverValue.text(row[4]),
+                    default=DriverValue.optional_text(row[5]),
+                    extra=DriverValue.text(row[6]),
+                    comment=DriverValue.text(row[7]),
                 )
             )
         if result.truncated and last:
@@ -114,28 +113,14 @@ class ColumnCatalog:
                 continue
             columns.append(
                 ColumnInfo(
-                    ColumnCatalog.__text(name),
-                    ColumnCatalog.__text(values.get("type", "")),
-                    nullable=ColumnCatalog.__text(
-                        values.get("null", "")
-                    ).upper()
+                    DriverValue.text(name),
+                    DriverValue.text(values.get("type", "")),
+                    nullable=DriverValue.text(values.get("null", "")).upper()
                     == "YES",
-                    key=ColumnCatalog.__text(values.get("key", "")),
-                    default=ColumnCatalog.__optional(values.get("default")),
-                    extra=ColumnCatalog.__text(values.get("extra", "")),
-                    comment=ColumnCatalog.__text(values.get("comment", "")),
+                    key=DriverValue.text(values.get("key", "")),
+                    default=DriverValue.optional_text(values.get("default")),
+                    extra=DriverValue.text(values.get("extra", "")),
+                    comment=DriverValue.text(values.get("comment", "")),
                 )
             )
         return tuple(columns)
-
-    @staticmethod
-    def __optional(value: Any) -> str | None:
-        return None if value is None else ColumnCatalog.__text(value)
-
-    @staticmethod
-    def __text(value: Any) -> str:
-        if value is None:
-            return ""
-        if isinstance(value, bytes | bytearray):
-            return bytes(value).decode("utf-8", errors="replace")
-        return str(value)

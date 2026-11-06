@@ -12,9 +12,12 @@ class GrantScope:
     are not in a database (``PROXY``): they cover every database.
     Otherwise it is the database name as written in the grant, where, as
     in MySQL, ``%`` and ``_`` are wildcards unless escaped with ``\\``.
-    Matching ignores case, so it never covers fewer databases than the
-    server does.
+    Matching ignores case and treats any run of whitespace as one space
+    (``GrantAnalyzer`` normalises grant lines the same way), so it never
+    covers fewer databases than the server does.
     """
+
+    __SPACES = re.compile(r"\s+")
 
     def __init__(
         self, database: str | None, privileges: tuple[str, ...]
@@ -39,7 +42,10 @@ class GrantScope:
         """True when the grant applies to ``database``."""
         if self.__pattern is None:
             return True
-        return self.__pattern.fullmatch(database) is not None
+        return any(
+            self.__pattern.fullmatch(name) is not None
+            for name in (database, GrantScope.__SPACES.sub(" ", database))
+        )
 
     @staticmethod
     def __regex(pattern: str) -> re.Pattern[str]:

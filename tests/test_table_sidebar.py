@@ -7,6 +7,7 @@ from querylean.completion.schema_model import SchemaModel
 from querylean.database.schema.column_info import ColumnInfo
 from querylean.database.schema.table_catalog import TableCatalog
 from querylean.database.schema.table_info import TableInfo
+from querylean.ui.safe_text import SafeText
 from querylean.ui.sidebar.table_sidebar import TableSidebar
 
 
@@ -92,7 +93,7 @@ class TestTableSidebar:
         sidebar.set_tables_error("shop", "Access denied")
         child = sidebar.database_item("shop").child(0)
         assert child.text(0) == TableSidebar.NO_TABLES
-        assert child.toolTip(0) == "Access denied"
+        assert child.toolTip(0) == SafeText.tooltip("Access denied")
         assert sidebar.status_label.text() == "Access denied"
 
     def test_double_click_and_enter_choose_the_table(self, qtbot):
@@ -156,7 +157,7 @@ class TestTableSidebar:
         sidebar.set_columns_error("customers", "Access denied", "app")
         child = sidebar.table_item("customers").child(0)
         assert child.text(0) == TableSidebar.NO_COLUMNS
-        assert child.toolTip(0) == "Access denied"
+        assert child.toolTip(0) == SafeText.tooltip("Access denied")
 
     def test_column_is_chosen(self, qtbot):
         schema = SchemaModel()
@@ -330,3 +331,21 @@ class TestTableSidebar:
         sidebar.set_write_access({"app": "DELETE"})
         sidebar.show_message(TableSidebar.NOT_CONNECTED)
         assert sidebar.is_writable("app") is None
+
+    def test_server_text_is_never_rendered_as_html(self, qtbot):
+        schema = SchemaModel()
+        schema.set_columns(
+            "<b>t</b>",
+            (ColumnInfo("<img src='x'>", comment="<a href='y'>z</a>"),),
+            "app",
+        )
+        sidebar = self.make(qtbot, schema, tables=[TableInfo("<b>t</b>")])
+        item = sidebar.table_item("<b>t</b>")
+        item.setExpanded(True)
+        assert "&lt;b&gt;" in item.toolTip(0)
+        column = item.child(0)
+        assert column.text(0) == "<img src='x'>"  # item text is plain
+        assert "<img" not in column.toolTip(0)
+        assert "<a " not in column.toolTip(0)
+        sidebar.set_error("<b>denied</b>")
+        assert sidebar.status_label.textFormat() == Qt.TextFormat.PlainText

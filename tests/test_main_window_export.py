@@ -143,7 +143,7 @@ class TestMainWindowExport(MainWindowTestBase):
         self.run(qtbot, window, "SELECT n FROM t")
         offered = []
 
-        def dialog(parent, caption, start, filters, selected):
+        def dialog(parent, _caption, start, filters, selected):
             offered.append((Path(start).name, filters))
             return str(tmp_path / "r.json"), selected
 
@@ -164,7 +164,7 @@ class TestMainWindowExport(MainWindowTestBase):
         self.run(qtbot, window, "SELECT n FROM t")
         offered = []
 
-        def dialog(parent, caption, start, filters, selected):
+        def dialog(parent, _caption, start, filters, selected):
             offered.append(filters)
             return str(tmp_path / "r.json"), selected
 

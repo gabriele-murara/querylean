@@ -65,6 +65,7 @@ from querylean.ui.main.connection_state import ConnectionState
 from querylean.ui.main.connections_menu import ConnectionsMenu
 from querylean.ui.main.stop_button import StopButton
 from querylean.ui.results.results_table import ResultsTable
+from querylean.ui.safe_text import SafeText
 from querylean.ui.sidebar.table_sidebar import TableSidebar
 from querylean.ui.worker.db_thread import DbThread
 from querylean.ui.worker.db_worker import DbWorker
@@ -127,7 +128,6 @@ class MainWindow(QMainWindow):
         # another saved connection.
         self.__switching = False
         self.__state = ConnectionState.DISCONNECTED
-        # Privileges of the account of the open session (None when closed).
         # Write access of the account to the databases of the open session.
         self.__check: AccountCheck | None = None
         # Dialog shown when a query is refused because it is not a read.
@@ -306,7 +306,7 @@ class MainWindow(QMainWindow):
 
     @property
     def sidebar(self) -> TableSidebar:
-        """Side bar with the tables of the current database."""
+        """Side bar with the databases, tables and columns of the session."""
         return self.__sidebar
 
     @property
@@ -430,7 +430,9 @@ class MainWindow(QMainWindow):
             MainWindow.__ERROR_STYLE if error else ""
         )
         self.__message_label.setText(text)
-        self.__message_label.setToolTip(tooltip)
+        self.__message_label.setToolTip(
+            SafeText.tooltip(tooltip) if tooltip else ""
+        )
 
     @staticmethod
     def query_preview(sql: str) -> str:
@@ -469,7 +471,7 @@ class MainWindow(QMainWindow):
         try:
             self.__config_manager.connections.save(profile)
         except ConfigError as exc:
-            QMessageBox.warning(self, "Connections", str(exc))
+            self.__warn("Connections", str(exc))
             return None
         self.__profiles = self.__config_manager.connections.load_all()
         self.__remember_session(config, password)
@@ -511,10 +513,9 @@ class MainWindow(QMainWindow):
             return False
         if confirm:
             msg = "Delete the connection “{}”?"
-            answer = QMessageBox.question(
-                self, "Delete connection", msg.format(profile.display_name)
-            )
-            if answer != QMessageBox.StandardButton.Yes:
+            if not self.__confirm(
+                "Delete connection", msg.format(profile.display_name)
+            ):
                 return False
         is_active = profile_id == self.__app_config.active_connection
         if is_active and self.__state == ConnectionState.CONNECTED:
@@ -522,7 +523,7 @@ class MainWindow(QMainWindow):
         try:
             self.__config_manager.connections.delete(profile_id)
         except ConfigError as exc:
-            QMessageBox.warning(self, "Connections", str(exc))
+            self.__warn("Connections", str(exc))
             return False
         self.__profiles = [
             p for p in self.__profiles if p.profile_id != profile_id
@@ -634,12 +635,10 @@ class MainWindow(QMainWindow):
         target = self.session_target
         existing = store.find(self.__session_id, target, name)
         if existing is not None and confirm:
-            answer = QMessageBox.question(
-                self,
+            if not self.__confirm(
                 MainWindow.SAVE_QUERY_TEXT,
                 "Replace the bookmarked query “{}”?".format(existing.name),
-            )
-            if answer != QMessageBox.StandardButton.Yes:
+            ):
                 return None
         if existing is not None:
             name = existing.name
@@ -647,7 +646,7 @@ class MainWindow(QMainWindow):
         try:
             store.add(self.__session_id, bookmark)
         except ConfigError as exc:
-            QMessageBox.warning(self, MainWindow.SAVE_QUERY_TEXT, str(exc))
+            self.__warn(MainWindow.SAVE_QUERY_TEXT, str(exc))
             return None
         self.__reload_bookmarks()
         msg = "Query saved as “{}” for “{}”."
@@ -682,19 +681,17 @@ class MainWindow(QMainWindow):
         if not self.__session_id:
             return False
         if confirm:
-            answer = QMessageBox.question(
-                self,
+            if not self.__confirm(
                 "Delete bookmark",
                 "Delete the bookmarked query “{}”?".format(name),
-            )
-            if answer != QMessageBox.StandardButton.Yes:
+            ):
                 return False
         try:
             deleted = self.__config_manager.bookmarks.remove(
                 self.__session_id, self.session_target, name
             )
         except ConfigError as exc:
-            QMessageBox.warning(self, "Delete bookmark", str(exc))
+            self.__warn("Delete bookmark", str(exc))
             return False
         self.__reload_bookmarks()
         if deleted:
@@ -926,7 +923,8 @@ class MainWindow(QMainWindow):
         status_bar.addPermanentWidget(self.__state_label)
         self.setStatusBar(status_bar)
 
-        # Order: Run, Stop, Export, Connect/Disconnect, Connections, About.
+        # Order: Run, Save query, Bookmarked queries, Export,
+        # Connect/Disconnect, Connections, About.
         self.__connect_icon = ToolbarIcons.connect()
         self.__disconnect_icon = ToolbarIcons.disconnect()
         self.__execute_action = QAction(ToolbarIcons.play(), "Run", self)
@@ -1352,7 +1350,7 @@ class MainWindow(QMainWindow):
         try:
             self.__config_manager.save(self.__app_config)
         except ConfigError as exc:
-            QMessageBox.warning(self, "Configuration", str(exc))
+            self.__warn("Configuration", str(exc))
 
     # --------------------------------------------------------- worker responses
     def __on_watchdog(self) -> None:
@@ -1452,6 +1450,8 @@ class MainWindow(QMainWindow):
             info += extra.format(check.describe())
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Warning)
+        # Validator reasons and database names: never rendered as HTML.
+        box.setTextFormat(Qt.TextFormat.PlainText)
         box.setWindowTitle(MainWindow.READ_ONLY_NOTICE_TITLE)
         box.setText(text.format(AppInfo.DISPLAY_NAME))
         box.setInformativeText(info)
@@ -1609,12 +1609,20 @@ class MainWindow(QMainWindow):
         return path
 
     def __confirm_overwrite(self, path: Path) -> bool:
-        answer = QMessageBox.question(
-            self,
+        return self.__confirm(
             "Export result",
             "The file {} already exists. Replace it?".format(path.name),
         )
+
+    def __confirm(self, title: str, text: str) -> bool:
+        """Yes/No question; ``text`` (names, paths) is never rendered as
+        HTML."""
+        answer = QMessageBox.question(self, title, html.escape(text))
         return answer == QMessageBox.StandardButton.Yes
+
+    def __warn(self, title: str, text: str) -> None:
+        """Warning dialog; ``text`` is never rendered as HTML."""
+        QMessageBox.warning(self, title, html.escape(text))
 
     def __finish_export(self) -> QueryResult | None:
         thread = self.__export_thread

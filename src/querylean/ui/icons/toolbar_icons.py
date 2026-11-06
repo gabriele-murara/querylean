@@ -57,7 +57,7 @@ class ToolbarIcons:
 
     @staticmethod
     def refresh() -> QIcon:
-        """Circular arrow ("Aggiorna")."""
+        """Circular arrow ("Refresh" of the side bar)."""
         return ToolbarIcons.__render(ToolbarIcons.__draw_refresh)
 
     @staticmethod

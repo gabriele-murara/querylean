@@ -1,4 +1,4 @@
-"""Connection states shown in the toolbar."""
+"""Connection states shown in the status bar."""
 
 from __future__ import annotations
 

@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
-
+from querylean.database.execution.driver_value import DriverValue
 from querylean.database.execution.query_executor import QueryExecutor
 from querylean.log.log_manager import LogManager
 
@@ -37,10 +36,4 @@ class DatabaseCatalog:
                 "More than {} databases: the list is truncated",
                 DatabaseCatalog.MAX_DATABASES,
             )
-        return [DatabaseCatalog.__text(row[0]) for row in result.rows if row]
-
-    @staticmethod
-    def __text(value: Any) -> str:
-        if isinstance(value, bytes | bytearray):
-            return bytes(value).decode("utf-8", errors="replace")
-        return str(value)
+        return [DriverValue.text(row[0]) for row in result.rows if row]

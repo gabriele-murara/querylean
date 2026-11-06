@@ -25,6 +25,7 @@ from querylean.database.schema.table_catalog import TableCatalog
 from querylean.database.schema.table_info import TableInfo
 from querylean.ui.icons.completion_icons import CompletionIcons
 from querylean.ui.icons.toolbar_icons import ToolbarIcons
+from querylean.ui.safe_text import SafeText
 
 
 class TableSidebar(QWidget):
@@ -136,6 +137,8 @@ class TableSidebar(QWidget):
         self.__tree.customContextMenuRequested.connect(self.__on_menu)
 
         self.__status_label = QLabel()
+        # Server messages: never rendered as HTML.
+        self.__status_label.setTextFormat(Qt.TextFormat.PlainText)
         self.__status_label.setWordWrap(True)
         self.__status_label.setStyleSheet("color: palette(placeholder-text);")
 
@@ -247,7 +250,7 @@ class TableSidebar(QWidget):
             item = QTreeWidgetItem([database, ""])
             item.setData(0, TableSidebar.__DATABASE_ROLE, database)
             item.setIcon(0, CompletionIcons.icon(CompletionKind.DATABASE))
-            item.setToolTip(0, "Database {}".format(database))
+            item.setToolTip(0, SafeText.tooltip("Database {}".format(database)))
             item.setChildIndicatorPolicy(
                 QTreeWidgetItem.ChildIndicatorPolicy.ShowIndicator
             )
@@ -309,9 +312,10 @@ class TableSidebar(QWidget):
             item.setIcon(0, CompletionIcons.icon(kind))
             if table.is_view:
                 item.setFont(0, italic)
-                item.setToolTip(0, "View {}".format(table.name))
+                tip = "View {}"
             else:
-                item.setToolTip(0, "Table {}".format(table.name))
+                tip = "Table {}"
+            item.setToolTip(0, SafeText.tooltip(tip.format(table.name)))
             parent.addChild(item)
         if not tables:
             TableSidebar.__placeholder(parent, TableSidebar.NO_TABLES)
@@ -330,7 +334,7 @@ class TableSidebar(QWidget):
             return
         TableSidebar.__clear_children(parent)
         child = TableSidebar.__placeholder(parent, TableSidebar.NO_TABLES)
-        child.setToolTip(0, message)
+        child.setToolTip(0, SafeText.tooltip(message))
         self.__refresh_button.setEnabled(True)
         self.__set_status(message, error=True)
 
@@ -350,7 +354,7 @@ class TableSidebar(QWidget):
             return
         TableSidebar.__clear_children(item)
         child = TableSidebar.__placeholder(item, TableSidebar.NO_COLUMNS)
-        child.setToolTip(0, message)
+        child.setToolTip(0, SafeText.tooltip(message))
 
     def set_error(self, message: str) -> None:
         """Show a loading error; the refresh button stays available."""
@@ -407,18 +411,20 @@ class TableSidebar(QWidget):
         if writes is None:
             item.setData(0, Qt.ItemDataRole.ForegroundRole, None)
             item.setIcon(1, QIcon())
-            item.setToolTip(0, "Database {}".format(name))
+            item.setToolTip(0, SafeText.tooltip("Database {}".format(name)))
             return
         if name in writes:
             item.setForeground(0, QColor(TableSidebar.WRITE_COLOR))
             item.setIcon(1, ToolbarIcons.warning())
             tip = "Database {}: the account can change data ({}). Caution "
             tip += "mode: only read queries are run."
-            item.setToolTip(0, tip.format(name, writes[name]))
+            item.setToolTip(0, SafeText.tooltip(tip.format(name, writes[name])))
         else:
             item.setForeground(0, QColor(TableSidebar.READ_ONLY_COLOR))
             item.setIcon(1, QIcon())
-            item.setToolTip(0, "Database {}: read-only".format(name))
+            item.setToolTip(
+                0, SafeText.tooltip("Database {}: read-only".format(name))
+            )
         item.setToolTip(1, item.toolTip(0))
 
     def __count_status(self, tables: list[TableInfo]) -> None:
@@ -519,7 +525,9 @@ class TableSidebar(QWidget):
         child.setIcon(0, CompletionIcons.icon(kind))
         if column.is_primary:
             child.setFont(0, bold)
-        tooltip = "{}\ntable: {}".format(column.describe(), table.name)
+        tooltip = SafeText.tooltip(
+            "{}\ntable: {}".format(column.describe(), table.name)
+        )
         child.setToolTip(0, tooltip)
         child.setToolTip(1, tooltip)
         child.setForeground(

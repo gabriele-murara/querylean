@@ -12,6 +12,7 @@ from querylean.security.keyring_secret_store import KeyringSecretStore
 from querylean.ui.icons.toolbar_icons import ToolbarIcons
 from querylean.ui.main.connection_state import ConnectionState
 from querylean.ui.main.main_window import MainWindow
+from querylean.ui.safe_text import SafeText
 from querylean.ui.worker.db_thread import DbThread
 from support.main_window_test_base import MainWindowTestBase
 
@@ -209,7 +210,7 @@ class TestMainWindow(MainWindowTestBase):
         text = window.message_label.text()
         assert text.startswith("Query executed: SELECT c0, c1")
         assert text.endswith("…")
-        assert window.message_label.toolTip() == sql
+        assert window.message_label.toolTip() == SafeText.tooltip(sql)
 
     def test_query_without_result_set_is_reported(
         self, qtbot, window, connector

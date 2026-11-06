@@ -227,7 +227,7 @@ The check covers the databases of the connection: the configured one, or all tho
 
 **Caution mode** is accepted **database by database**, in the **New connection…**/**Edit…** form:
 
-- **Test connection** lists, in red, the databases of the connection that the account can change, each with its privileges and a checkbox ("shop — INSERT, UPDATE"). Check every database you accept; the choice is saved with the connection and survives new tests;
+- **Test connection** lists, in red, the databases of the connection that the account can change, each with its privileges and a checkbox ("shop — INSERT, UPDATE"). Check every database you accept; the choice is saved with the connection and survives new tests. Changing host, port, username, database or the "all the databases" checkbox unchecks every database: the acceptance is valid only for the server and account it was given for, so test again and check them again;
 - a writable database left unchecked makes the connection refused. If the privileges change (a new database, a new grant), the connection is refused until you accept the new databases with a new test;
 - **nothing else changes**: the same validator applies (only read queries) and the session must be confirmed READ ONLY, otherwise the connection is closed;
 - while connected, the state at the bottom right shows "CAUTION: write access (<databases>)" in red, the connection message lists the databases and their privileges, and in the side bar those databases are pink with a warning icon (the read-only ones are green);
@@ -258,6 +258,10 @@ Recommendations:
 - Restrict the host (`'report_ro'@'10.0.0.%'`) whenever possible.
 - To limit the visible columns or rows, create **dedicated views** and grant `SELECT` only on them.
 - Do not use `root` or administrative accounts. The application does not need them.
+
+### Text from the server
+
+Names of databases, tables and columns, comments, error messages and the values of the cells come from the server and are shown **literally**: tooltips, status lines and dialogs never render them as HTML, so markup stored in the database (images, links, tables) is displayed as text and never interpreted. Database names are compared with the grants exactly as the server returns them (spaces included).
 
 ### Password
 

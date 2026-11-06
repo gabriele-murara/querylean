@@ -1,4 +1,4 @@
-"""A column of a table (or view) of the current database."""
+"""A column of a table or view."""
 
 from __future__ import annotations
 

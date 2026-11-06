@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from querylean.database.execution.driver_value import DriverValue
 from querylean.database.execution.query_executor import QueryExecutor
 from querylean.database.schema.mysql_identifier import MySqlIdentifier
 from querylean.database.schema.table_info import TableInfo
@@ -11,7 +12,8 @@ from querylean.log.log_manager import LogManager
 
 
 class TableCatalog:
-    """Lists tables and views of the current database.
+    """Lists tables and views of the default database of the session, or
+    of a named database.
 
     The listing runs through ``QueryExecutor``, so it is validated and
     bounded like a user query. ``SHOW FULL TABLES`` returns only what the
@@ -61,14 +63,8 @@ class TableCatalog:
 
     @staticmethod
     def __table(row: tuple[Any, ...], database: str) -> TableInfo:
-        name = TableCatalog.__text(row[0])
-        kind = TableCatalog.__text(row[1]) if len(row) > 1 else ""
+        name = DriverValue.text(row[0])
+        kind = DriverValue.text(row[1]) if len(row) > 1 else ""
         return TableInfo(
             name, kind.upper() in TableCatalog.__VIEW_TYPES, database
         )
-
-    @staticmethod
-    def __text(value: Any) -> str:
-        if isinstance(value, bytes | bytearray):
-            return bytes(value).decode("utf-8", errors="replace")
-        return str(value)
