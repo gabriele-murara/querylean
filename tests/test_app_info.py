@@ -46,6 +46,10 @@ class TestAppInfo:
         data = self.pyproject()
         assert data["project"]["authors"][0]["name"] == AppInfo.AUTHOR
 
+    # Versions of third-party build tools: they may coincide with the
+    # product version by chance (appimagetool 1.9.0 and QueryLean 1.9.0).
+    THIRD_PARTY_PINS = ("APPIMAGETOOL_VERSION=",)
+
     def test_no_hardcoded_version_elsewhere(self):
         version = re.escape(AppInfo.version())
         pattern = re.compile(r"(?<![\d.]){}(?![\d.])".format(version))
@@ -56,12 +60,23 @@ class TestAppInfo:
             *self.ROOT.joinpath(".github").rglob("*.yml"),
         ]
         offenders = [
-            str(path.relative_to(self.ROOT))
+            "{}:{}".format(path.relative_to(self.ROOT), number)
             for path in sources
             if path.is_file()
-            and pattern.search(path.read_text(encoding="utf-8"))
+            for number, line in enumerate(
+                path.read_text(encoding="utf-8").splitlines(), start=1
+            )
+            if pattern.search(line)
+            and not line.strip().startswith(self.THIRD_PARTY_PINS)
         ]
         assert offenders == []
+
+    def test_third_party_pins_are_still_checked_elsewhere(self):
+        """The exception covers only the pin line: the same version
+        anywhere else in the script is still found."""
+        line = 'APPIMAGETOOL_VERSION="1.2.3"'
+        assert line.startswith(self.THIRD_PARTY_PINS)
+        assert not 'echo "1.2.3"'.startswith(self.THIRD_PARTY_PINS)
 
     def test_missing_or_invalid_file_is_unknown(self, tmp_path):
         assert VersionFile.parse(tmp_path / "absent") == VersionFile.UNKNOWN

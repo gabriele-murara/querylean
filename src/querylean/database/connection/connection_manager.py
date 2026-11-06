@@ -136,11 +136,7 @@ class ConnectionManager:
             ConnectionParams(config, password), enforce=False
         )
         try:
-            version = (
-                conn.get_server_info()
-                if hasattr(conn, "get_server_info")
-                else ""
-            )
+            version = ConnectionManager.__server_version(conn)
             return str(version or ""), check
         finally:
             ConnectionManager.__close_quietly(conn)
@@ -355,6 +351,15 @@ class ConnectionManager:
         # Names exactly as the server returns them (no stripping): grants
         # are matched against them.
         return [DriverValue.text(row[0]) for row in rows if row]
+
+    @staticmethod
+    def __server_version(conn: Any) -> str:
+        """Server version: the ``server_info`` property (the
+        ``get_server_info()`` method is deprecated in mysql-connector)."""
+        version = getattr(conn, "server_info", None)
+        if version is None and hasattr(conn, "get_server_info"):
+            version = conn.get_server_info()
+        return DriverValue.text(version)
 
     @staticmethod
     def __fetch(conn: Any, statement: str) -> list[Any]:
