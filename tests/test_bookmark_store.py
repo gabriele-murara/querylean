@@ -126,3 +126,24 @@ class TestBookmarkStore:
         assert [b.name for b in loaded] == ["mask", "old"]
         assert loaded[0] == mask
         assert json.loads(path.read_text(encoding="utf-8"))["version"] == 2
+
+    def test_last_values_are_remembered(self, store, profile_id):
+        mask = QueryBookmark(
+            "Mask",
+            "SELECT * FROM t WHERE y = ${Y}",
+            self.TARGET,
+            (Placeholder("Y", PlaceholderType.INTEGER, default="1"),),
+        )
+        store.add(profile_id, mask)
+        store.add(profile_id, self.bookmark("plain"))
+        updated = store.remember_values(
+            profile_id, self.TARGET, "mask", {"Y": "7"}
+        )
+        assert updated is not None and updated.last_values == {"Y": "7"}
+        loaded = store.find(profile_id, self.TARGET, "Mask")
+        assert loaded.last_values == {"Y": "7"}
+        assert store.find(profile_id, self.TARGET, "plain") is not None
+        assert (
+            store.remember_values(profile_id, self.OTHER_TARGET, "Mask", {})
+            is None
+        )

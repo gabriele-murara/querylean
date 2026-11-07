@@ -108,7 +108,7 @@ src/querylean/
   log/                 AppLogger, LogManager, SecretRedactor
   config/              ConnectionConfig (anche name, display_name, all_databases, caution_databases), ConnectionProfile (id + config), ConnectionStore (connections/<id>.json),
                        UiPreferences, AppConfig (active_connection + ui), ConfigManager (config.json + migrazione; espone connections e bookmarks), ConfigError
-  bookmarks/           QueryBookmark (nome, sql, target `user@host:port/database`, placeholders → maschera), BookmarkStore (bookmarks/<id connessione>.json, formato 2),
+  bookmarks/           QueryBookmark (nome, sql, target `user@host:port/database`, placeholders → maschera, last_values), BookmarkStore (bookmarks/<id connessione>.json, formato 2),
                        MaskTemplate (segnaposto `${NOME}`: analisi, compilazione, make_placeholder), PlaceholderOccurrence, Placeholder, PlaceholderType, MaskError
   completion/          SqlScanner/ScanToken (tokenizer tollerante), StatementAnalyzer → StatementContext (+ TableReference),
                        SchemaModel (tabelle/colonne della sessione), SqlVocabulary, CompletionEngine → CompletionResult/CompletionItem/CompletionKind
@@ -129,7 +129,7 @@ src/querylean/
                        MySqlLexer, SqlToken, LexedStatement, ReadOnlyRules, ValidationResult
   ui/
     main/              MainWindow, StopButton (Stop lampeggiante sotto i risultati, solo per query lunghe), ConnectionState, CautionPalette (sfondo rosa in modalità attenzione), ConnectionsMenu, BookmarksMenu ("Bookmarked queries") (menu "Connections": New connection…, Connect/Edit…/Delete… per connessione)
-    dialogs/           ConnectionDialog, SaveMaskDialog (salvataggio di una maschera), AboutDialog (versione/autore da AppInfo)
+    dialogs/           ConnectionDialog, SaveMaskDialog (salvataggio di una maschera), FillMaskDialog (valori ed esecuzione di una maschera), AboutDialog (versione/autore da AppInfo)
     icons/             ToolbarIcons, CompletionIcons (icone disegnate con QPainter: nessun asset da impacchettare)
     editor/            SqlEditor (autocompletamento), SqlCompleter (popup), CompletionDelegate, SqlHighlighter, LineNumberArea
     results/           ResultsTable, ResultsModel, ValueFormatter
@@ -204,7 +204,8 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
   - un valore non diventa mai SQL: fuori dagli apici `PlaceholderType.literal` (numero controllato, `TRUE`/`FALSE` o `MySqlLiteral.quote`), dentro gli apici contenuto di stringa con escape di `\` e dell'apice; una lista è fatta di letterali dello stesso tipo separati da virgola. Niente segnaposto per nomi (backtick rifiutati) né per testo SQL libero; non aggiungere tipi "raw" senza richiesta;
   - `MaskTemplate` riconosce i segnaposto fuori dai commenti, nelle stringhe e fuori; un `${` malformato rende la query una maschera non valida (`MaskError`), mai SQL eseguibile;
   - si salva solo una maschera la cui compilazione con i predefiniti passa `ReadOnlyValidator`; i segnaposto salvati devono corrispondere esattamente a quelli del testo (`QueryBookmark.from_dict`, altrimenti il segnalibro si scarta);
-  - **Run** rifiuta un testo con segnaposto; dal menu una maschera si carica nell'editor, non si esegue. Compilazione ed esecuzione con modulo (ultimi valori in giallo) sono la fase successiva.
+  - **Run** rifiuta un testo con segnaposto (messaggio rosso più `MainWindow.placeholder_notice`, finestra aperta con `open()`, mai bloccante, testo in PlainText); dal menu una maschera apre `FillMaskDialog`: ogni valore è obbligatorio ("sempre compilato"), gli ultimi valori (`QueryBookmark.last_values`, salvati con `BookmarkStore.remember_values` solo dopo **Run**) sono gialli finché non cambiano, **Run** si attiva solo se la compilazione riesce e passa `ReadOnlyValidator`;
+  - la query compilata si esegue come un segnalibro (`bookmark_requested` con il target della maschera, poi validatore), mai con `query_requested`; **Open in editor** carica la maschera senza eseguirla; un nuovo salvataggio con lo stesso nome conserva gli ultimi valori dei segnaposto rimasti.
 - **Password**:
   - mai su file di configurazione, log o messaggi;
   - registrarla con `LogManager.register_secret()` appena è nota (in `MainWindow` lo fa `__remember_session`, usato da ogni percorso che riceve una password);
@@ -270,7 +271,7 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
   - 1.6: query nei segnalibri per connessione (salva con nome, menu "Bookmarked queries" che le esegue). Niente cronologia automatica, cartelle, import/export o condivisione tra connessioni;
   - 1.7: colonne delle tabelle nella barra laterale (albero tabella → colonne, filtro, menu contestuale) e autocompletamento SQL nell'editor (tabelle, colonne, alias, parole chiave, funzioni). Niente indici, chiavi esterne, altri database, snippet o formattazione automatica del codice;
   - 1.8: connessione a tutti i database accessibili (albero database → tabelle → colonne, database attivo) e modalità attenzione accettata per singolo database. Niente connessioni simultanee né altri server;
-  - 1.10: maschere (segnalibri con segnaposto tipizzati `${NOME}`, liste per `IN`, finestra Save mask).
+  - 1.10: maschere (segnalibri con segnaposto tipizzati `${NOME}`, liste per `IN`, finestre Save mask e Run mask con gli ultimi valori usati). Niente cronologia dei valori oltre l'ultima esecuzione, né funzioni o espressioni come valori.
 
 ## Packaging
 

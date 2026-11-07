@@ -115,3 +115,35 @@ class TestQueryBookmark:
             "placeholders": placeholders,
         }
         assert QueryBookmark.from_dict(data) is None
+
+    def test_last_values_of_a_mask(self):
+        mask = QueryBookmark(
+            "Orders",
+            self.MASK_SQL,
+            "t",
+            (
+                Placeholder("YEAR", PlaceholderType.INTEGER, default="2026"),
+                Placeholder("C", is_list=True, default="A"),
+            ),
+        )
+        assert mask.last_values == {}
+        assert "last_values" not in mask.to_dict()
+        used = mask.with_last_values({"YEAR": "2025", "OTHER": "x", "C": 1})
+        # Only text values of the mask's placeholders are kept.
+        assert used.last_values == {"YEAR": "2025"}
+        assert used.placeholders == mask.placeholders
+        assert QueryBookmark.from_dict(used.to_dict()) == used
+        assert used != mask
+        too_long = "x" * (QueryBookmark.MAX_VALUE_LENGTH + 1)
+        assert mask.with_last_values({"C": too_long}).last_values == {}
+
+    def test_damaged_last_values_are_forgotten(self):
+        data = {
+            "name": "Orders",
+            "sql": "SELECT ${Y}",
+            "target": "t",
+            "placeholders": [{"name": "Y", "type": "integer"}],
+            "last_values": "junk",
+        }
+        mask = QueryBookmark.from_dict(data)
+        assert mask is not None and mask.last_values == {}

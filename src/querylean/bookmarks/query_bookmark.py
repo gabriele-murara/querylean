@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from querylean.bookmarks.mask_error import MaskError
@@ -21,9 +22,12 @@ class QueryBookmark:
     A bookmark with ``placeholders`` is a **mask**: its query contains
     ``${NAME}`` placeholders (see ``MaskTemplate``), each defined by one
     ``Placeholder``, and must be compiled with values before running.
+    ``last_values`` keeps the values it was last run with (by placeholder
+    name), proposed again the next time.
     """
 
     MAX_NAME_LENGTH = 100
+    MAX_VALUE_LENGTH = 10000
 
     def __init__(
         self,
@@ -31,11 +35,15 @@ class QueryBookmark:
         sql: str,
         target: str,
         placeholders: tuple[Placeholder, ...] = (),
+        last_values: Mapping[str, str] | None = None,
     ) -> None:
         self.__name = name
         self.__sql = sql
         self.__target = target
         self.__placeholders = tuple(placeholders)
+        self.__last_values = QueryBookmark.__clean_values(
+            self.__placeholders, last_values or {}
+        )
 
     @property
     def name(self) -> str:
@@ -56,6 +64,22 @@ class QueryBookmark:
     def placeholders(self) -> tuple[Placeholder, ...]:
         """Placeholders of a mask, in order (empty for a plain query)."""
         return self.__placeholders
+
+    @property
+    def last_values(self) -> dict[str, str]:
+        """Values of the last run of a mask, by placeholder name (only
+        for placeholders of the mask; empty when never run)."""
+        return dict(self.__last_values)
+
+    def with_last_values(self, values: Mapping[str, str]) -> QueryBookmark:
+        """The same bookmark remembering ``values`` as the last ones."""
+        return QueryBookmark(
+            self.__name,
+            self.__sql,
+            self.__target,
+            self.__placeholders,
+            values,
+        )
 
     @property
     def is_mask(self) -> bool:
@@ -89,6 +113,8 @@ class QueryBookmark:
         }
         if self.__placeholders:
             data["placeholders"] = [p.to_dict() for p in self.__placeholders]
+        if self.__last_values:
+            data["last_values"] = dict(self.__last_values)
         return data
 
     @staticmethod
@@ -108,7 +134,29 @@ class QueryBookmark:
         )
         if placeholders is None:
             return None
-        return QueryBookmark(name, values[1], values[2], placeholders)
+        last_values = data.get("last_values", {})
+        if not isinstance(last_values, dict):
+            # Only a convenience: a damaged entry is forgotten.
+            last_values = {}
+        return QueryBookmark(
+            name, values[1], values[2], placeholders, last_values
+        )
+
+    @staticmethod
+    def __clean_values(
+        placeholders: tuple[Placeholder, ...], values: Mapping[object, object]
+    ) -> dict[str, str]:
+        """Text values of ``values`` that belong to a placeholder, in the
+        order of the placeholders; others (and too long ones) dropped."""
+        clean = {}
+        for placeholder in placeholders:
+            value = values.get(placeholder.name)
+            if (
+                isinstance(value, str)
+                and len(value) <= QueryBookmark.MAX_VALUE_LENGTH
+            ):
+                clean[placeholder.name] = value
+        return clean
 
     @staticmethod
     def __placeholders_of(
@@ -138,7 +186,13 @@ class QueryBookmark:
 
     def __hash__(self) -> int:
         return hash(
-            (self.__name, self.__sql, self.__target, self.__placeholders)
+            (
+                self.__name,
+                self.__sql,
+                self.__target,
+                self.__placeholders,
+                tuple(self.__last_values.items()),
+            )
         )
 
     def __repr__(self) -> str:

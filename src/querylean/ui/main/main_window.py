@@ -60,6 +60,7 @@ from querylean.security.secret_storage_error import SecretStorageError
 from querylean.security.secret_store import SecretStore
 from querylean.ui.dialogs.about_dialog import AboutDialog
 from querylean.ui.dialogs.connection_dialog import ConnectionDialog
+from querylean.ui.dialogs.fill_mask_dialog import FillMaskDialog
 from querylean.ui.dialogs.save_mask_dialog import SaveMaskDialog
 from querylean.ui.editor.sql_editor import SqlEditor
 from querylean.ui.icons.toolbar_icons import ToolbarIcons
@@ -104,6 +105,7 @@ class MainWindow(QMainWindow):
     __CAUTION_NAMES = 3
     CAUTION_COLOR = "#c62828"
     READ_ONLY_NOTICE_TITLE = "Read queries only"
+    PLACEHOLDER_NOTICE_TITLE = "Placeholders to fill in"
     # Error kind of a query refused by the validator.
     __REJECTED_KIND = "rejected"
     SAVE_QUERY_TEXT = "Save query"
@@ -136,6 +138,7 @@ class MainWindow(QMainWindow):
         self.__check: AccountCheck | None = None
         # Dialog shown when a query is refused because it is not a read.
         self.__read_only_notice: QMessageBox | None = None
+        self.__placeholder_notice: QMessageBox | None = None
         # Saved connection and settings of the open session: bookmarks are
         # read and run only for them.
         self.__session_id = ""
@@ -247,6 +250,12 @@ class MainWindow(QMainWindow):
         """Notice shown the last time a query was refused because it is
         not a read query, if any."""
         return self.__read_only_notice
+
+    @property
+    def placeholder_notice(self) -> QMessageBox | None:
+        """Notice shown the last time a query was not run because it
+        still contains placeholders, if any."""
+        return self.__placeholder_notice
 
     @property
     def account_check(self) -> AccountCheck | None:
@@ -595,9 +604,9 @@ class MainWindow(QMainWindow):
         if MaskTemplate.has_placeholders(sql):
             msg = "The query contains placeholders{}: replace them with "
             msg += "values before running it."
-            self.show_message(
-                msg.format(MainWindow.__placeholder_list(sql)), error=True
-            )
+            msg = msg.format(MainWindow.__placeholder_list(sql))
+            self.show_message(msg, error=True)
+            self.__show_placeholder_notice(msg)
             return
         self.__start_query(sql)
 
@@ -669,7 +678,10 @@ class MainWindow(QMainWindow):
                 return None
         if existing is not None:
             name = existing.name
-        bookmark = QueryBookmark(name, sql, target, placeholders)
+        # A mask saved again keeps the last values of the placeholders it
+        # still has.
+        last_values = existing.last_values if existing is not None else {}
+        bookmark = QueryBookmark(name, sql, target, placeholders, last_values)
         try:
             store.add(self.__session_id, bookmark)
         except ConfigError as exc:
@@ -742,7 +754,12 @@ class MainWindow(QMainWindow):
     def run_bookmark(self, name: str) -> None:
         """Put the bookmarked query ``name`` of the open session in the
         editor (undoable) and run it. Bookmarks of other connections are
-        never run."""
+        never run.
+
+        A mask first opens the "Run mask" dialog: the query compiled with
+        the values entered there is run like a bookmark (target check and
+        validator), and the values are remembered for the next time. From
+        the dialog the mask can also be opened in the editor instead."""
         if self.__running:
             return
         if self.__state != ConnectionState.CONNECTED:
@@ -758,19 +775,50 @@ class MainWindow(QMainWindow):
             self.show_message(msg.format(name), error=True)
             self.__reload_bookmarks()
             return
-        self.__editor.replace_query(bookmark.sql)
         if bookmark.is_mask:
-            # Masks are compiled with values before running.
-            self.__editor.remember_placeholders(bookmark.placeholders)
-            msg = "Mask “{}” loaded in the editor: replace its placeholders"
-            msg += "{} with values to run it."
-            self.show_message(
-                msg.format(
-                    bookmark.name, MainWindow.__placeholder_list(bookmark.sql)
-                )
-            )
+            self.__run_mask(bookmark)
             return
+        self.__editor.replace_query(bookmark.sql)
         self.__start_query(bookmark.sql, bookmark.target)
+
+    def __run_mask(self, mask: QueryBookmark) -> None:
+        """Ask the values of ``mask``, then run the compiled query."""
+        try:
+            dialog = FillMaskDialog(
+                mask, validator=self.__validator, parent=self
+            )
+        except MaskError as exc:
+            self.show_message(exc.message, error=True)
+            return
+        result = dialog.exec()
+        if result == FillMaskDialog.EDIT_RESULT:
+            self.open_mask(mask)
+            return
+        sql = dialog.compiled_sql()
+        if result != FillMaskDialog.DialogCode.Accepted or not sql:
+            return
+        try:
+            self.__config_manager.bookmarks.remember_values(
+                self.__session_id, mask.target, mask.name, dialog.values()
+            )
+        except ConfigError as exc:
+            # The run does not depend on it: only the next proposal.
+            self.__log.warning("Values of the mask not saved: {}", exc)
+        else:
+            self.__reload_bookmarks()
+        self.__editor.replace_query(sql)
+        self.__start_query(sql, mask.target)
+
+    def open_mask(self, mask: QueryBookmark) -> None:
+        """Load ``mask`` in the editor with its placeholders (to change it
+        and save it again), without running it."""
+        self.__editor.replace_query(mask.sql)
+        self.__editor.remember_placeholders(mask.placeholders)
+        msg = "Mask “{}” loaded in the editor{}: save it again to keep "
+        msg += "the changes."
+        self.show_message(
+            msg.format(mask.name, MainWindow.__placeholder_list(mask.sql))
+        )
 
     def delete_bookmark(self, name: str, *, confirm: bool = True) -> bool:
         """Delete the bookmarked query ``name`` of the open session (after
@@ -1554,6 +1602,20 @@ class MainWindow(QMainWindow):
         box.setInformativeText(info)
         box.setStandardButtons(QMessageBox.StandardButton.Ok)
         self.__read_only_notice = box
+        box.open()
+
+    def __show_placeholder_notice(self, text: str) -> None:
+        """Repeat in a dialog that the query was not run because of its
+        placeholders. Window-modal but not blocking."""
+        if self.__placeholder_notice is not None:
+            self.__placeholder_notice.close()
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        # Placeholder names come from the editor: never rendered as HTML.
+        box.setTextFormat(Qt.TextFormat.PlainText)
+        box.setWindowTitle(MainWindow.PLACEHOLDER_NOTICE_TITLE)
+        box.setText(text)
+        self.__placeholder_notice = box
         box.open()
 
     def __timeout(self) -> int:

@@ -78,6 +78,25 @@ class BookmarkStore:
         self.__write(profile_id, bookmarks)
         self.__log.info("Bookmark saved for connection {}", profile_id)
 
+    def remember_values(
+        self,
+        profile_id: str,
+        target: str,
+        name: str,
+        values: dict[str, str],
+    ) -> QueryBookmark | None:
+        """Store ``values`` as the last ones of the mask ``name`` for
+        ``target``. Returns the updated mask, None when it does not exist.
+        Raises ``ConfigError``."""
+        bookmarks = self.__read(profile_id)
+        for index, bookmark in enumerate(bookmarks):
+            if bookmark.target == target and bookmark.same_name(name):
+                updated = bookmark.with_last_values(values)
+                bookmarks[index] = updated
+                self.__write(profile_id, bookmarks)
+                return updated
+        return None
+
     def remove(self, profile_id: str, target: str, name: str) -> bool:
         """Delete the bookmark ``name`` for ``target``. Returns False when it
         does not exist. Raises ``ConfigError``."""

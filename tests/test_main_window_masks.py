@@ -1,9 +1,13 @@
 """GUI tests of masks: bookmarked queries with placeholders."""
 
+from PySide6.QtCore import Qt
+
 from querylean.bookmarks.placeholder import Placeholder
 from querylean.bookmarks.placeholder_type import PlaceholderType
+from querylean.ui.dialogs.fill_mask_dialog import FillMaskDialog
 from querylean.ui.dialogs.save_mask_dialog import SaveMaskDialog
 from querylean.ui.main.bookmarks_menu import BookmarksMenu
+from querylean.ui.main.main_window import MainWindow
 from support.main_window_test_base import MainWindowTestBase
 
 
@@ -91,14 +95,96 @@ class TestMainWindowMasks(MainWindowTestBase):
         text = window.message_label.text()
         assert "placeholders (${YEAR}, ${CODES})" in text
         assert len(self.executed(connector)) == before
+        # The same message, also in a dialog that does not block.
+        notice = window.placeholder_notice
+        assert notice is not None and notice.isVisible()
+        assert notice.text() == text
+        assert notice.windowTitle() == MainWindow.PLACEHOLDER_NOTICE_TITLE
+        assert notice.textFormat() == Qt.TextFormat.PlainText
+        window.execute_query()
+        assert window.placeholder_notice is not notice
+        assert not notice.isVisible()
 
-    def test_mask_from_the_menu_is_loaded_not_run(
-        self, qtbot, window, connector
-    ):
+    def test_no_notice_for_queries_without_placeholders(self, qtbot, window):
         self.connect(qtbot, window)
+        self.run(qtbot, window, "SELECT '$' AS a")
+        assert window.placeholder_notice is None
+
+    def save_mask(self, window):
         window.editor.setPlainText(self.MASK)
         window.save_bookmark("Orders", placeholders=self.PLACEHOLDERS)
         window.editor.setPlainText("SELECT 1")
+
+    def test_mask_from_the_menu_asks_values_and_runs(
+        self, qtbot, window, connector, monkeypatch
+    ):
+        self.connect(qtbot, window)
+        self.save_mask(window)
+        opened = []
+
+        def fill(dialog):
+            opened.append(dialog)
+            assert not dialog.is_previous("YEAR")
+            assert dialog.value("YEAR") == "2026"
+            dialog.field("YEAR").setText("2025")
+            dialog.field("CODES").setPlainText("A1\nB'2")
+            return FillMaskDialog.DialogCode.Accepted
+
+        monkeypatch.setattr(FillMaskDialog, "exec", fill)
+        window.bookmarks_menu.actions()[0].trigger()
+        compiled = "SELECT * FROM orders WHERE year = 2025 AND code IN "
+        compiled += "('A1', 'B''2')"
+        qtbot.waitUntil(lambda: not window.running, timeout=5000)
+        assert len(opened) == 1
+        assert compiled in self.executed(connector)
+        assert window.editor.toPlainText() == compiled
+        # The values are proposed again, in yellow, the next time.
+        assert window.bookmarks[0].last_values == {
+            "YEAR": "2025",
+            "CODES": "A1\nB'2",
+        }
+
+        def check(dialog):
+            opened.append(dialog)
+            assert dialog.value("YEAR") == "2025"
+            assert dialog.is_previous("YEAR")
+            assert dialog.is_previous("CODES")
+            return FillMaskDialog.DialogCode.Rejected
+
+        monkeypatch.setattr(FillMaskDialog, "exec", check)
+        before = len(self.executed(connector))
+        window.bookmarks_menu.actions()[0].trigger()
+        assert len(opened) == 2
+        assert not window.running
+        assert len(self.executed(connector)) == before
+        assert window.editor.toPlainText() == compiled
+
+    def test_saving_a_mask_again_keeps_its_last_values(
+        self, qtbot, window, monkeypatch
+    ):
+        self.connect(qtbot, window)
+        self.save_mask(window)
+        monkeypatch.setattr(
+            FillMaskDialog,
+            "exec",
+            lambda d: FillMaskDialog.DialogCode.Accepted,
+        )
+        window.bookmarks_menu.actions()[0].trigger()
+        qtbot.waitUntil(lambda: not window.running, timeout=5000)
+        window.editor.setPlainText("SELECT * FROM orders WHERE year = ${YEAR}")
+        window.save_bookmark(
+            "Orders", confirm=False, placeholders=self.PLACEHOLDERS[:1]
+        )
+        assert window.bookmarks[0].last_values == {"YEAR": "2026"}
+
+    def test_mask_can_be_opened_in_the_editor(
+        self, qtbot, window, connector, monkeypatch
+    ):
+        self.connect(qtbot, window)
+        self.save_mask(window)
+        monkeypatch.setattr(
+            FillMaskDialog, "exec", lambda d: FillMaskDialog.EDIT_RESULT
+        )
         before = len(self.executed(connector))
         window.bookmarks_menu.actions()[0].trigger()
         assert window.editor.toPlainText() == self.MASK
