@@ -3,17 +3,26 @@ autocompletion."""
 
 from __future__ import annotations
 
+import html
+import re
+
 from PySide6.QtCore import QRect, Qt, QTimer, Signal
 from PySide6.QtGui import (
+    QAction,
+    QContextMenuEvent,
     QFontDatabase,
     QKeyEvent,
+    QKeySequence,
     QPainter,
     QPaintEvent,
     QResizeEvent,
     QTextCursor,
 )
-from PySide6.QtWidgets import QPlainTextEdit, QWidget
+from PySide6.QtWidgets import QInputDialog, QMessageBox, QPlainTextEdit, QWidget
 
+from querylean.bookmarks.mask_error import MaskError
+from querylean.bookmarks.mask_template import MaskTemplate
+from querylean.bookmarks.placeholder import Placeholder
 from querylean.completion.completion_engine import CompletionEngine
 from querylean.completion.completion_item import CompletionItem
 from querylean.completion.completion_result import CompletionResult
@@ -43,6 +52,15 @@ class SqlEditor(QPlainTextEdit):
 
     PLACEHOLDER = "Write a SELECT query: Ctrl+Space completes, Ctrl+Enter "
     PLACEHOLDER += "runs (Cmd+Enter on macOS)"
+    MAKE_PLACEHOLDER_TEXT = "Make placeholder…"
+    MAKE_PLACEHOLDER_SHORTCUT = "Ctrl+Shift+P"
+    DEFAULT_PLACEHOLDER_NAME = "VALUE"
+    # Column compared with the selected value: suggests the placeholder
+    # name (``cli = '…'`` → ``CLI``).
+    __COLUMN_PATTERN = r"([A-Za-z_][A-Za-z0-9_]*)`?\s*"
+    __COLUMN_PATTERN += r"(?:=|<>|!=|<=|>=|<|>|\bLIKE|\bIN\s*\(|\bBETWEEN)"
+    __COLUMN_PATTERN += r"\s*['\"]?\s*$"
+    __COMPARED_COLUMN = re.compile(__COLUMN_PATTERN, re.IGNORECASE)
     # Delay before the proposals open by themselves while typing.
     AUTO_DELAY_MS = 80
     __MIN_FONT_SIZE = 11
@@ -86,6 +104,23 @@ class SqlEditor(QPlainTextEdit):
         self.__auto_timer.setSingleShot(True)
         self.__auto_timer.setInterval(SqlEditor.AUTO_DELAY_MS)
         self.__auto_timer.timeout.connect(self.__auto_complete)
+
+        # Placeholders made from a selected value: type and example value
+        # are kept for the "Save mask" dialog.
+        self.__placeholders: dict[str, Placeholder] = {}
+        self.__make_placeholder_action = QAction(
+            SqlEditor.MAKE_PLACEHOLDER_TEXT, self
+        )
+        self.__make_placeholder_action.setShortcut(
+            QKeySequence(SqlEditor.MAKE_PLACEHOLDER_SHORTCUT)
+        )
+        self.__make_placeholder_action.setShortcutContext(
+            Qt.ShortcutContext.WidgetShortcut
+        )
+        self.__make_placeholder_action.triggered.connect(
+            lambda: self.make_placeholder()
+        )
+        self.addAction(self.__make_placeholder_action)
 
     @property
     def completion_engine(self) -> CompletionEngine | None:
@@ -175,6 +210,81 @@ class SqlEditor(QPlainTextEdit):
         if item.insert_text.endswith(".") and self.__auto_completion:
             self.__auto_timer.start()
 
+    @property
+    def make_placeholder_action(self) -> QAction:
+        """ "Make placeholder…" action (Ctrl+Shift+P)."""
+        return self.__make_placeholder_action
+
+    def placeholders(self) -> dict[str, Placeholder]:
+        """Placeholders made in this editor that are still in the text,
+        by name (type and example value for the "Save mask" dialog)."""
+        try:
+            names = MaskTemplate(self.toPlainText()).names
+        except MaskError:
+            return {}
+        return {
+            name: self.__placeholders[name]
+            for name in names
+            if name in self.__placeholders
+        }
+
+    def remember_placeholders(
+        self, placeholders: tuple[Placeholder, ...]
+    ) -> None:
+        """Keep the definitions of ``placeholders`` (e.g. of a mask loaded
+        from the bookmarks) for the next "Save mask" dialog."""
+        for placeholder in placeholders:
+            self.__placeholders[placeholder.name] = placeholder
+
+    def make_placeholder(self, name: str | None = None) -> Placeholder | None:
+        """Turn the selected value into a ``${NAME}`` placeholder (one
+        undoable edit). Without ``name`` the user is asked for one,
+        suggested from the column compared with the value. The type and
+        the example come from the replaced value. Returns None when
+        cancelled or when the selection is not a value (the reason is
+        shown)."""
+        cursor = self.textCursor()
+        if not cursor.hasSelection():
+            self.__warn("Select the value to turn into a placeholder.")
+            return None
+        start, end = cursor.selectionStart(), cursor.selectionEnd()
+        text = self.toPlainText()
+        if name is None:
+            name, ok = QInputDialog.getText(
+                self,
+                SqlEditor.MAKE_PLACEHOLDER_TEXT,
+                "Placeholder name (letters, digits and _):",
+                text=SqlEditor.__suggested_name(text[:start]),
+            )
+            if not ok:
+                return None
+        try:
+            new_text, placeholder = MaskTemplate.make_placeholder(
+                text, start, end, name.strip()
+            )
+        except MaskError as exc:
+            self.__warn(exc.message)
+            return None
+        known = self.__placeholders.get(placeholder.name)
+        if known is None or not known.default:
+            self.__placeholders[placeholder.name] = placeholder
+        tail = len(text) - end
+        self.replace_query(new_text)
+        cursor = self.textCursor()
+        cursor.setPosition(len(new_text) - tail)
+        self.setTextCursor(cursor)
+        return placeholder
+
+    def contextMenuEvent(self, event: QContextMenuEvent) -> None:  # noqa: N802
+        menu = self.createStandardContextMenu()
+        menu.addSeparator()
+        self.__make_placeholder_action.setEnabled(
+            self.textCursor().hasSelection()
+        )
+        menu.addAction(self.__make_placeholder_action)
+        menu.exec(event.globalPos())
+        self.__make_placeholder_action.setEnabled(True)
+
     def query_text(self) -> str:
         """The selection if present, otherwise the whole content."""
         cursor = self.textCursor()
@@ -263,6 +373,18 @@ class SqlEditor(QPlainTextEdit):
             return None
         return self.__engine.complete(
             self.toPlainText(), self.textCursor().position()
+        )
+
+    @staticmethod
+    def __suggested_name(before: str) -> str:
+        match = SqlEditor.__COMPARED_COLUMN.search(before)
+        if match is None:
+            return SqlEditor.DEFAULT_PLACEHOLDER_NAME
+        return match.group(1).upper()
+
+    def __warn(self, message: str) -> None:
+        QMessageBox.warning(
+            self, SqlEditor.MAKE_PLACEHOLDER_TEXT, html.escape(message)
         )
 
     def __request_columns(self, result: CompletionResult) -> None:

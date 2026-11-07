@@ -17,7 +17,7 @@ volta, un editor SQL e una tabella di risultati copiabili.
   - [autocompletamento](#autocompletamento) di tabelle, colonne, alias, parole chiave e funzioni con `Ctrl+Spazio`, che si apre anche da solo mentre si scrive.
 - Una connessione usa un database oppure [tutti i database](#tutti-i-database) a cui l'account ha accesso.
 - Barra laterale con i database, le tabelle e le viste a cui si ha accesso: un clic su una tabella prepara nell'editor `SELECT * FROM <tabella> LIMIT 1;` e ne mostra le colonne (tipo, chiavi, commenti).
-- Query nei segnalibri: una query salvata con un nome per una connessione si riesegue dal menu **Bookmarked queries**, solo su quella connessione.
+- Query nei segnalibri: una query salvata con un nome per una connessione si riesegue dal menu **Bookmarked queries**, solo su quella connessione. Un segnalibro può essere una [maschera](#maschere) con segnaposto `${NOME}` per i valori che cambiano.
 - Sono ammesse solo istruzioni di lettura (`SELECT`, `WITH … SELECT`, `UNION`, `SHOW`, `DESCRIBE`/`DESC`, `EXPLAIN SELECT`). Ogni query passa da un validatore basato sul parsing.
 - Alla connessione vengono controllati i privilegi dell'account database per database: un database che l'account può modificare viene rifiutato finché non lo si accetta in [modalità attenzione](#modalità-attenzione).
 - L'esecuzione avviene fuori dal thread della GUI, con indicatore di attività, timeout e un pulsante **Stop** (Interrompi) lampeggiante che compare solo quando una query dura più di un secondo.
@@ -150,6 +150,24 @@ Una query nei segnalibri appartiene a **una connessione salvata** e al database 
 - Un segnalibro non viene mai eseguito su un'altra connessione: il menu mostra solo quelli della connessione aperta e, prima di eseguirne uno, il thread del database controlla che la sessione aperta punti allo stesso utente, host, porta e database. Un'altra connessione salvata che punta allo stesso database ha i suoi segnalibri.
 - Se una connessione viene modificata per puntare a un altro host, porta, database o utente, i suoi vecchi segnalibri non vengono più mostrati; tornano se si ripristinano i valori precedenti.
 - I segnalibri sono salvati in un file JSON per connessione (vedi [File locali](#file-locali)).
+
+### Maschere
+
+Una **maschera** è una query nei segnalibri con segnaposto `${NOME}` al posto dei valori che cambiano, per esempio:
+
+```sql
+SELECT * FROM orders WHERE year = ${YEAR};
+SELECT * FROM call_answered WHERE cli = '${DIGITS}' AND connection_time = '${CONNECTION_DATETIME}';
+SELECT * FROM documents WHERE code IN (${CODES}) AND importDateTime >= '${IMPORT_DATE_TIME}';
+```
+
+- **Scrivere i segnaposto**: scrivili nell'editor, oppure parti da una query che già funziona: seleziona un valore (`2026`, `'3391234567'`, parte di una stringa, oppure una lista come `12, 15, 31`) e scegli **Make placeholder…** (Crea segnaposto…, `Ctrl+Shift+P`, anche nel menu contestuale dell'editor). Il nome proposto è la colonna confrontata (`cli = '…'` → `CLI`); il valore diventa l'esempio e il predefinito, e il tipo viene riconosciuto. Un solo annulla ripristina il valore.
+- **Nomi**: lettere, cifre e `_`, senza iniziare con una cifra. Lo stesso segnaposto usato due volte prende un solo valore. Nell'editor i segnaposto sono evidenziati; nei commenti vengono ignorati, tra backtick (un nome di tabella o colonna) non sono ammessi.
+- **Tipi**: Integer (intero), Decimal (decimale), Text (testo), Date (data), Time (ora), Date-time (data e ora), Boolean (booleano). Un segnaposto può essere una **lista** (per `IN (${CODES})`): valori separati da virgola, oppure uno per riga.
+- **I valori non diventano mai SQL**: fuori dagli apici un valore diventa un letterale tipizzato (un numero controllato, `TRUE`/`FALSE` oppure una stringa con escape), dentro gli apici (`'${DIGITS}'`) contenuto di stringa con escape. Un valore come `2026 OR 1=1` per un Integer viene rifiutato e `x' OR 'a'='a` per un Text resta dentro la stringa: la struttura della query non cambia mai.
+- **Salvataggio**: **Save query** su una query con segnaposto apre **Save mask** (Salva maschera): nome e, per ogni segnaposto, tipo, lista, valore predefinito e descrizione. L'anteprima mostra la query compilata con i predefiniti: deve essere una query di lettura, altrimenti **Save** resta disattivato.
+- **Nel menu** una maschera ha l'icona `${}` e il nome termina con "…"; sceglierla carica la maschera nell'editor (non viene eseguita). **Run** su una query con segnaposto viene rifiutato con l'elenco dei segnaposto da sostituire.
+- Le maschere sono salvate con gli altri segnalibri della connessione (file dei segnalibri versione 2; i file delle versioni precedenti vengono letti senza modifiche).
 
 ### Regole di esecuzione
 
@@ -321,7 +339,7 @@ src/querylean/
   app/          avvio (Application), metadati (AppInfo), smoke test
   log/          logger dell'applicazione, log ruotato, redazione dei segreti
   config/       modello della configurazione e persistenza JSON
-  bookmarks/    query nei segnalibri per connessione (QueryBookmark, BookmarkStore)
+  bookmarks/    query nei segnalibri per connessione (QueryBookmark, BookmarkStore) e maschere (MaskTemplate, Placeholder, PlaceholderType)
   completion/   autocompletamento: scanner tollerante, analisi dello statement, proposte (CompletionEngine)
   security/     password nel portachiavi (SecretStore astratta, KeyringSecretStore)
   export/       esportazione Excel/CSV/JSON (ResultExporter astratta)

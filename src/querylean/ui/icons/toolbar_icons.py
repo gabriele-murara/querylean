@@ -39,6 +39,7 @@ class ToolbarIcons:
     __STAR = "#f9a825"
     __BOOKMARKS = "#6a1b9a"
     __WARNING = "#f57c00"
+    __MASK = "#ad1457"
 
     @staticmethod
     def play() -> QIcon:
@@ -89,6 +90,11 @@ class ToolbarIcons:
     def warning() -> QIcon:
         """Orange triangle with "!" (a database the account can change)."""
         return ToolbarIcons.__render(ToolbarIcons.__draw_warning)
+
+    @staticmethod
+    def mask() -> QIcon:
+        """ "${}" badge (a bookmarked mask with placeholders)."""
+        return ToolbarIcons.__render(ToolbarIcons.__draw_mask)
 
     @staticmethod
     def about() -> QIcon:
@@ -258,6 +264,19 @@ class ToolbarIcons:
         ToolbarIcons.__fill(painter, "white")
         painter.drawRoundedRect(QRectF(28, 20, 8, 22), 3, 3)
         painter.drawEllipse(QRectF(28, 46, 8, 8))
+
+    @staticmethod
+    def __draw_mask(painter: QPainter) -> None:
+        ToolbarIcons.__fill(painter, ToolbarIcons.__MASK)
+        painter.drawRoundedRect(QRectF(2, 10, 60, 44), 10, 10)
+        painter.setPen(QColor("white"))
+        font = QFont()
+        font.setBold(True)
+        font.setPixelSize(30)
+        painter.setFont(font)
+        painter.drawText(
+            QRectF(2, 10, 60, 44), int(Qt.AlignmentFlag.AlignCenter), "${}"
+        )
 
     @staticmethod
     def __draw_about(painter: QPainter) -> None:

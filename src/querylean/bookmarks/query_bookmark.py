@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from querylean.bookmarks.mask_error import MaskError
+from querylean.bookmarks.mask_template import MaskTemplate
+from querylean.bookmarks.placeholder import Placeholder
 from querylean.config.connection_config import ConnectionConfig
 
 
@@ -14,14 +17,25 @@ class QueryBookmark:
     (``user@host:port/database``, ``/*`` with all the databases, see
     ``target_of``): a bookmark is offered
     and executed only on a session with the same target.
+
+    A bookmark with ``placeholders`` is a **mask**: its query contains
+    ``${NAME}`` placeholders (see ``MaskTemplate``), each defined by one
+    ``Placeholder``, and must be compiled with values before running.
     """
 
     MAX_NAME_LENGTH = 100
 
-    def __init__(self, name: str, sql: str, target: str) -> None:
+    def __init__(
+        self,
+        name: str,
+        sql: str,
+        target: str,
+        placeholders: tuple[Placeholder, ...] = (),
+    ) -> None:
         self.__name = name
         self.__sql = sql
         self.__target = target
+        self.__placeholders = tuple(placeholders)
 
     @property
     def name(self) -> str:
@@ -37,6 +51,16 @@ class QueryBookmark:
     def target(self) -> str:
         """``user@host:port/database`` the query was saved for."""
         return self.__target
+
+    @property
+    def placeholders(self) -> tuple[Placeholder, ...]:
+        """Placeholders of a mask, in order (empty for a plain query)."""
+        return self.__placeholders
+
+    @property
+    def is_mask(self) -> bool:
+        """True when the query has placeholders to fill in."""
+        return bool(self.__placeholders)
 
     @staticmethod
     def target_of(config: ConnectionConfig) -> str:
@@ -58,7 +82,14 @@ class QueryBookmark:
 
     def to_dict(self) -> dict[str, Any]:
         """Serializable representation."""
-        return {"name": self.__name, "sql": self.__sql, "target": self.__target}
+        data: dict[str, Any] = {
+            "name": self.__name,
+            "sql": self.__sql,
+            "target": self.__target,
+        }
+        if self.__placeholders:
+            data["placeholders"] = [p.to_dict() for p in self.__placeholders]
+        return data
 
     @staticmethod
     def from_dict(data: object) -> QueryBookmark | None:
@@ -72,7 +103,32 @@ class QueryBookmark:
         name = QueryBookmark.clean_name(values[0])
         if not name or len(name) > QueryBookmark.MAX_NAME_LENGTH:
             return None
-        return QueryBookmark(name, values[1], values[2])
+        placeholders = QueryBookmark.__placeholders_of(
+            values[1], data.get("placeholders", [])
+        )
+        if placeholders is None:
+            return None
+        return QueryBookmark(name, values[1], values[2], placeholders)
+
+    @staticmethod
+    def __placeholders_of(
+        sql: str, data: object
+    ) -> tuple[Placeholder, ...] | None:
+        """Placeholders stored with ``sql``: exactly one valid definition
+        for each placeholder of the text, otherwise None."""
+        if not isinstance(data, list):
+            return None
+        placeholders = [Placeholder.from_dict(item) for item in data]
+        if any(p is None for p in placeholders):
+            return None
+        try:
+            names = MaskTemplate(sql).names
+        except MaskError:
+            return None
+        defined = [p.name for p in placeholders if p is not None]
+        if sorted(defined) != sorted(names):
+            return None
+        return tuple(p for p in placeholders if p is not None)
 
     def __eq__(self, other: object) -> bool:
         return (
@@ -81,7 +137,9 @@ class QueryBookmark:
         )
 
     def __hash__(self) -> int:
-        return hash((self.__name, self.__sql, self.__target))
+        return hash(
+            (self.__name, self.__sql, self.__target, self.__placeholders)
+        )
 
     def __repr__(self) -> str:
         text = "QueryBookmark(name={!r}, target={!r})"

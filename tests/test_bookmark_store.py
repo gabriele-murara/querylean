@@ -6,6 +6,8 @@ import stat
 import pytest
 
 from querylean.bookmarks.bookmark_store import BookmarkStore
+from querylean.bookmarks.placeholder import Placeholder
+from querylean.bookmarks.placeholder_type import PlaceholderType
 from querylean.bookmarks.query_bookmark import QueryBookmark
 from querylean.config.config_error import ConfigError
 from querylean.config.connection_store import ConnectionStore
@@ -100,3 +102,27 @@ class TestBookmarkStore:
         path.write_text(json.dumps({"bookmarks": entries}), encoding="utf-8")
         names = [b.name for b in store.load(profile_id, self.TARGET)]
         assert names == ["ok"]
+
+    def test_masks_are_stored_and_version_1_files_still_read(
+        self, store, profile_id
+    ):
+        path = store.path_of(profile_id)
+        path.parent.mkdir(parents=True)
+        legacy = {
+            "version": 1,
+            "bookmarks": [
+                {"name": "old", "sql": "SELECT 1", "target": self.TARGET}
+            ],
+        }
+        path.write_text(json.dumps(legacy), encoding="utf-8")
+        mask = QueryBookmark(
+            "mask",
+            "SELECT * FROM t WHERE y = ${Y}",
+            self.TARGET,
+            (Placeholder("Y", PlaceholderType.INTEGER, default="1"),),
+        )
+        store.add(profile_id, mask)
+        loaded = store.load(profile_id, self.TARGET)
+        assert [b.name for b in loaded] == ["mask", "old"]
+        assert loaded[0] == mask
+        assert json.loads(path.read_text(encoding="utf-8"))["version"] == 2

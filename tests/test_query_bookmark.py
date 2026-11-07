@@ -2,6 +2,8 @@
 
 import pytest
 
+from querylean.bookmarks.placeholder import Placeholder
+from querylean.bookmarks.placeholder_type import PlaceholderType
 from querylean.bookmarks.query_bookmark import QueryBookmark
 from querylean.config.connection_config import ConnectionConfig
 
@@ -71,4 +73,45 @@ class TestQueryBookmark:
         ],
     )
     def test_invalid_data_is_ignored(self, data):
+        assert QueryBookmark.from_dict(data) is None
+
+    MASK_SQL = "SELECT * FROM orders WHERE year = ${YEAR} AND c IN (${C})"
+
+    def test_mask_roundtrip(self):
+        mask = QueryBookmark(
+            "Orders",
+            self.MASK_SQL,
+            "t",
+            (
+                Placeholder("YEAR", PlaceholderType.INTEGER, default="2026"),
+                Placeholder("C", is_list=True, description="Codes"),
+            ),
+        )
+        assert mask.is_mask
+        assert QueryBookmark.from_dict(mask.to_dict()) == mask
+        plain = QueryBookmark("Users", "SELECT 1", "t")
+        assert not plain.is_mask
+        assert "placeholders" not in plain.to_dict()
+
+    @pytest.mark.parametrize(
+        "placeholders",
+        [
+            [],  # placeholders of the text not defined
+            [{"name": "YEAR", "type": "integer"}],  # C missing
+            [
+                {"name": "YEAR", "type": "integer"},
+                {"name": "C", "type": "text"},
+                {"name": "EXTRA", "type": "text"},
+            ],
+            [{"name": "YEAR", "type": "nope"}, {"name": "C", "type": "text"}],
+            "not a list",
+        ],
+    )
+    def test_inconsistent_masks_are_ignored(self, placeholders):
+        data = {
+            "name": "Orders",
+            "sql": self.MASK_SQL,
+            "target": "t",
+            "placeholders": placeholders,
+        }
         assert QueryBookmark.from_dict(data) is None

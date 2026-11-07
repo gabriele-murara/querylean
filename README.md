@@ -17,7 +17,7 @@ at a time, a SQL editor and a table of copyable results.
   - [autocompletion](#autocompletion) of tables, columns, aliases, keywords and functions with `Ctrl+Space`, also opening by itself while typing.
 - A connection uses one database or [all the databases](#all-the-databases) the account can access.
 - Side bar with databases, tables and views you have access to: a click on a table prepares `SELECT * FROM <table> LIMIT 1;` in the editor and shows its columns (type, keys, comments).
-- Bookmarked queries: a query saved with a name for one connection can be run again from the **Bookmarked queries** menu, only on that connection.
+- Bookmarked queries: a query saved with a name for one connection can be run again from the **Bookmarked queries** menu, only on that connection. A bookmark can be a [mask](#masks) with `${NAME}` placeholders for the values that change.
 - Only read statements are allowed (`SELECT`, `WITH … SELECT`, `UNION`, `SHOW`, `DESCRIBE`/`DESC`, `EXPLAIN SELECT`). Every query goes through a parser-based validator.
 - On connection the account privileges are checked database by database: a database the account can change is refused until you accept it in [caution mode](#caution-mode).
 - Queries run outside the GUI thread, with an activity indicator, timeouts and a blinking **Stop** button that appears only when a query takes more than a second.
@@ -150,6 +150,24 @@ A bookmarked query belongs to **one saved connection** and to the database it po
 - A bookmark is never run on another connection: the menu shows only those of the open connection, and before running one the database thread checks that the open session points to the same user, host, port and database. Another saved connection pointing to the same database has its own bookmarks.
 - If a connection is edited to point to another host, port, database or user, its old bookmarks are no longer shown; they come back if the previous values are restored.
 - The bookmarks are stored in a JSON file per connection (see [Local files](#local-files)).
+
+### Masks
+
+A **mask** is a bookmarked query with `${NAME}` placeholders in place of the values that change, for example:
+
+```sql
+SELECT * FROM orders WHERE year = ${YEAR};
+SELECT * FROM call_answered WHERE cli = '${DIGITS}' AND connection_time = '${CONNECTION_DATETIME}';
+SELECT * FROM documents WHERE code IN (${CODES}) AND importDateTime >= '${IMPORT_DATE_TIME}';
+```
+
+- **Writing placeholders**: type them in the editor, or start from a query that already works: select a value (`2026`, `'3391234567'`, part of a string, or a list such as `12, 15, 31`) and choose **Make placeholder…** (`Ctrl+Shift+P`, also in the editor context menu). The suggested name is the compared column (`cli = '…'` → `CLI`); the value becomes the example and default, and its type is detected. One undo restores the value.
+- **Names**: letters, digits and `_`, not starting with a digit. The same placeholder used twice takes one value. Placeholders are highlighted in the editor; inside comments they are ignored, between backticks (a table or column name) they are not allowed.
+- **Types**: Integer, Decimal, Text, Date, Time, Date-time, Boolean. A placeholder can be a **list** (for `IN (${CODES})`): comma-separated values, or one per line.
+- **Values never become SQL**: outside quotes a value becomes a typed literal (a checked number, `TRUE`/`FALSE`, or an escaped string), inside quotes (`'${DIGITS}'`) escaped string content. A value such as `2026 OR 1=1` for an Integer is refused, and `x' OR 'a'='a` for a Text stays inside the string: the structure of the query never changes.
+- **Saving**: **Save query** on a query with placeholders opens **Save mask**: name, and for each placeholder type, list, default value and description. The preview shows the query compiled with the defaults: it must be a read query, otherwise **Save** stays disabled.
+- **In the menu** a mask has a `${}` icon and its name ends with "…"; choosing it loads the mask into the editor (it is not run). **Run** on a query with placeholders is refused with the list of placeholders to replace.
+- Masks are stored with the other bookmarks of the connection (bookmark file version 2; files of earlier versions are read unchanged).
 
 ### Execution rules
 
@@ -321,7 +339,7 @@ src/querylean/
   app/          startup (Application), metadata (AppInfo), smoke test
   log/          application logger, rotating log, secret redaction
   config/       configuration model and JSON persistence
-  bookmarks/    bookmarked queries per connection (QueryBookmark, BookmarkStore)
+  bookmarks/    bookmarked queries per connection (QueryBookmark, BookmarkStore) and masks (MaskTemplate, Placeholder, PlaceholderType)
   completion/   autocompletion: tolerant scanner, statement analysis, proposals (CompletionEngine)
   security/     password in the keychain (abstract SecretStore, KeyringSecretStore)
   export/       Excel/CSV/JSON export (abstract ResultExporter)

@@ -6,12 +6,14 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QMenu, QWidget
 
 from querylean.bookmarks.query_bookmark import QueryBookmark
+from querylean.ui.icons.toolbar_icons import ToolbarIcons
 from querylean.ui.safe_text import SafeText
 
 
 class BookmarksMenu(QMenu):
     """One entry per bookmarked query of the current connection (a click
-    runs it), then a "Delete" sub-menu. Without bookmarks a disabled entry
+    runs it; a mask, shown with "…" and its icon, is loaded instead), then
+    a "Delete" sub-menu. Without bookmarks a disabled entry
     explains how to add one.
 
     Signals carry the bookmark name; the menu holds no logic.
@@ -23,6 +25,8 @@ class BookmarksMenu(QMenu):
     TITLE = "Bookmarked queries"
     EMPTY_TEXT = "No bookmarked queries for this connection"
     DELETE_TEXT = "Delete"
+    # Masks open their placeholders instead of running at once.
+    MASK_LABEL = "{}…"
     __MAX_TOOLTIP = 300
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -45,10 +49,17 @@ class BookmarksMenu(QMenu):
             empty.setEnabled(False)
             return
         for bookmark in bookmarks:
-            entry = self.addAction(bookmark.name)
-            entry.setToolTip(
-                SafeText.tooltip(BookmarksMenu.__tooltip(bookmark.sql))
-            )
+            label = bookmark.name
+            tooltip = BookmarksMenu.__tooltip(bookmark.sql)
+            if bookmark.is_mask:
+                label = BookmarksMenu.MASK_LABEL.format(bookmark.name)
+                tokens = ", ".join(p.token for p in bookmark.placeholders)
+                tooltip = "Mask: {}\n{}".format(tokens, tooltip)
+            entry = self.addAction(label)
+            entry.setData(bookmark.name)
+            if bookmark.is_mask:
+                entry.setIcon(ToolbarIcons.mask())
+            entry.setToolTip(SafeText.tooltip(tooltip))
             entry.triggered.connect(
                 lambda _c=False, n=bookmark.name: self.run_requested.emit(n)
             )
@@ -63,7 +74,7 @@ class BookmarksMenu(QMenu):
     def names(self) -> list[str]:
         """Names of the bookmarks offered, in menu order."""
         return [
-            action.text()
+            str(action.data())
             for action in self.actions()
             if action.isEnabled()
             and not action.isSeparator()

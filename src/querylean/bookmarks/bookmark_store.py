@@ -24,7 +24,9 @@ class BookmarkStore:
     """
 
     SUFFIX = ".json"
-    __FORMAT_VERSION = 1
+    # 2: masks (bookmarks with placeholders); version 1 files are read
+    # unchanged.
+    __FORMAT_VERSION = 2
     __log = LogManager.get_logger(__name__)
 
     def __init__(self, directory: Path) -> None:

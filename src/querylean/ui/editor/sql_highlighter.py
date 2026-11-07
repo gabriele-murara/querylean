@@ -15,7 +15,8 @@ from PySide6.QtGui import (
 
 class SqlHighlighter(QSyntaxHighlighter):
     """Highlights keywords, strings, numbers and comments (including
-    multi-line)."""
+    multi-line), and the ``${NAME}`` placeholders of masks (also inside
+    strings, not in comments)."""
 
     __WORDS = "ADD ALL AND ANY AS ASC BETWEEN BINARY BY CASE CAST COLLATE "
     __WORDS += "CREATE CROSS CURRENT_DATE CURRENT_TIME CURRENT_TIMESTAMP "
@@ -40,6 +41,9 @@ class SqlHighlighter(QSyntaxHighlighter):
     __SPAN += r"|`(?:``|[^`])*`?"
     __SPAN += r"|#.*$|--(?:\s.*)?$|/\*"
     __SPAN_RE = re.compile(__SPAN)
+    __PLACEHOLDER_RE = re.compile(r"\$\{[A-Za-z_][A-Za-z0-9_]*\}")
+    PLACEHOLDER_COLOR = "#ad1457"
+    PLACEHOLDER_BACKGROUND = "#fce4ec"
 
     def __init__(self, document: QTextDocument) -> None:
         super().__init__(document)
@@ -48,6 +52,12 @@ class SqlHighlighter(QSyntaxHighlighter):
         self.__number = SqlHighlighter.__make_format("#1750eb")
         self.__comment = SqlHighlighter.__make_format("#8c8c8c", italic=True)
         self.__plain = QTextCharFormat()
+        self.__placeholder = SqlHighlighter.__make_format(
+            SqlHighlighter.PLACEHOLDER_COLOR, bold=True
+        )
+        self.__placeholder.setBackground(
+            QColor(SqlHighlighter.PLACEHOLDER_BACKGROUND)
+        )
 
     def highlightBlock(self, text: str) -> None:  # noqa: N802 (Qt API)
         for match in SqlHighlighter.__KEYWORD_RE.finditer(text):
@@ -81,6 +91,13 @@ class SqlHighlighter(QSyntaxHighlighter):
                 fmt = self.__string
             self.setFormat(match.start(), len(token), fmt)
             pos = match.end()
+        for match in SqlHighlighter.__PLACEHOLDER_RE.finditer(text):
+            if self.format(match.start()) != self.__comment:
+                self.setFormat(
+                    match.start(),
+                    match.end() - match.start(),
+                    self.__placeholder,
+                )
 
     def __comment_to_end(
         self, text: str, start: int, *, continuing: bool

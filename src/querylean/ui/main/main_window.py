@@ -28,6 +28,9 @@ from PySide6.QtWidgets import (
 )
 
 from querylean.app.app_info import AppInfo
+from querylean.bookmarks.mask_error import MaskError
+from querylean.bookmarks.mask_template import MaskTemplate
+from querylean.bookmarks.placeholder import Placeholder
 from querylean.bookmarks.query_bookmark import QueryBookmark
 from querylean.completion.completion_engine import CompletionEngine
 from querylean.completion.schema_model import SchemaModel
@@ -57,6 +60,7 @@ from querylean.security.secret_storage_error import SecretStorageError
 from querylean.security.secret_store import SecretStore
 from querylean.ui.dialogs.about_dialog import AboutDialog
 from querylean.ui.dialogs.connection_dialog import ConnectionDialog
+from querylean.ui.dialogs.save_mask_dialog import SaveMaskDialog
 from querylean.ui.editor.sql_editor import SqlEditor
 from querylean.ui.icons.toolbar_icons import ToolbarIcons
 from querylean.ui.main.bookmarks_menu import BookmarksMenu
@@ -588,15 +592,31 @@ class MainWindow(QMainWindow):
         sql = self.__editor.query_text()
         if not sql.strip():
             return
+        if MaskTemplate.has_placeholders(sql):
+            msg = "The query contains placeholders{}: replace them with "
+            msg += "values before running it."
+            self.show_message(
+                msg.format(MainWindow.__placeholder_list(sql)), error=True
+            )
+            return
         self.__start_query(sql)
 
     def save_bookmark(
-        self, name: str | None = None, *, confirm: bool = True
+        self,
+        name: str | None = None,
+        *,
+        confirm: bool = True,
+        placeholders: tuple[Placeholder, ...] | None = None,
     ) -> QueryBookmark | None:
         """Save the selection, or the whole editor content, as a bookmarked
         query of the open session. Without ``name`` the user is asked for
         one; an existing bookmark with that name is replaced (after
-        confirmation). Only queries accepted by the validator are saved."""
+        confirmation). Only queries accepted by the validator are saved.
+
+        A query with ``${NAME}`` placeholders is saved as a mask: the
+        "Save mask" dialog asks for the name and the placeholder types and
+        defaults, unless ``placeholders`` is given. The mask compiled with
+        its defaults must be a read query."""
         if self.__running:
             return None
         if self.__state != ConnectionState.CONNECTED:
@@ -606,11 +626,18 @@ class MainWindow(QMainWindow):
         if not sql:
             self.show_message("Write a query to bookmark it.", error=True)
             return None
-        validation = self.__validator.validate(sql)
-        if not validation.ok:
-            msg = "Only read queries can be bookmarked. {}"
-            self.show_message(msg.format(validation.reason), error=True)
-            return None
+        if MaskTemplate.has_placeholders(sql):
+            definition = self.__define_mask(sql, name, placeholders)
+            if definition is None:
+                return None
+            name, placeholders = definition
+        else:
+            placeholders = ()
+            validation = self.__validator.validate(sql)
+            if not validation.ok:
+                msg = "Only read queries can be bookmarked. {}"
+                self.show_message(msg.format(validation.reason), error=True)
+                return None
         if name is None:
             name, ok = QInputDialog.getText(
                 self,
@@ -642,16 +669,75 @@ class MainWindow(QMainWindow):
                 return None
         if existing is not None:
             name = existing.name
-        bookmark = QueryBookmark(name, sql, target)
+        bookmark = QueryBookmark(name, sql, target, placeholders)
         try:
             store.add(self.__session_id, bookmark)
         except ConfigError as exc:
             self.__warn(MainWindow.SAVE_QUERY_TEXT, str(exc))
             return None
         self.__reload_bookmarks()
-        msg = "Query saved as “{}” for “{}”."
+        msg = (
+            "Mask saved as “{}” for “{}”."
+            if placeholders
+            else ("Query saved as “{}” for “{}”.")
+        )
         self.show_message(msg.format(name, self.__session_display_name()))
         return bookmark
+
+    def __define_mask(
+        self,
+        sql: str,
+        name: str | None,
+        placeholders: tuple[Placeholder, ...] | None,
+    ) -> tuple[str, tuple[Placeholder, ...]] | None:
+        """Name and placeholders of the mask ``sql`` (from the "Save mask"
+        dialog unless ``placeholders`` is given), checked: the mask
+        compiled with the defaults must be a read query."""
+        try:
+            template = MaskTemplate(sql)
+        except MaskError as exc:
+            self.show_message(
+                "Mask not saved. {}".format(exc.message), error=True
+            )
+            return None
+        if placeholders is None:
+            dialog = SaveMaskDialog(
+                sql,
+                self.__editor.placeholders(),
+                name=name or "",
+                validator=self.__validator,
+                parent=self,
+            )
+            if dialog.exec() != SaveMaskDialog.DialogCode.Accepted:
+                return None
+            name, placeholders = dialog.mask_name(), dialog.placeholders()
+        defined = {p.name: p for p in placeholders}
+        try:
+            compiled = template.compile(
+                defined, {key: p.default for key, p in defined.items()}
+            )
+        except MaskError as exc:
+            self.show_message(
+                "Mask not saved. {}".format(exc.message), error=True
+            )
+            return None
+        validation = self.__validator.validate(compiled)
+        if not validation.ok:
+            msg = "Only read queries can be bookmarked. {}"
+            self.show_message(msg.format(validation.reason), error=True)
+            return None
+        ordered = tuple(defined[key] for key in template.names)
+        return (name or ""), ordered
+
+    @staticmethod
+    def __placeholder_list(sql: str) -> str:
+        """`` (${A}, ${B})`` for the placeholders of ``sql`` (empty when
+        they cannot be parsed)."""
+        try:
+            names = MaskTemplate(sql).names
+        except MaskError:
+            return ""
+        return " ({})".format(", ".join("${{{}}}".format(n) for n in names))
 
     def run_bookmark(self, name: str) -> None:
         """Put the bookmarked query ``name`` of the open session in the
@@ -673,6 +759,17 @@ class MainWindow(QMainWindow):
             self.__reload_bookmarks()
             return
         self.__editor.replace_query(bookmark.sql)
+        if bookmark.is_mask:
+            # Masks are compiled with values before running.
+            self.__editor.remember_placeholders(bookmark.placeholders)
+            msg = "Mask “{}” loaded in the editor: replace its placeholders"
+            msg += "{} with values to run it."
+            self.show_message(
+                msg.format(
+                    bookmark.name, MainWindow.__placeholder_list(bookmark.sql)
+                )
+            )
+            return
         self.__start_query(bookmark.sql, bookmark.target)
 
     def delete_bookmark(self, name: str, *, confirm: bool = True) -> bool:

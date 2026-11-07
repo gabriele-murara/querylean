@@ -159,7 +159,9 @@ class StatementAnalyzer:
                 end += 1
             prefix = text[start:position]
             word = next((t for t in tokens if t.start == start), None)
-            if prefix[:1].isdigit():
+            if prefix[:1].isdigit() or text[:start].endswith("${"):
+                # Numbers and placeholder names (``${NAME}``) are not
+                # completed.
                 return StatementContext(
                     StatementContext.NONE, start=position, end=position
                 )
