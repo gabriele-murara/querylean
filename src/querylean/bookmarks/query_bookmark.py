@@ -81,6 +81,16 @@ class QueryBookmark:
             values,
         )
 
+    def with_name(self, name: str) -> QueryBookmark:
+        """The same bookmark (and last values) with another name."""
+        return QueryBookmark(
+            name,
+            self.__sql,
+            self.__target,
+            self.__placeholders,
+            self.__last_values,
+        )
+
     @property
     def is_mask(self) -> bool:
         """True when the query has placeholders to fill in."""

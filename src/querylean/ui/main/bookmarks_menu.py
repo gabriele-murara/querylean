@@ -11,10 +11,12 @@ from querylean.ui.safe_text import SafeText
 
 
 class BookmarksMenu(QMenu):
-    """One entry per bookmarked query of the current connection (a click
-    runs it; a mask, shown with "…" and its icon, is loaded instead), then
+    """One entry per bookmarked query of the current connection, then
     a "Delete" sub-menu. Without bookmarks a disabled entry
     explains how to add one.
+
+    A click on a plain query (sheet icon, ``ToolbarIcons.query``) runs it;
+    a mask (``${}`` icon, name ending with "…") opens its values first.
 
     Signals carry the bookmark name; the menu holds no logic.
     """
@@ -57,8 +59,11 @@ class BookmarksMenu(QMenu):
                 tooltip = "Mask: {}\n{}".format(tokens, tooltip)
             entry = self.addAction(label)
             entry.setData(bookmark.name)
-            if bookmark.is_mask:
-                entry.setIcon(ToolbarIcons.mask())
+            entry.setIcon(
+                ToolbarIcons.mask()
+                if bookmark.is_mask
+                else ToolbarIcons.query()
+            )
             entry.setToolTip(SafeText.tooltip(tooltip))
             entry.triggered.connect(
                 lambda _c=False, n=bookmark.name: self.run_requested.emit(n)

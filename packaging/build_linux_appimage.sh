@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Genera dist/querylean-<versione>-<arch>.AppImage.
-# Requisiti: Python con le dipendenze di build (`pip install -e .[build]`),
-# curl, file, desktop-file-utils, FUSE oppure APPIMAGE_EXTRACT_AND_RUN=1 per
-# eseguire appimagetool. Per la massima compatibilità va eseguito sulla
-# distribuzione più vecchia da supportare (Ubuntu 22.04). Le librerie xcb di
-# Qt devono essere installate (vedi QT_XCB_PACKAGES in ci.yml).
+# Builds dist/querylean-<version>-<arch>.AppImage.
+# Requirements: Python with the build dependencies (`pip install -e .[build]`),
+# curl, file, desktop-file-utils, FUSE or APPIMAGE_EXTRACT_AND_RUN=1 to run
+# appimagetool. For the widest compatibility run it on the oldest
+# distribution to support (Ubuntu 22.04). The Qt xcb libraries must be
+# installed (see QT_XCB_PACKAGES in ci.yml).
 set -euo pipefail
 
 . "$(dirname "$0")/common.sh"
@@ -45,4 +45,4 @@ fi
 OUTPUT="dist/querylean-${VERSION}-${ARCH}.AppImage"
 ARCH="$ARCH" "$APPIMAGETOOL" --no-appstream --runtime-file "$RUNTIME" \
     "$APPDIR" "$OUTPUT"
-echo "Creato $OUTPUT"
+echo "Created $OUTPUT"

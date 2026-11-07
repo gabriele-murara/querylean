@@ -147,3 +147,29 @@ class TestBookmarkStore:
             store.remember_values(profile_id, self.OTHER_TARGET, "Mask", {})
             is None
         )
+
+    def test_rename(self, store, profile_id):
+        mask = QueryBookmark(
+            "Mask",
+            "SELECT * FROM t WHERE y = ${Y}",
+            self.TARGET,
+            (Placeholder("Y", PlaceholderType.INTEGER, default="1"),),
+            {"Y": "7"},
+        )
+        store.add(profile_id, mask)
+        store.add(profile_id, self.bookmark("Other"))
+        store.add(profile_id, self.bookmark("Taken", target=self.OTHER_TARGET))
+        renamed = store.rename(profile_id, self.TARGET, "mask", " New  name ")
+        assert renamed.name == "New name"
+        assert renamed.last_values == {"Y": "7"}
+        names = [b.name for b in store.load(profile_id, self.TARGET)]
+        assert names == ["New name", "Other"]
+        # Only the bookmarks of the same target count.
+        assert store.rename(profile_id, self.TARGET, "New name", "Taken")
+        with pytest.raises(ConfigError):
+            store.rename(profile_id, self.TARGET, "Taken", "other")
+        with pytest.raises(ConfigError):
+            store.rename(profile_id, self.TARGET, "Taken", "  ")
+        assert store.rename(profile_id, self.TARGET, "missing", "X") is None
+        # A change of case only is allowed.
+        assert store.rename(profile_id, self.TARGET, "taken", "TAKEN")

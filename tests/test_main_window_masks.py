@@ -193,3 +193,36 @@ class TestMainWindowMasks(MainWindowTestBase):
         assert "Mask “Orders” loaded" in window.message_label.text()
         # Saving it again keeps types, defaults and descriptions.
         assert window.editor.placeholders()["CODES"].is_list
+
+    def test_mask_renamed_in_the_run_dialog(
+        self, qtbot, window, connector, monkeypatch
+    ):
+        self.connect(qtbot, window)
+        self.save_mask(window)
+
+        def rename(dialog):
+            dialog.name_edit.setText("Orders by year")
+            return FillMaskDialog.DialogCode.Accepted
+
+        monkeypatch.setattr(FillMaskDialog, "exec", rename)
+        window.bookmarks_menu.actions()[0].trigger()
+        qtbot.waitUntil(lambda: not window.running, timeout=5000)
+        assert window.bookmarks_menu.names() == ["Orders by year"]
+        assert window.bookmarks[0].last_values["YEAR"] == "2026"
+
+        def rename_and_edit(dialog):
+            dialog.name_edit.setText("Orders")
+            return FillMaskDialog.EDIT_RESULT
+
+        monkeypatch.setattr(FillMaskDialog, "exec", rename_and_edit)
+        window.bookmarks_menu.actions()[0].trigger()
+        assert window.bookmarks_menu.names() == ["Orders"]
+        assert window.editor.toPlainText() == self.MASK
+
+        def rename_and_cancel(dialog):
+            dialog.name_edit.setText("Ignored")
+            return FillMaskDialog.DialogCode.Rejected
+
+        monkeypatch.setattr(FillMaskDialog, "exec", rename_and_cancel)
+        window.bookmarks_menu.actions()[0].trigger()
+        assert window.bookmarks_menu.names() == ["Orders"]

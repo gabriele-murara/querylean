@@ -10,6 +10,9 @@ from querylean.completion.completion_engine import CompletionEngine
 from querylean.completion.schema_model import SchemaModel
 from querylean.database.schema.column_info import ColumnInfo
 from querylean.database.schema.table_info import TableInfo
+from querylean.ui.dialogs.make_placeholders_dialog import (
+    MakePlaceholdersDialog,
+)
 from querylean.ui.editor.sql_editor import SqlEditor
 from querylean.ui.editor.sql_highlighter import SqlHighlighter
 
@@ -89,13 +92,11 @@ class TestSqlEditorPlaceholders:
         monkeypatch.setattr(
             QMessageBox, "warning", lambda *a: warnings.append(a[2])
         )
-        editor.setPlainText(self.SQL)
-        assert editor.make_placeholder("X") is None  # nothing selected
         self.select(editor, self.SQL, "calls")
         assert editor.make_placeholder("X") is None
         self.select(editor, self.SQL, "2026")
         assert editor.make_placeholder("1X") is None
-        assert len(warnings) == 3
+        assert len(warnings) == 2
         assert editor.toPlainText() == self.SQL
 
     def test_cancelled_name_changes_nothing(self, editor, monkeypatch):
@@ -139,3 +140,63 @@ class TestSqlEditorPlaceholders:
         editor.moveCursor(editor.textCursor().MoveOperation.End)
         result = editor.complete()
         assert result.items == ()
+
+    def test_without_selection_every_value_is_offered(
+        self, qtbot, editor, monkeypatch
+    ):
+        sql = "SELECT * FROM calls WHERE cli = '3391234567' "
+        sql += "AND code IN (12, 15) LIMIT 10"
+        editor.setPlainText(sql)
+        opened = []
+
+        def choose(dialog):
+            opened.append(dialog)
+            assert dialog.table.rowCount() == 3
+            # Compared values are checked, LIMIT is not.
+            assert [dialog.use_box(r).isChecked() for r in range(3)] == [
+                True,
+                True,
+                False,
+            ]
+            dialog.name_edit(1).setText("CODES")
+            return MakePlaceholdersDialog.DialogCode.Accepted
+
+        monkeypatch.setattr(MakePlaceholdersDialog, "exec", choose)
+        editor.setFocus()
+        qtbot.waitUntil(editor.hasFocus)
+        qtbot.keyClick(
+            editor,
+            Qt.Key.Key_P,
+            Qt.KeyboardModifier.ControlModifier
+            | Qt.KeyboardModifier.ShiftModifier,
+        )
+        assert len(opened) == 1
+        expected = "SELECT * FROM calls WHERE cli = ${CLI} "
+        expected += "AND code IN (${CODES}) LIMIT 10"
+        assert editor.toPlainText() == expected
+        made = editor.placeholders()
+        assert made["CODES"].is_list
+        assert made["CODES"].kind is PlaceholderType.INTEGER
+        assert made["CLI"].default == "3391234567"
+        # One undo restores every value.
+        editor.undo()
+        assert editor.toPlainText() == sql
+
+    def test_cancelled_dialog_changes_nothing(self, editor, monkeypatch):
+        editor.setPlainText(self.SQL)
+        monkeypatch.setattr(
+            MakePlaceholdersDialog,
+            "exec",
+            lambda d: MakePlaceholdersDialog.DialogCode.Rejected,
+        )
+        assert editor.make_placeholder() is None
+        assert editor.toPlainText() == self.SQL
+
+    def test_query_without_values_is_explained(self, editor, monkeypatch):
+        warnings = []
+        monkeypatch.setattr(
+            QMessageBox, "warning", lambda *a: warnings.append(a[2])
+        )
+        editor.setPlainText("SELECT a FROM t -- 2026")
+        assert editor.make_placeholders() == ()
+        assert len(warnings) == 1 and "no values" in warnings[0]

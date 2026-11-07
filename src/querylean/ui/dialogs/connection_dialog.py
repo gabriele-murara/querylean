@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 from querylean.app.app_info import AppInfo
 from querylean.config.connection_config import ConnectionConfig
 from querylean.database.privileges.account_check import AccountCheck
+from querylean.ui.dialogs.status_label import StatusLabel
 from querylean.ui.safe_text import SafeText
 from querylean.ui.worker.db_worker import DbWorker
 
@@ -39,8 +40,6 @@ class ConnectionDialog(QDialog):
     NEW_TITLE = "New connection"
     EDIT_TITLE = "Edit connection"
 
-    __OK_COLOR = "#1a7f37"
-    __ERROR_COLOR = "#c62828"
     __ROW_LIMIT_STEP = 100
 
     def __init__(
@@ -108,7 +107,7 @@ class ConnectionDialog(QDialog):
         )
         self.__caution_warning.setWordWrap(True)
         self.__caution_warning.setStyleSheet(
-            "color: {};".format(ConnectionDialog.__ERROR_COLOR)
+            "color: {};".format(StatusLabel.ERROR_COLOR)
         )
         self.__caution_list = QListWidget()
         self.__caution_list.setMaximumHeight(110)
@@ -139,10 +138,8 @@ class ConnectionDialog(QDialog):
         hint.setWordWrap(True)
         hint.setStyleSheet("color: palette(placeholder-text);")
 
-        self.__status = QLabel()
-        # Server messages and database names: never rendered as HTML.
-        self.__status.setTextFormat(Qt.TextFormat.PlainText)
-        self.__status.setWordWrap(True)
+        # Server messages and database names: plain text, never HTML.
+        self.__status = StatusLabel()
         self.__status.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
@@ -326,8 +323,7 @@ class ConnectionDialog(QDialog):
         if not self.__check_required():
             return
         self.__test_button.setEnabled(False)
-        self.__status.setStyleSheet("")
-        self.__status.setText("Testing the connection…")
+        self.__status.show_neutral("Testing the connection…")
         self.__worker.test_requested.emit(self.config(), self.password_value())
 
     def save(self) -> None:
@@ -415,13 +411,7 @@ class ConnectionDialog(QDialog):
         )
 
     def __set_status(self, ok: bool, message: str) -> None:
-        color = (
-            ConnectionDialog.__OK_COLOR
-            if ok
-            else ConnectionDialog.__ERROR_COLOR
-        )
-        self.__status.setStyleSheet("color: {};".format(color))
-        self.__status.setText(message)
+        self.__status.show_status(ok, message)
 
     @staticmethod
     def __spin(low: int, high: int, value: int, suffix: str = "") -> QSpinBox:

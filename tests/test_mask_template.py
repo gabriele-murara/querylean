@@ -205,3 +205,77 @@ class TestMaskTemplate:
     def test_empty_selection_is_refused(self):
         with pytest.raises(MaskError):
             MaskTemplate.make_placeholder("SELECT 1", 3, 3, "P")
+
+    CANDIDATES_SQL = "SELECT a1, `t2`.x FROM t2 WHERE cli = '339' "
+    CANDIDATES_SQL += "AND a = 1 OR a = 2 AND b IN ('x', 'y''z') -- 5\n"
+    CANDIDATES_SQL += "AND c = '${C}' AND n = 1e9 AND h = 0x10 AND s = '' "
+    CANDIDATES_SQL += "AND d BETWEEN '2026-01-01' AND '2026-12-31' LIMIT 10"
+
+    def test_candidates(self):
+        found = MaskTemplate.candidates(self.CANDIDATES_SQL)
+        summary = [
+            (
+                c.text,
+                c.placeholder.name,
+                c.placeholder.kind,
+                c.placeholder.is_list,
+                c.compared,
+            )
+            for c in found
+        ]
+        assert summary == [
+            ("'339'", "CLI", PlaceholderType.TEXT, False, True),
+            ("1", "A", PlaceholderType.INTEGER, False, True),
+            ("2", "A_2", PlaceholderType.INTEGER, False, True),
+            ("'x', 'y''z'", "B", PlaceholderType.TEXT, True, True),
+            ("'2026-01-01'", "D", PlaceholderType.DATE, False, True),
+            ("'2026-12-31'", "D_2", PlaceholderType.DATE, False, True),
+            ("10", "VALUE", PlaceholderType.INTEGER, False, False),
+        ]
+        for candidate in found:
+            assert (
+                self.CANDIDATES_SQL[candidate.start : candidate.end]
+                == candidate.text
+            )
+
+    def test_candidate_names_avoid_existing_placeholders(self):
+        found = MaskTemplate.candidates("SELECT 1 WHERE a = ${A} OR a = 2")
+        assert [c.placeholder.name for c in found] == ["VALUE", "A_2"]
+
+    def test_text_list_with_commas_defaults_one_per_line(self):
+        sql = "SELECT 1 WHERE b IN ('a,b', 'c')"
+        candidate = MaskTemplate.candidates(sql)[-1]
+        assert candidate.placeholder.default == "a,b\nc"
+        template = MaskTemplate(
+            MaskTemplate.make_placeholders(
+                sql, [(candidate.start, candidate.end, "B")]
+            )[0]
+        )
+        compiled = template.compile(
+            {"B": candidate.placeholder}, {"B": candidate.placeholder.default}
+        )
+        assert compiled == "SELECT 1 WHERE b IN ('a,b', 'c')"
+
+    def test_make_placeholders(self):
+        sql = "SELECT * FROM t WHERE a = 1 AND b = 'x' AND c = 2"
+        choices = [(sql.index("'x'"), sql.index("'x'") + 3, "B")]
+        choices.append((sql.index("1"), sql.index("1") + 1, "N"))
+        choices.append((sql.index("2"), sql.index("2") + 1, "N"))
+        new_sql, made = MaskTemplate.make_placeholders(sql, choices)
+        assert new_sql == (
+            "SELECT * FROM t WHERE a = ${N} AND b = ${B} AND c = ${N}"
+        )
+        assert [p.name for p in made] == ["N", "B"]
+        assert made[0].default == "1"
+
+    def test_make_placeholders_refuses_overlaps(self):
+        with pytest.raises(MaskError):
+            MaskTemplate.make_placeholders(
+                "SELECT 12", [(7, 9, "A"), (8, 9, "B")]
+            )
+
+    def test_dashes_before_a_unicode_space_are_not_a_comment(self):
+        # MySQL (and the validator) read the rest of the line as SQL.
+        sql = "SELECT 1 --{}${{A}}".format(chr(0xA0))
+        assert MaskTemplate(sql).names == ("A",)
+        assert MaskTemplate("SELECT 1 -- ${A}").names == ()

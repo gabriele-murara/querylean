@@ -353,13 +353,51 @@ class TestConnectionManager:
     ):
         # Older servers (MySQL < 5.7.20, MariaDB < 11.1).
         connector.configure = lambda conn: setattr(
-            conn, "session_variables", {"tx_read_only": value}
+            conn, "session_variables", {"tx_read_only": value, "sql_mode": ""}
         )
         manager.connect(self.CFG, "pw")
         assert "SELECT @@SESSION.tx_read_only" in (
             connector.connections[0].executed
         )
         assert manager.is_connected
+
+    def test_session_quoting_follows_the_validator(self, manager, connector):
+        manager.connect(self.CFG, "pw")
+        executed = connector.connections[0].executed
+        setup = [s for s in executed if s.startswith("SET SESSION sql_mode")]
+        assert len(setup) == 1
+        for mode in ("NO_BACKSLASH_ESCAPES", "ANSI_QUOTES", "'ANSI'"):
+            assert mode in setup[0]
+        assert "SELECT @@SESSION.sql_mode" in executed
+        assert manager.is_connected
+
+    @pytest.mark.parametrize(
+        "sql_mode",
+        [
+            "REAL_AS_FLOAT,PIPES_AS_CONCAT,ANSI_QUOTES,IGNORE_SPACE",
+            "STRICT_TRANS_TABLES,no_backslash_escapes",
+            None,
+            mysql_errors.OperationalError(msg="lost", errno=2013),
+        ],
+    )
+    def test_session_with_other_quoting_is_closed(
+        self, manager, connector, sql_mode
+    ):
+        cfg = self.CFG.copy()
+        cfg.caution_databases = ["app"]
+
+        def configure(conn):
+            conn.session_variables = {
+                "transaction_read_only": 1,
+                "sql_mode": sql_mode,
+            }
+
+        connector.configure = configure
+        with pytest.raises(DatabaseError) as info:
+            manager.connect(cfg, "pw")
+        assert "sql_mode" in info.value.message
+        assert not manager.is_connected
+        assert connector.connections[0].closed_by is not None
 
     def test_password_is_masked_in_params_repr(self):
         assert "pw-XYZ" not in repr(ConnectionParams(self.CFG, "pw-XYZ"))

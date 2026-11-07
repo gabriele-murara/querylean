@@ -120,7 +120,7 @@ class TestFillMaskDialog:
         assert dialog.field("YEAR").styleSheet() == ""
         dialog.field("YEAR").setText("2024")
         assert dialog.is_previous("YEAR")
-        dialog.use_defaults()
+        dialog.defaults_button.click()
         assert dialog.value("YEAR") == "2026"
         assert not dialog.is_previous("YEAR")
 
@@ -149,3 +149,25 @@ class TestFillMaskDialog:
         qtbot.addWidget(dialog)
         assert not dialog.is_valid()
         assert "Only read queries" in dialog.status.text()
+
+    def test_name_can_be_changed(self, qtbot):
+        mask = QueryBookmark("Calls", self.SQL, "t", self.PLACEHOLDERS)
+        dialog = FillMaskDialog(mask, taken_names=["calls", "Users"])
+        qtbot.addWidget(dialog)
+        assert dialog.name_edit.text() == "Calls"
+        assert not dialog.is_renamed()
+        dialog.name_edit.setText("  Calls   by  number ")
+        assert dialog.mask_name() == "Calls by number"
+        assert dialog.is_renamed() and dialog.is_valid()
+        dialog.name_edit.setText("users")
+        assert not dialog.is_valid()
+        assert not dialog.edit_button.isEnabled()
+        assert "Another bookmarked query" in dialog.status.text()
+        dialog.open_in_editor()
+        assert dialog.result() != FillMaskDialog.EDIT_RESULT
+        dialog.name_edit.setText("  ")
+        assert not dialog.is_valid()
+        assert dialog.status.text() == "Enter a name for the mask."
+        # Its own name (also with another case) is not taken.
+        dialog.name_edit.setText("CALLS")
+        assert dialog.is_valid() and dialog.is_renamed()

@@ -20,6 +20,9 @@ class Placeholder:
     NAME_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
     MAX_NAME_LENGTH = 64
     MAX_DESCRIPTION_LENGTH = 200
+    # Format with the refused name.
+    INVALID_NAME = "“{}” is not a valid name: use letters, digits and _ "
+    INVALID_NAME += "(not starting with a digit)."
 
     def __init__(
         self,

@@ -56,9 +56,9 @@ class KeywordStage(ValidationStage):
                     msg = msg.format(ReadOnlyRules.NOT_ALLOWED, name)
                     raise ValidationRejected(msg)
             if name in ReadOnlyRules.FORBIDDEN_FUNCTIONS and call:
-                msg = "The function {}() is not allowed in read-only "
-                msg += "mode."
-                raise ValidationRejected(msg.format(name))
+                raise ValidationRejected(
+                    ReadOnlyRules.FUNCTION_NOT_ALLOWED.format(name)
+                )
         context.first_word = first
 
     @staticmethod

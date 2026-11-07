@@ -81,6 +81,6 @@ class SyntaxTreeStage(ValidationStage):
                     else node.sql_name()
                 ).upper()
                 if name in ReadOnlyRules.FORBIDDEN_FUNCTIONS:
-                    msg = "The function {}() is not allowed in read-only "
-                    msg += "mode."
-                    raise ValidationRejected(msg.format(name))
+                    raise ValidationRejected(
+                        ReadOnlyRules.FUNCTION_NOT_ALLOWED.format(name)
+                    )

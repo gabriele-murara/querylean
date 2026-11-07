@@ -24,6 +24,8 @@ class ResultsModel(QAbstractTableModel):
     MAX_CELL_CHARS = 2000
     __NULL_COLOR = "#999999"
     __TOOLTIP_MIN_CHARS = 80
+    # Default parent of rowCount/columnCount: the (invalid) root index.
+    __ROOT = QModelIndex()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -56,13 +58,13 @@ class ResultsModel(QAbstractTableModel):
 
     def rowCount(  # noqa: N802
         self,
-        parent: QModelIndex | QPersistentModelIndex = QModelIndex(),  # noqa: B008
+        parent: QModelIndex | QPersistentModelIndex = __ROOT,
     ) -> int:
         return 0 if parent.isValid() else len(self.__rows)
 
     def columnCount(  # noqa: N802
         self,
-        parent: QModelIndex | QPersistentModelIndex = QModelIndex(),  # noqa: B008
+        parent: QModelIndex | QPersistentModelIndex = __ROOT,
     ) -> int:
         return 0 if parent.isValid() else len(self.__columns)
 

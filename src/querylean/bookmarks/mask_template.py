@@ -9,6 +9,7 @@ from querylean.bookmarks.mask_error import MaskError
 from querylean.bookmarks.placeholder import Placeholder
 from querylean.bookmarks.placeholder_occurrence import PlaceholderOccurrence
 from querylean.bookmarks.placeholder_type import PlaceholderType
+from querylean.bookmarks.value_candidate import ValueCandidate
 
 
 class MaskTemplate:
@@ -22,6 +23,9 @@ class MaskTemplate:
     escaped string), inside a string it becomes escaped string content.
     So the compiled query keeps the structure of the mask whatever the
     values are.
+
+    ``make_placeholder`` and ``make_placeholders`` turn values of a query
+    into placeholders; ``candidates`` lists the values that can become one.
     """
 
     __PLACEHOLDER = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
@@ -29,6 +33,20 @@ class MaskTemplate:
     __UNQUOTED_VALUE = re.compile(
         r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)|true|false", re.IGNORECASE
     )
+    DEFAULT_NAME = "VALUE"
+    # Column compared with a value: suggests the placeholder name
+    # (``cli = '…'`` → ``CLI``).
+    __COLUMN_PATTERN = r"([A-Za-z_][A-Za-z0-9_]*)`?\s*"
+    __COLUMN_PATTERN += r"(?:=|<>|!=|<=|>=|<|>|\bLIKE|\bIN\s*\(|\bBETWEEN"
+    __COLUMN_PATTERN += r"|\bBETWEEN\s+.+?\s+AND)"
+    __COLUMN_PATTERN += r"\s*['\"]?\s*$"
+    __COMPARED_COLUMN = re.compile(__COLUMN_PATTERN, re.IGNORECASE)
+    # A number on its own: not part of a name, of 1e9 or of 0x10.
+    __NUMBER = re.compile(
+        r"(?<![A-Za-z0-9_$@.])(?:\d+(?:\.\d*)?|\.\d+)(?![A-Za-z0-9_$.])"
+    )
+    __IN_LIST = re.compile(r"\bIN\s*\(", re.IGNORECASE)
+    __LIST_SEPARATOR = re.compile(r"\s*,\s*")
     # Regions of the text: (kind, start, end, quote).
     __STRING = "string"
     __QUOTED_NAME = "quoted_name"
@@ -108,9 +126,7 @@ class MaskTemplate:
         the selection is not a value (a number, a string, part of a string
         or a comma-separated list of them)."""
         if not Placeholder.is_valid_name(name):
-            msg = "“{}” is not a valid name: use letters, digits and _ "
-            msg += "(not starting with a digit)."
-            raise MaskError(msg.format(name))
+            raise MaskError(Placeholder.INVALID_NAME.format(name))
         while start < end and sql[start].isspace():
             start += 1
         while end > start and sql[end - 1].isspace():
@@ -159,12 +175,152 @@ class MaskTemplate:
         placeholder = Placeholder(
             name,
             kind,
-            default=", ".join(examples),
+            # Values with commas: one per line, as the list is split.
+            default=(
+                "\n".join(examples)
+                if any("," in example for example in examples)
+                else ", ".join(examples)
+            ),
             is_list=len(examples) > 1,
         )
         return MaskTemplate.__replaced(sql, start, end, token), placeholder
 
+    @staticmethod
+    def suggested_name(before: str) -> str:
+        """Placeholder name for a value preceded by ``before``: the column
+        it is compared with, upper case, or ``DEFAULT_NAME``."""
+        match = MaskTemplate.__COMPARED_COLUMN.search(before)
+        if match is None:
+            return MaskTemplate.DEFAULT_NAME
+        return match.group(1).upper()
+
+    @staticmethod
+    def candidates(sql: str) -> tuple[ValueCandidate, ...]:
+        """Values of ``sql`` that could become placeholders, in order:
+        numbers and non-empty strings outside comments, and whole
+        ``IN (…)`` lists of them. Strings that already contain a
+        placeholder are left out. Suggested names are unique and differ
+        from the placeholders already in the text."""
+        regions = MaskTemplate.__regions(sql)
+        literals = MaskTemplate.__literal_spans(sql, regions)
+        spans = MaskTemplate.__group_lists(sql, regions, literals)
+        try:
+            taken = set(MaskTemplate(sql).names)
+        except MaskError:
+            taken = set()
+        found: list[ValueCandidate] = []
+        for start, end in spans:
+            suggested = MaskTemplate.suggested_name(sql[:start])
+            name = MaskTemplate.__unique(suggested, taken)
+            try:
+                _, placeholder = MaskTemplate.make_placeholder(
+                    sql, start, end, name
+                )
+            except MaskError:
+                continue
+            taken.add(name)
+            found.append(
+                ValueCandidate(
+                    start,
+                    end,
+                    sql[start:end],
+                    placeholder,
+                    compared=suggested != MaskTemplate.DEFAULT_NAME,
+                )
+            )
+        return tuple(found)
+
+    @staticmethod
+    def make_placeholders(
+        sql: str, choices: list[tuple[int, int, str]]
+    ) -> tuple[str, tuple[Placeholder, ...]]:
+        """Replace each ``(start, end, name)`` value of ``sql`` (offsets of
+        the original text, not overlapping) with its placeholder. Returns
+        the new text and the placeholders in order of the text (one per
+        name: the first value defines it). Raises ``MaskError``."""
+        ordered = sorted(choices, key=lambda choice: choice[0])
+        for previous, current in zip(ordered, ordered[1:], strict=False):
+            if current[0] < previous[1]:
+                raise MaskError("The selected values overlap.")
+        made: list[Placeholder] = []
+        for start, end, name in reversed(ordered):
+            sql, placeholder = MaskTemplate.make_placeholder(
+                sql, start, end, name
+            )
+            made.insert(0, placeholder)
+        unique: dict[str, Placeholder] = {}
+        for placeholder in made:
+            unique.setdefault(placeholder.name, placeholder)
+        return sql, tuple(unique.values())
+
     # ------------------------------------------------------------ internals
+    @staticmethod
+    def __unique(name: str, taken: set[str]) -> str:
+        if name not in taken:
+            return name
+        index = 2
+        while "{}_{}".format(name, index) in taken:
+            index += 1
+        return "{}_{}".format(name, index)
+
+    @staticmethod
+    def __literal_spans(
+        sql: str, regions: list[tuple[str, int, int, str]]
+    ) -> list[tuple[int, int]]:
+        """Non-empty strings without placeholders and numbers outside
+        strings, names and comments."""
+        spans: list[tuple[int, int]] = []
+        position = 0
+        for kind, start, end, _ in regions + [("", len(sql), len(sql), "")]:
+            for match in MaskTemplate.__NUMBER.finditer(sql, position, start):
+                spans.append((match.start(), match.end()))
+            if (
+                kind == MaskTemplate.__STRING
+                and end - start > 2
+                and MaskTemplate.__OPENING not in sql[start:end]
+            ):
+                spans.append((start, end))
+            position = end
+        spans.sort()
+        return spans
+
+    @staticmethod
+    def __group_lists(
+        sql: str,
+        regions: list[tuple[str, int, int, str]],
+        literals: list[tuple[int, int]],
+    ) -> list[tuple[int, int]]:
+        """``literals`` with the items of each ``IN (…)`` list made only of
+        literals joined into one span."""
+        starts = {span[0]: index for index, span in enumerate(literals)}
+        grouped: dict[int, tuple[int, int]] = {}
+        consumed: set[int] = set()
+        for match in MaskTemplate.__IN_LIST.finditer(sql):
+            if any(r[1] <= match.start() < r[2] for r in regions):
+                continue
+            position = match.end()
+            while position < len(sql) and sql[position].isspace():
+                position += 1
+            index = starts.get(position)
+            if index is None:
+                continue
+            first = index
+            while index + 1 < len(literals):
+                gap = sql[literals[index][1] : literals[index + 1][0]]
+                if not MaskTemplate.__LIST_SEPARATOR.fullmatch(gap):
+                    break
+                index += 1
+            if sql[literals[index][1] :].lstrip().startswith(")"):
+                grouped[first] = (literals[first][0], literals[index][1])
+                consumed.update(range(first, index + 1))
+        spans = []
+        for index, span in enumerate(literals):
+            if index in grouped:
+                spans.append(grouped[index])
+            elif index not in consumed:
+                spans.append(span)
+        return spans
+
     @staticmethod
     def __value_text(
         placeholder: Placeholder, value: str, occurrence: PlaceholderOccurrence
@@ -283,7 +439,9 @@ class MaskTemplate:
             if ch == "#" or (
                 ch == "-"
                 and nxt == "-"
-                and (i + 2 >= n or sql[i + 2].isspace())
+                # As MySQL: an ASCII space or control character, not any
+                # Unicode space.
+                and (i + 2 >= n or ord(sql[i + 2]) <= 32)
             ):
                 end = sql.find("\n", i)
                 end = n if end < 0 else end

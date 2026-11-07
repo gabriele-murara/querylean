@@ -17,7 +17,8 @@ from querylean.ui.main.main_window import MainWindow
 from querylean.ui.worker.db_thread import DbThread
 
 
-class MainWindowTestBase(ABC):  # noqa: B024 (fixture holder, no abstract methods)
+# Fixture holder without abstract methods.
+class MainWindowTestBase(ABC):  # noqa: B024
     """Builds a ``MainWindow`` backed by a fake driver, an in-memory keychain
     and a temporary configuration file. Not collected by pytest (no ``Test``
     prefix)."""

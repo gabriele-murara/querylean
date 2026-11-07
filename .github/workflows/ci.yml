@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    # release-*: verifica dei pacchetti prima del merge in main.
+    # release-*: packages checked before the merge into main.
     branches: [main, "release-*"]
     tags: ["v*"]
   pull_request:
@@ -10,9 +10,9 @@ on:
 
 env:
   PYTHON_VERSION: "3.12"
-  # Librerie del plugin xcb di Qt: devono essere presenti sulla macchina di
-  # build perché PyInstaller le includa nel pacchetto (BundleSlimmer
-  # .check_required_libraries fa fallire la build se mancano).
+  # Libraries of the Qt xcb plugin: they must be on the build machine for
+  # PyInstaller to bundle them (BundleSlimmer.check_required_libraries
+  # fails the build when they are missing).
   QT_XCB_PACKAGES: >-
     libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1
     libxcb-render-util0 libxcb-shape0 libxcb-util1 libxcb-xkb1
@@ -57,7 +57,7 @@ jobs:
       - name: Database di test
         run: |
           mysql -h 127.0.0.1 -uroot -proot < tests/integration/setup_test_db.sql
-          # Dal container il runner non appare come localhost: account dedicato per la CI.
+          # Seen from the container the runner is not localhost: CI account.
           mysql -h 127.0.0.1 -uroot -proot -e "
             CREATE USER IF NOT EXISTS 'querylean_ro'@'%' IDENTIFIED BY 'querylean_ro_password';
             GRANT SELECT ON querylean_test.* TO 'querylean_ro'@'%';"
@@ -67,7 +67,7 @@ jobs:
   package-linux:
     name: AppImage (Linux x86_64)
     needs: test
-    runs-on: ubuntu-22.04  # glibc più vecchia supportata = compatibilità più ampia
+    runs-on: ubuntu-22.04  # oldest supported glibc = widest compatibility
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -84,7 +84,7 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN: "1"
         run: |
           packaging/build_linux_appimage.sh
-          # Licenze di terze parti dell'AppImage, allegate alla release.
+          # Third-party licenses of the AppImage, attached to the release.
           APPIMAGE="$(ls dist/querylean-*.AppImage)"
           cp dist/querylean/_internal/licenses/THIRD_PARTY_LICENSES.txt \
             "${APPIMAGE}.THIRD_PARTY_LICENSES.txt"
@@ -104,7 +104,7 @@ jobs:
   package-deb:
     name: Pacchetto .deb (Ubuntu/Lubuntu 24.04 amd64)
     needs: test
-    runs-on: ubuntu-24.04  # stessa glibc del sistema di destinazione
+    runs-on: ubuntu-24.04  # same glibc as the target system
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -125,7 +125,7 @@ jobs:
       - name: Smoke test del pacchetto installato
         env:
           QT_QPA_PLATFORM: offscreen
-        # Percorso esplicito: nel PATH c'è anche il comando installato da pip.
+        # Explicit path: the command installed by pip is in PATH too.
         run: timeout 30 /usr/bin/querylean --smoke-test
       - name: Rimozione pulita
         run: |
@@ -169,8 +169,8 @@ jobs:
 
   release:
     name: Release su GitHub
-    # Solo per i tag di versione (vX.Y.Z), dopo che tutti i pacchetti sono
-    # stati costruiti e verificati.
+    # Only for version tags (vX.Y.Z), after every package has been built
+    # and checked.
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [package-linux, package-deb, package-macos]
     runs-on: ubuntu-24.04
@@ -182,7 +182,7 @@ jobs:
         run: |
           VERSION="$(tr -d '[:space:]' < .version)"
           if [ "v${VERSION}" != "${GITHUB_REF_NAME}" ]; then
-            echo "Il tag ${GITHUB_REF_NAME} non corrisponde a .version (${VERSION})" >&2
+            echo "Tag ${GITHUB_REF_NAME} does not match .version (${VERSION})" >&2
             exit 1
           fi
       - uses: actions/download-artifact@v4
@@ -198,7 +198,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Un tag con trattino (es. vX.Y.Z-rc1) diventa una pre-release.
+          # A tag with a dash (e.g. vX.Y.Z-rc1) becomes a pre-release.
           PRERELEASE=""
           case "${GITHUB_REF_NAME}" in *-*) PRERELEASE="--prerelease" ;; esac
           gh release create "${GITHUB_REF_NAME}" release/* \

@@ -559,7 +559,9 @@ class TableSidebar(QWidget):
             self.database_selected.emit(self.__database_of(item))
             self.table_chosen.emit(table)
 
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+    def eventFilter(  # noqa: N802
+        self, watched: QObject, event: QEvent
+    ) -> bool:
         if event.type() in (
             QEvent.Type.MouseButtonPress,
             QEvent.Type.MouseButtonDblClick,

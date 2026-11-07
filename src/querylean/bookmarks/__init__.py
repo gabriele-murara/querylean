@@ -1,1 +1,2 @@
-"""Bookmarked queries, saved per connection."""
+"""Bookmarked queries and masks (queries with placeholders), saved per
+connection."""

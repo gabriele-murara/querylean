@@ -1,6 +1,9 @@
 """Tests of the "Bookmarked queries" menu."""
 
+from querylean.bookmarks.placeholder import Placeholder
+from querylean.bookmarks.placeholder_type import PlaceholderType
 from querylean.bookmarks.query_bookmark import QueryBookmark
+from querylean.ui.icons.toolbar_icons import ToolbarIcons
 from querylean.ui.main.bookmarks_menu import BookmarksMenu
 from querylean.ui.safe_text import SafeText
 
@@ -38,3 +41,21 @@ class TestBookmarksMenu:
         assert delete.args == ["Users"]
         menu.set_bookmarks([])
         assert menu.names() == []
+
+    def test_plain_queries_and_masks_have_different_icons(self, qtbot):
+        mask = QueryBookmark(
+            "By year",
+            "SELECT * FROM t WHERE y = ${Y}",
+            "t",
+            (Placeholder("Y", PlaceholderType.INTEGER, default="1"),),
+        )
+        menu = BookmarksMenu()
+        menu.set_bookmarks([self.BOOKMARKS[0], mask])
+        plain, masked = menu.actions()[:2]
+        assert not plain.icon().isNull()
+        assert not masked.icon().isNull()
+        size = ToolbarIcons.SIZE
+        plain_image = plain.icon().pixmap(size, size).toImage()
+        mask_image = masked.icon().pixmap(size, size).toImage()
+        assert plain_image != mask_image
+        assert plain_image == ToolbarIcons.query().pixmap(size, size).toImage()

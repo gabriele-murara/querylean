@@ -43,6 +43,7 @@ class FakeConnection:
         self.__session_variables: dict[str, Any] = {
             "transaction_read_only": 1,
             "tx_read_only": 1,
+            "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES",
         }
         self.__grants: Any = list(FakeConnection.READ_ONLY_GRANTS)
         self.__databases: Any = list(FakeConnection.DATABASES)

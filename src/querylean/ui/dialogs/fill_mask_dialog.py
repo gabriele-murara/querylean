@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from PySide6.QtCore import QDate, QDateTime, Qt, QTime, SignalInstance
-from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import (
     QComboBox,
     QDateEdit,
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from querylean.bookmarks.bookmark_store import BookmarkStore
 from querylean.bookmarks.mask_error import MaskError
 from querylean.bookmarks.mask_template import MaskTemplate
 from querylean.bookmarks.placeholder import Placeholder
@@ -28,6 +30,8 @@ from querylean.bookmarks.query_bookmark import QueryBookmark
 from querylean.database.validation.read_only_validator import (
     ReadOnlyValidator,
 )
+from querylean.ui.dialogs.query_preview import QueryPreview
+from querylean.ui.dialogs.status_label import StatusLabel
 
 
 class FillMaskDialog(QDialog):
@@ -41,14 +45,17 @@ class FillMaskDialog(QDialog):
     validator. Dates and times use calendar and time editors, booleans a
     selector and lists a box with one value per line (or comma-separated).
 
+    The name of the mask can be changed too (``mask_name``): it must not
+    be empty nor the name of another bookmark (``taken_names``); the
+    caller renames the mask when the dialog ends with "Run" or "Open in
+    editor".
+
     The dialog ends with ``Accepted`` (run ``compiled_sql()``),
     ``EDIT_RESULT`` (open the mask in the editor) or ``Rejected``.
     """
 
     TITLE = "Run mask"
     EDIT_RESULT = 2
-    OK_COLOR = "#1a7f37"
-    ERROR_COLOR = "#c62828"
     PREVIOUS_BACKGROUND = "#fff3b0"
     PREVIOUS_FOREGROUND = "#000000"
     PREVIOUS_TOOLTIP = "Used previously"
@@ -63,10 +70,17 @@ class FillMaskDialog(QDialog):
         mask: QueryBookmark,
         *,
         validator: ReadOnlyValidator | None = None,
+        taken_names: Iterable[str] = (),
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(FillMaskDialog.TITLE)
+        # Names of the other bookmarks, compared ignoring case.
+        self.__taken = {
+            QueryBookmark.clean_name(name).casefold()
+            for name in taken_names
+            if not mask.same_name(name)
+        }
         self.setMinimumWidth(560)
         self.__mask = mask
         self.__template = MaskTemplate(mask.sql)
@@ -78,13 +92,17 @@ class FillMaskDialog(QDialog):
         self.__previous: dict[str, str] = {}
         self.__compiled = ""
 
-        title = QLabel(mask.name)
-        title.setTextFormat(Qt.TextFormat.PlainText)
-        font = title.font()
+        self.__name = QLineEdit(mask.name)
+        self.__name.setMaxLength(QueryBookmark.MAX_NAME_LENGTH)
+        tip = "Name shown in Bookmarked queries: changed when the mask is "
+        tip += "run or opened in the editor"
+        self.__name.setToolTip(tip)
+        font = self.__name.font()
         font.setBold(True)
-        title.setFont(font)
+        self.__name.setFont(font)
 
         form = QFormLayout()
+        form.addRow("Name", self.__name)
         last_values = mask.last_values
         for name in self.__template.names:
             placeholder = self.__placeholders[name]
@@ -114,14 +132,8 @@ class FillMaskDialog(QDialog):
         self.__legend.setTextFormat(Qt.TextFormat.PlainText)
         self.__legend.setVisible(bool(self.__previous))
 
-        mono = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
-        self.__preview = QPlainTextEdit()
-        self.__preview.setReadOnly(True)
-        self.__preview.setFont(mono)
-        self.__preview.setMaximumHeight(140)
-        self.__status = QLabel()
-        self.__status.setTextFormat(Qt.TextFormat.PlainText)
-        self.__status.setWordWrap(True)
+        self.__preview = QueryPreview()
+        self.__status = StatusLabel()
 
         buttons = QDialogButtonBox()
         self.__run_button: QPushButton = buttons.addButton(
@@ -142,12 +154,10 @@ class FillMaskDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         self.__defaults_button.clicked.connect(self.use_defaults)
-        self.__edit_button.clicked.connect(
-            lambda: self.done(FillMaskDialog.EDIT_RESULT)
-        )
+        self.__edit_button.clicked.connect(self.open_in_editor)
+        self.__name.textChanged.connect(self.refresh)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(title)
         layout.addLayout(form)
         layout.addWidget(self.__legend)
         layout.addWidget(QLabel("Query"))
@@ -166,12 +176,12 @@ class FillMaskDialog(QDialog):
         return self.__mask
 
     @property
-    def preview(self) -> QPlainTextEdit:
+    def preview(self) -> QueryPreview:
         """Query compiled with the current values."""
         return self.__preview
 
     @property
-    def status(self) -> QLabel:
+    def status(self) -> StatusLabel:
         """Outcome of the check of the values and of the query."""
         return self.__status
 
@@ -195,6 +205,19 @@ class FillMaskDialog(QDialog):
         """ "Open in editor" button."""
         return self.__edit_button
 
+    @property
+    def name_edit(self) -> QLineEdit:
+        """Name of the mask (editable)."""
+        return self.__name
+
+    def mask_name(self) -> str:
+        """Name entered, on one line."""
+        return QueryBookmark.clean_name(self.__name.text())
+
+    def is_renamed(self) -> bool:
+        """True when the name entered differs from the saved one."""
+        return self.mask_name() != self.__mask.name
+
     def field(self, name: str) -> QWidget:
         """Input widget of the placeholder ``name``."""
         return self.__fields[name]
@@ -203,13 +226,6 @@ class FillMaskDialog(QDialog):
     def value(self, name: str) -> str:
         """Current value of the placeholder ``name``, as text."""
         return FillMaskDialog.__value_of(self.__fields[name])
-
-    def set_value(self, name: str, value: str) -> None:
-        """Put ``value`` in the field of ``name`` (a value the field
-        cannot show leaves it unchanged)."""
-        FillMaskDialog.__set_value(
-            self.__placeholders[name], self.__fields[name], value
-        )
 
     def values(self) -> dict[str, str]:
         """Current values, by placeholder name."""
@@ -236,10 +252,16 @@ class FillMaskDialog(QDialog):
         self.refresh()
 
     def refresh(self, *_: object) -> None:
-        """Colour the fields, compile the query and check it."""
+        """Check the name, colour the fields, compile the query and check
+        it."""
         for name, field in self.__fields.items():
             FillMaskDialog.__mark(field, self.is_previous(name))
         self.__compiled = ""
+        name_error = self.__name_error()
+        self.__edit_button.setEnabled(name_error is None)
+        if name_error is not None:
+            self.__set_status(False, name_error)
+            return
         try:
             compiled = self.__template.compile(
                 self.__placeholders, self.values()
@@ -262,11 +284,22 @@ class FillMaskDialog(QDialog):
         if self.is_valid():
             super().accept()
 
+    def open_in_editor(self) -> None:
+        """Close with ``EDIT_RESULT`` (only with a valid name)."""
+        if self.__edit_button.isEnabled():
+            self.done(FillMaskDialog.EDIT_RESULT)
+
+    def __name_error(self) -> str | None:
+        name = self.mask_name()
+        if not name:
+            return "Enter a name for the mask."
+        if name.casefold() in self.__taken:
+            return BookmarkStore.NAME_TAKEN.format(name)
+        return None
+
     # ------------------------------------------------------------ internals
     def __set_status(self, ok: bool, message: str) -> None:
-        color = FillMaskDialog.OK_COLOR if ok else FillMaskDialog.ERROR_COLOR
-        self.__status.setStyleSheet("color: {};".format(color))
-        self.__status.setText(message)
+        self.__status.show_status(ok, message)
         self.__run_button.setEnabled(ok)
 
     @staticmethod

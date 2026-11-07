@@ -3,9 +3,6 @@ autocompletion."""
 
 from __future__ import annotations
 
-import html
-import re
-
 from PySide6.QtCore import QRect, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QAction,
@@ -29,9 +26,13 @@ from querylean.completion.completion_result import CompletionResult
 from querylean.completion.sql_scanner import SqlScanner
 from querylean.completion.statement_analyzer import StatementAnalyzer
 from querylean.completion.statement_context import StatementContext
+from querylean.ui.dialogs.make_placeholders_dialog import (
+    MakePlaceholdersDialog,
+)
 from querylean.ui.editor.line_number_area import LineNumberArea
 from querylean.ui.editor.sql_completer import SqlCompleter
 from querylean.ui.editor.sql_highlighter import SqlHighlighter
+from querylean.ui.safe_text import SafeText
 
 
 class SqlEditor(QPlainTextEdit):
@@ -44,6 +45,11 @@ class SqlEditor(QPlainTextEdit):
     proposal needs columns (or tables) that are not loaded yet,
     ``columns_needed`` (or ``tables_needed``) is emitted and
     ``refresh_completion`` updates the list once they arrive.
+
+    Placeholders: "Make placeholder…" (Ctrl+Shift+P, context menu) turns
+    the selected value into ``${NAME}``, or without a selection offers
+    every value of the query (``make_placeholders``); the definitions
+    made are kept for the "Save mask" dialog (``placeholders``).
     """
 
     execute_requested = Signal()
@@ -54,13 +60,6 @@ class SqlEditor(QPlainTextEdit):
     PLACEHOLDER += "runs (Cmd+Enter on macOS)"
     MAKE_PLACEHOLDER_TEXT = "Make placeholder…"
     MAKE_PLACEHOLDER_SHORTCUT = "Ctrl+Shift+P"
-    DEFAULT_PLACEHOLDER_NAME = "VALUE"
-    # Column compared with the selected value: suggests the placeholder
-    # name (``cli = '…'`` → ``CLI``).
-    __COLUMN_PATTERN = r"([A-Za-z_][A-Za-z0-9_]*)`?\s*"
-    __COLUMN_PATTERN += r"(?:=|<>|!=|<=|>=|<|>|\bLIKE|\bIN\s*\(|\bBETWEEN)"
-    __COLUMN_PATTERN += r"\s*['\"]?\s*$"
-    __COMPARED_COLUMN = re.compile(__COLUMN_PATTERN, re.IGNORECASE)
     # Delay before the proposals open by themselves while typing.
     AUTO_DELAY_MS = 80
     __MIN_FONT_SIZE = 11
@@ -242,10 +241,13 @@ class SqlEditor(QPlainTextEdit):
         suggested from the column compared with the value. The type and
         the example come from the replaced value. Returns None when
         cancelled or when the selection is not a value (the reason is
-        shown)."""
+        shown).
+
+        Without a selection the "Make placeholders" dialog offers every
+        value of the query instead (see ``make_placeholders``)."""
         cursor = self.textCursor()
         if not cursor.hasSelection():
-            self.__warn("Select the value to turn into a placeholder.")
+            self.make_placeholders()
             return None
         start, end = cursor.selectionStart(), cursor.selectionEnd()
         text = self.toPlainText()
@@ -254,7 +256,7 @@ class SqlEditor(QPlainTextEdit):
                 self,
                 SqlEditor.MAKE_PLACEHOLDER_TEXT,
                 "Placeholder name (letters, digits and _):",
-                text=SqlEditor.__suggested_name(text[:start]),
+                text=MaskTemplate.suggested_name(text[:start]),
             )
             if not ok:
                 return None
@@ -265,9 +267,7 @@ class SqlEditor(QPlainTextEdit):
         except MaskError as exc:
             self.__warn(exc.message)
             return None
-        known = self.__placeholders.get(placeholder.name)
-        if known is None or not known.default:
-            self.__placeholders[placeholder.name] = placeholder
+        self.__remember_made((placeholder,))
         tail = len(text) - end
         self.replace_query(new_text)
         cursor = self.textCursor()
@@ -275,11 +275,44 @@ class SqlEditor(QPlainTextEdit):
         self.setTextCursor(cursor)
         return placeholder
 
+    def make_placeholders(
+        self, choices: list[tuple[int, int, str]] | None = None
+    ) -> tuple[Placeholder, ...]:
+        """Turn several values of the query into placeholders (one
+        undoable edit). Without ``choices`` (``(start, end, name)`` of the
+        values) the "Make placeholders" dialog lists every value that
+        could become one. Returns the placeholders made (none when
+        cancelled or when the query has no values: the reason is
+        shown)."""
+        text = self.toPlainText()
+        if choices is None:
+            candidates = MaskTemplate.candidates(text)
+            if not candidates:
+                msg = "The query has no values to turn into placeholders: "
+                msg += "numbers or strings outside comments."
+                self.__warn(msg)
+                return ()
+            dialog = MakePlaceholdersDialog(text, candidates, self)
+            if dialog.exec() != MakePlaceholdersDialog.DialogCode.Accepted:
+                return ()
+            choices = dialog.choices()
+        try:
+            new_text, placeholders = MaskTemplate.make_placeholders(
+                text, choices
+            )
+        except MaskError as exc:
+            self.__warn(exc.message)
+            return ()
+        self.__remember_made(placeholders)
+        self.replace_query(new_text)
+        return placeholders
+
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:  # noqa: N802
         menu = self.createStandardContextMenu()
         menu.addSeparator()
+        # Without a selection it offers every value of the query.
         self.__make_placeholder_action.setEnabled(
-            self.textCursor().hasSelection()
+            bool(self.toPlainText().strip())
         )
         menu.addAction(self.__make_placeholder_action)
         menu.exec(event.globalPos())
@@ -375,16 +408,17 @@ class SqlEditor(QPlainTextEdit):
             self.toPlainText(), self.textCursor().position()
         )
 
-    @staticmethod
-    def __suggested_name(before: str) -> str:
-        match = SqlEditor.__COMPARED_COLUMN.search(before)
-        if match is None:
-            return SqlEditor.DEFAULT_PLACEHOLDER_NAME
-        return match.group(1).upper()
+    def __remember_made(self, placeholders: tuple[Placeholder, ...]) -> None:
+        """Keep the placeholders just made, unless a definition with a
+        default (e.g. of a loaded mask) already exists."""
+        for placeholder in placeholders:
+            known = self.__placeholders.get(placeholder.name)
+            if known is None or not known.default:
+                self.__placeholders[placeholder.name] = placeholder
 
     def __warn(self, message: str) -> None:
         QMessageBox.warning(
-            self, SqlEditor.MAKE_PLACEHOLDER_TEXT, html.escape(message)
+            self, SqlEditor.MAKE_PLACEHOLDER_TEXT, SafeText.html(message)
         )
 
     def __request_columns(self, result: CompletionResult) -> None:

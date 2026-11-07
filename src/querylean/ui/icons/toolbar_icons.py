@@ -40,6 +40,7 @@ class ToolbarIcons:
     __BOOKMARKS = "#6a1b9a"
     __WARNING = "#f57c00"
     __MASK = "#ad1457"
+    __QUERY = "#1565c0"
 
     @staticmethod
     def play() -> QIcon:
@@ -95,6 +96,12 @@ class ToolbarIcons:
     def mask() -> QIcon:
         """ "${}" badge (a bookmarked mask with placeholders)."""
         return ToolbarIcons.__render(ToolbarIcons.__draw_mask)
+
+    @staticmethod
+    def query() -> QIcon:
+        """Sheet with lines of text (a bookmarked query without
+        placeholders)."""
+        return ToolbarIcons.__render(ToolbarIcons.__draw_query)
 
     @staticmethod
     def about() -> QIcon:
@@ -277,6 +284,29 @@ class ToolbarIcons:
         painter.drawText(
             QRectF(2, 10, 60, 44), int(Qt.AlignmentFlag.AlignCenter), "${}"
         )
+
+    @staticmethod
+    def __draw_query(painter: QPainter) -> None:
+        # Page with the top right corner folded, then three text lines.
+        ToolbarIcons.__fill(painter, ToolbarIcons.__QUERY)
+        painter.drawPolygon(
+            QPolygonF(
+                [
+                    QPointF(10, 2),
+                    QPointF(40, 2),
+                    QPointF(54, 16),
+                    QPointF(54, 62),
+                    QPointF(10, 62),
+                ]
+            )
+        )
+        ToolbarIcons.__fill(painter, "#90caf9")
+        painter.drawPolygon(
+            QPolygonF([QPointF(40, 2), QPointF(54, 16), QPointF(40, 16)])
+        )
+        ToolbarIcons.__fill(painter, "white")
+        for top, width in ((26, 30), (37, 22), (48, 30)):
+            painter.drawRoundedRect(QRectF(17, top, width, 6), 3, 3)
 
     @staticmethod
     def __draw_about(painter: QPainter) -> None:

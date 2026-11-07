@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -16,7 +15,6 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
-    QPlainTextEdit,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -32,6 +30,8 @@ from querylean.bookmarks.query_bookmark import QueryBookmark
 from querylean.database.validation.read_only_validator import (
     ReadOnlyValidator,
 )
+from querylean.ui.dialogs.query_preview import QueryPreview
+from querylean.ui.dialogs.status_label import StatusLabel
 
 
 class SaveMaskDialog(QDialog):
@@ -47,8 +47,6 @@ class SaveMaskDialog(QDialog):
     """
 
     TITLE = "Save mask"
-    OK_COLOR = "#1a7f37"
-    ERROR_COLOR = "#c62828"
     __COLUMNS = ("Placeholder", "Type", "List", "Default", "Description")
     __NAME, __TYPE, __LIST, __DEFAULT, __DESCRIPTION = range(5)
     __DEFAULT_WIDTH = 190
@@ -96,14 +94,8 @@ class SaveMaskDialog(QDialog):
         for row, placeholder_name in enumerate(names):
             self.__add_row(row, known.get(placeholder_name), placeholder_name)
 
-        mono = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
-        self.__preview = QPlainTextEdit()
-        self.__preview.setReadOnly(True)
-        self.__preview.setFont(mono)
-        self.__preview.setMaximumHeight(120)
-        self.__status = QLabel()
-        self.__status.setTextFormat(Qt.TextFormat.PlainText)
-        self.__status.setWordWrap(True)
+        self.__preview = QueryPreview(120)
+        self.__status = StatusLabel()
 
         hint = "Each placeholder is replaced by a value of its type: "
         hint += "numbers and booleans as they are, everything else as an "
@@ -150,12 +142,12 @@ class SaveMaskDialog(QDialog):
         return self.__table
 
     @property
-    def preview(self) -> QPlainTextEdit:
+    def preview(self) -> QueryPreview:
         """Query compiled with the default values."""
         return self.__preview
 
     @property
-    def status(self) -> QLabel:
+    def status(self) -> StatusLabel:
         """Outcome of the check of the preview."""
         return self.__status
 
@@ -254,7 +246,5 @@ class SaveMaskDialog(QDialog):
         self.__rows[name] = (type_box, list_box, default, description)
 
     def __set_status(self, ok: bool, message: str) -> None:
-        color = SaveMaskDialog.OK_COLOR if ok else SaveMaskDialog.ERROR_COLOR
-        self.__status.setStyleSheet("color: {};".format(color))
-        self.__status.setText(message)
+        self.__status.show_status(ok, message)
         self.__save_button.setEnabled(ok)

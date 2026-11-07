@@ -13,8 +13,9 @@ class MySqlLexer:
 
     It rejects constructs that the server would execute but a generic parser
     would ignore (executable comments ``/*! */``, optimizer hints ``/*+ */``,
-    ``--`` not followed by whitespace), multiple statements, ``:=`` assignments
-    and unterminated strings or comments.
+    ``--`` not followed by an ASCII space or control character, Unicode
+    spaces included), multiple statements, ``:=`` assignments and
+    unterminated strings or comments.
     """
 
     __AMBIGUOUS_DASHES = "Ambiguous “--” sequence: in MySQL it starts a "
@@ -51,7 +52,7 @@ class MySqlLexer:
                 i = MySqlLexer.__skip_line(sql, i)
             elif ch == "-" and nxt == "-":
                 after = sql[i + 2] if i + 2 < n else ""
-                if after == "" or after.isspace() or ord(after) < 32:
+                if MySqlLexer.__ends_dashes(after):
                     i = MySqlLexer.__skip_line(sql, i)
                 else:
                     raise ValidationRejected(MySqlLexer.__AMBIGUOUS_DASHES)
@@ -112,8 +113,16 @@ class MySqlLexer:
             return True
         if two == "--":
             after = sql[i + 2] if i + 2 < len(sql) else ""
-            return after == "" or after.isspace()
+            return MySqlLexer.__ends_dashes(after)
         return False
+
+    @staticmethod
+    def __ends_dashes(after: str) -> bool:
+        """True when ``--`` followed by ``after`` starts a comment for
+        MySQL: end of text, an ASCII space or a control character. Not a
+        Unicode space (``str.isspace``): MySQL reads it as part of a name,
+        so the rest of the line would be SQL."""
+        return after == "" or ord(after) <= 32 or ord(after) == 127
 
     @staticmethod
     def __skip_line(sql: str, i: int) -> int:

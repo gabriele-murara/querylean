@@ -91,7 +91,9 @@ class MainWindow(QMainWindow):
 
     Bookmarked queries belong to one saved connection and its target
     (``user@host:port/database``): the menu offers, and the worker runs,
-    only those of the open session."""
+    only those of the open session. A mask (bookmark with placeholders)
+    opens ``FillMaskDialog`` and runs the query compiled with its values;
+    text with placeholders is never run from the editor."""
 
     # Delay after the query timeout before the watchdog sends KILL QUERY: lets
     # the server-side MAX_EXECUTION_TIME act first.
@@ -106,6 +108,10 @@ class MainWindow(QMainWindow):
     CAUTION_COLOR = "#c62828"
     READ_ONLY_NOTICE_TITLE = "Read queries only"
     PLACEHOLDER_NOTICE_TITLE = "Placeholders to fill in"
+    # Bookmark messages, formatted with a name or a validator reason.
+    __NOT_AVAILABLE = "The bookmarked query “{}” is not available for this "
+    __NOT_AVAILABLE += "connection."
+    __NOT_READ = "Only read queries can be bookmarked. {}"
     # Error kind of a query refused by the validator.
     __REJECTED_KIND = "rejected"
     SAVE_QUERY_TEXT = "Save query"
@@ -595,7 +601,8 @@ class MainWindow(QMainWindow):
 
     def execute_query(self) -> None:
         """Run the selection, or the whole editor content when nothing is
-        selected."""
+        selected. Text with placeholders is refused (red message and
+        ``placeholder_notice``)."""
         if self.__running:
             return
         sql = self.__editor.query_text()
@@ -644,15 +651,19 @@ class MainWindow(QMainWindow):
             placeholders = ()
             validation = self.__validator.validate(sql)
             if not validation.ok:
-                msg = "Only read queries can be bookmarked. {}"
-                self.show_message(msg.format(validation.reason), error=True)
+                self.show_message(
+                    MainWindow.__NOT_READ.format(validation.reason),
+                    error=True,
+                )
                 return None
         if name is None:
             name, ok = QInputDialog.getText(
                 self,
                 MainWindow.SAVE_QUERY_TEXT,
-                "Name of the query for “{}”:".format(
-                    self.__session_display_name()
+                SafeText.html(
+                    "Name of the query for “{}”:".format(
+                        self.__session_display_name()
+                    )
                 ),
             )
             if not ok:
@@ -735,8 +746,9 @@ class MainWindow(QMainWindow):
             return None
         validation = self.__validator.validate(compiled)
         if not validation.ok:
-            msg = "Only read queries can be bookmarked. {}"
-            self.show_message(msg.format(validation.reason), error=True)
+            self.show_message(
+                MainWindow.__NOT_READ.format(validation.reason), error=True
+            )
             return None
         ordered = tuple(defined[key] for key in template.names)
         return (name or ""), ordered
@@ -770,9 +782,9 @@ class MainWindow(QMainWindow):
             self.__session_id, target, name
         )
         if bookmark is None or bookmark.target != target:
-            msg = "The bookmarked query “{}” is not available for this "
-            msg += "connection."
-            self.show_message(msg.format(name), error=True)
+            self.show_message(
+                MainWindow.__NOT_AVAILABLE.format(name), error=True
+            )
             self.__reload_bookmarks()
             return
         if bookmark.is_mask:
@@ -785,17 +797,30 @@ class MainWindow(QMainWindow):
         """Ask the values of ``mask``, then run the compiled query."""
         try:
             dialog = FillMaskDialog(
-                mask, validator=self.__validator, parent=self
+                mask,
+                validator=self.__validator,
+                taken_names=[b.name for b in self.__bookmarks],
+                parent=self,
             )
         except MaskError as exc:
             self.show_message(exc.message, error=True)
             return
         result = dialog.exec()
+        if result not in (
+            FillMaskDialog.EDIT_RESULT,
+            FillMaskDialog.DialogCode.Accepted,
+        ):
+            return
+        if dialog.is_renamed():
+            renamed = self.__rename_mask(mask, dialog.mask_name())
+            if renamed is None:
+                return
+            mask = renamed
         if result == FillMaskDialog.EDIT_RESULT:
             self.open_mask(mask)
             return
         sql = dialog.compiled_sql()
-        if result != FillMaskDialog.DialogCode.Accepted or not sql:
+        if not sql:
             return
         try:
             self.__config_manager.bookmarks.remember_values(
@@ -808,6 +833,24 @@ class MainWindow(QMainWindow):
             self.__reload_bookmarks()
         self.__editor.replace_query(sql)
         self.__start_query(sql, mask.target)
+
+    def __rename_mask(
+        self, mask: QueryBookmark, name: str
+    ) -> QueryBookmark | None:
+        """Rename ``mask``; None (and a warning) when it cannot be."""
+        try:
+            renamed = self.__config_manager.bookmarks.rename(
+                self.__session_id, mask.target, mask.name, name
+            )
+        except ConfigError as exc:
+            self.__warn(BookmarksMenu.TITLE, str(exc))
+            return None
+        self.__reload_bookmarks()
+        if renamed is None:
+            self.show_message(
+                MainWindow.__NOT_AVAILABLE.format(mask.name), error=True
+            )
+        return renamed
 
     def open_mask(self, mask: QueryBookmark) -> None:
         """Load ``mask`` in the editor with its placeholders (to change it
@@ -1063,6 +1106,8 @@ class MainWindow(QMainWindow):
         # widget.
         self.__state_label = QLabel()
         self.__state_label.setContentsMargins(6, 0, 6, 0)
+        # Markup built here; names and databases inside are escaped.
+        self.__state_label.setTextFormat(Qt.TextFormat.RichText)
         status_bar = QStatusBar(self)
         status_bar.setSizeGripEnabled(True)
         status_bar.addPermanentWidget(self.__state_label)
@@ -1483,7 +1528,9 @@ class MainWindow(QMainWindow):
         password, ok = QInputDialog.getText(
             self,
             "Password",
-            "Password for {}@{}:".format(config.username, config.host),
+            SafeText.html(
+                "Password for {}@{}:".format(config.username, config.host)
+            ),
             QLineEdit.EchoMode.Password,
         )
         if ok and password:
@@ -1776,12 +1823,12 @@ class MainWindow(QMainWindow):
     def __confirm(self, title: str, text: str) -> bool:
         """Yes/No question; ``text`` (names, paths) is never rendered as
         HTML."""
-        answer = QMessageBox.question(self, title, html.escape(text))
+        answer = QMessageBox.question(self, title, SafeText.html(text))
         return answer == QMessageBox.StandardButton.Yes
 
     def __warn(self, title: str, text: str) -> None:
         """Warning dialog; ``text`` is never rendered as HTML."""
-        QMessageBox.warning(self, title, html.escape(text))
+        QMessageBox.warning(self, title, SafeText.html(text))
 
     def __finish_export(self) -> QueryResult | None:
         thread = self.__export_thread

@@ -24,6 +24,8 @@ class BookmarkStore:
     """
 
     SUFFIX = ".json"
+    # Format with the name of the other bookmark.
+    NAME_TAKEN = "Another bookmarked query is named “{}”."
     # 2: masks (bookmarks with placeholders); version 1 files are read
     # unchanged.
     __FORMAT_VERSION = 2
@@ -39,8 +41,7 @@ class BookmarkStore:
 
     def path_of(self, profile_id: str) -> Path:
         """Bookmark file of the connection ``profile_id``."""
-        if not ConnectionStore.is_valid_id(profile_id):
-            raise ValueError("Invalid connection id: {!r}".format(profile_id))
+        ConnectionStore.check_id(profile_id)
         return self.__directory / "{}{}".format(
             profile_id, BookmarkStore.SUFFIX
         )
@@ -96,6 +97,35 @@ class BookmarkStore:
                 self.__write(profile_id, bookmarks)
                 return updated
         return None
+
+    def rename(
+        self, profile_id: str, target: str, name: str, new_name: str
+    ) -> QueryBookmark | None:
+        """Give the bookmark ``name`` for ``target`` the name ``new_name``
+        (a change of case only is allowed). Returns the renamed bookmark,
+        None when it does not exist. Raises ``ConfigError``, also when
+        another bookmark already has ``new_name``."""
+        new_name = QueryBookmark.clean_name(new_name)
+        if not new_name or len(new_name) > QueryBookmark.MAX_NAME_LENGTH:
+            raise ConfigError("Invalid bookmark name.")
+        bookmarks = self.__read(profile_id)
+        found = None
+        for index, bookmark in enumerate(bookmarks):
+            if bookmark.target != target:
+                continue
+            if bookmark.same_name(name):
+                found = index
+            elif bookmark.same_name(new_name):
+                raise ConfigError(
+                    BookmarkStore.NAME_TAKEN.format(bookmark.name)
+                )
+        if found is None:
+            return None
+        renamed = bookmarks[found].with_name(new_name)
+        bookmarks[found] = renamed
+        self.__write(profile_id, bookmarks)
+        self.__log.info("Bookmark renamed for connection {}", profile_id)
+        return renamed
 
     def remove(self, profile_id: str, target: str, name: str) -> bool:
         """Delete the bookmark ``name`` for ``target``. Returns False when it

@@ -68,7 +68,8 @@ Test d'integrazione (`tests/integration/`): vengono saltati se mancano le variab
   - vale per codice, docstring e commenti Python, compresi `packaging/querylean.spec` e `packaging/launcher.py`, e per gli script shell;
   - `ruff` lo verifica (`line-length = 80` in `pyproject.toml`) e `ruff format` lo applica al codice;
   - docstring e commenti lunghi vanno spezzati a mano; le stringhe lunghe si costruiscono come descritto in "Stringhe";
-  - non usare `# noqa: E501`.
+  - non usare `# noqa: E501`;
+  - `ruff` non conta i pragma finali (`# noqa: …`) nella lunghezza: `tests/test_line_length.py` misura la riga fisica di `.py`, `.sh` e `.spec`.
 - **Stringhe**:
   - **niente concatenazione di stringhe**: né con `+` tra testo e valori (`"Errore: " + msg`), né per concatenazione implicita tra letterali adiacenti (`("prima parte "` / `"seconda parte")`);
   - **i valori si inseriscono sempre con il metodo `.format()`**: niente f-string e niente formattazione con `%`;
@@ -109,7 +110,7 @@ src/querylean/
   config/              ConnectionConfig (anche name, display_name, all_databases, caution_databases), ConnectionProfile (id + config), ConnectionStore (connections/<id>.json),
                        UiPreferences, AppConfig (active_connection + ui), ConfigManager (config.json + migrazione; espone connections e bookmarks), ConfigError
   bookmarks/           QueryBookmark (nome, sql, target `user@host:port/database`, placeholders → maschera, last_values), BookmarkStore (bookmarks/<id connessione>.json, formato 2),
-                       MaskTemplate (segnaposto `${NOME}`: analisi, compilazione, make_placeholder), PlaceholderOccurrence, Placeholder, PlaceholderType, MaskError
+                       MaskTemplate (segnaposto `${NOME}`: analisi, compilazione, make_placeholder, candidates/make_placeholders), ValueCandidate, PlaceholderOccurrence, Placeholder, PlaceholderType, MaskError
   completion/          SqlScanner/ScanToken (tokenizer tollerante), StatementAnalyzer → StatementContext (+ TableReference),
                        SchemaModel (tabelle/colonne della sessione), SqlVocabulary, CompletionEngine → CompletionResult/CompletionItem/CompletionKind
   files/               PrivateFile (sostituzione atomica di un file 0600: temporaneo + os.replace), PrivateJsonFile (JSON tramite PrivateFile)
@@ -129,7 +130,7 @@ src/querylean/
                        MySqlLexer, SqlToken, LexedStatement, ReadOnlyRules, ValidationResult
   ui/
     main/              MainWindow, StopButton (Stop lampeggiante sotto i risultati, solo per query lunghe), ConnectionState, CautionPalette (sfondo rosa in modalità attenzione), ConnectionsMenu, BookmarksMenu ("Bookmarked queries") (menu "Connections": New connection…, Connect/Edit…/Delete… per connessione)
-    dialogs/           ConnectionDialog, SaveMaskDialog (salvataggio di una maschera), FillMaskDialog (valori ed esecuzione di una maschera), AboutDialog (versione/autore da AppInfo)
+    dialogs/           ConnectionDialog, SaveMaskDialog (salvataggio di una maschera), FillMaskDialog (valori ed esecuzione di una maschera), MakePlaceholdersDialog (Ctrl+Shift+P senza selezione: scelta dei valori da trasformare), QueryPreview e StatusLabel (anteprima della query ed esito, condivisi dai dialog), AboutDialog (versione/autore da AppInfo)
     icons/             ToolbarIcons, CompletionIcons (icone disegnate con QPainter: nessun asset da impacchettare)
     editor/            SqlEditor (autocompletamento), SqlCompleter (popup), CompletionDelegate, SqlHighlighter, LineNumberArea
     results/           ResultsTable, ResultsModel, ValueFormatter
@@ -178,11 +179,11 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
   - niente `MULTI_STATEMENTS`, niente `LOCAL_FILES`;
   - `use_pure=True`;
   - `SET SESSION TRANSACTION READ ONLY`;
-  - rimozione di `NO_BACKSLASH_ESCAPES` dal `sql_mode`.
+  - rimozione di `NO_BACKSLASH_ESCAPES`, `ANSI_QUOTES` e `ANSI` dal `sql_mode`, poi rilettura fail-closed (`ConnectionManager.LEXER_MODES` ancora presenti o valore illeggibile = connessione chiusa, anche in modalità attenzione): con `ANSI_QUOTES` un testo che il validatore legge come stringa `"…"` potrebbe nascondere SQL.
 - **Sola lettura**: la garanzia primaria è l'account MySQL con solo SELECT. L'app non deve mai creare utenti né modificare privilegi.
 - **Parole vietate "a prescindere"** (scelta dell'utente, 1.4): le parole di `ReadOnlyRules.FORBIDDEN_WORDS` si rifiutano ovunque fuori da stringhe e commenti, anche qualificate (`t.update`) o come identificatori quotati (`` `delete` ``), quindi anche come nomi di colonna, tabella o alias. Uniche eccezioni: `SHOW CREATE` e le funzioni `REPLACE(`/`TRUNCATE(` (`FUNCTION_NAME_EXCEPTIONS`, solo senza quote né qualificazione). La gestione di campi e alias con questi nomi è rimandata: non aggiungere eccezioni senza richiesta.
 - **Controllo della sessione e dell'account** (`ConnectionManager.__open`, a ogni connessione, test e riconnessione):
-  - dopo il setup si rilegge `@@SESSION.transaction_read_only` (poi `tx_read_only`): se non vale 1 la connessione si chiude, **anche in modalità attenzione**;
+  - dopo il setup si rilegge `@@SESSION.transaction_read_only` (poi `tx_read_only`): se non vale 1 la connessione si chiude, **anche in modalità attenzione**; lo stesso per `@@SESSION.sql_mode` con `ANSI_QUOTES`/`NO_BACKSLASH_ESCAPES`;
   - `SHOW GRANTS` → `GrantAnalyzer`: sono di lettura solo `USAGE`, `SELECT`, `SHOW VIEW`, `SHOW DATABASES`; ruoli, righe sconosciute o errori rendono l'account non verificato (= scrivibile su **ogni** database). Non allargare l'elenco senza richiesta;
   - ogni grant diventa un `GrantScope`: database del grant (`db.*`, `db.tab`, `PROCEDURE db.x`) con i jolly MySQL `%`/`_` (escape `\`) confrontati senza distinzione di maiuscole, oppure `None` (= tutti) per `*.*`, `PROXY` e oggetti non riconducibili a un database. Nel dubbio il grant deve coprire **più** database, mai meno;
   - il perimetro è il database configurato oppure, con `all_databases`, quelli di `SHOW DATABASES` (lettura interna nel `__open`; se fallisce la connessione si chiude). `information_schema` non è mai scrivibile;
@@ -205,7 +206,7 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
   - `MaskTemplate` riconosce i segnaposto fuori dai commenti, nelle stringhe e fuori; un `${` malformato rende la query una maschera non valida (`MaskError`), mai SQL eseguibile;
   - si salva solo una maschera la cui compilazione con i predefiniti passa `ReadOnlyValidator`; i segnaposto salvati devono corrispondere esattamente a quelli del testo (`QueryBookmark.from_dict`, altrimenti il segnalibro si scarta);
   - **Run** rifiuta un testo con segnaposto (messaggio rosso più `MainWindow.placeholder_notice`, finestra aperta con `open()`, mai bloccante, testo in PlainText); dal menu una maschera apre `FillMaskDialog`: ogni valore è obbligatorio ("sempre compilato"), gli ultimi valori (`QueryBookmark.last_values`, salvati con `BookmarkStore.remember_values` solo dopo **Run**) sono gialli finché non cambiano, **Run** si attiva solo se la compilazione riesce e passa `ReadOnlyValidator`;
-  - la query compilata si esegue come un segnalibro (`bookmark_requested` con il target della maschera, poi validatore), mai con `query_requested`; **Open in editor** carica la maschera senza eseguirla; un nuovo salvataggio con lo stesso nome conserva gli ultimi valori dei segnaposto rimasti.
+  - la query compilata si esegue come un segnalibro (`bookmark_requested` con il target della maschera, poi validatore), mai con `query_requested`; il nome si modifica nella stessa finestra e si applica (`BookmarkStore.rename`, mai su un nome già usato per lo stesso target) solo con **Run** o **Open in editor**; **Open in editor** carica la maschera senza eseguirla; un nuovo salvataggio con lo stesso nome conserva gli ultimi valori dei segnaposto rimasti.
 - **Password**:
   - mai su file di configurazione, log o messaggi;
   - registrarla con `LogManager.register_secret()` appena è nota (in `MainWindow` lo fa `__remember_session`, usato da ogni percorso che riceve una password);
@@ -245,7 +246,7 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
 - **Testo non fidato nei widget** (dati del server, query, nomi scritti dall'utente): mai interpretato come HTML.
   - Tooltip sempre tramite `SafeText.tooltip` (anche le celle della tabella risultati);
   - `QLabel` con testo variabile in `Qt.TextFormat.PlainText` (stato della barra, stato della finestra di connessione, messaggi); la riga di stato in rich text usa `html.escape`;
-  - `QMessageBox`: `setTextFormat(PlainText)`, oppure `MainWindow.__confirm`/`__warn`, che fanno l'escape.
+  - `QMessageBox` e etichette di `QInputDialog`: `setTextFormat(PlainText)`, oppure `SafeText.html` (escape **e** marcatura `<qt>`: il solo `html.escape` può essere preso per testo semplice e mostrare `&amp;`), usato da `MainWindow.__confirm`/`__warn` e `SqlEditor`.
 - **Nomi dei database**: si usano esattamente come li restituisce il server (`DriverValue.text`, mai `strip`); `GrantScope.covers` confronta anche con gli spazi compattati, come le righe dei grant normalizzate da `GrantAnalyzer`.
 - **Accettazione della modalità attenzione** nella finestra: cambiare host, porta, username, database o `all_databases` toglie la spunta a tutti i database (`__withdraw_acceptance`).
 - **Errori**: all'utente solo messaggi comprensibili (`DatabaseError.message`), mai stack trace; i dettagli vanno nel log.
@@ -258,7 +259,7 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
 - `openpyxl` per l'export Excel. Lo spec esclude `numpy`, `pandas`, `PIL` e `lxml`, che openpyxl usa solo se installati.
 - Nei test unitari il database è finto: `tests/fakes/` (`FakeConnector`, `FakeConnection`, `FakeCursor`), da iniettare con `ConnectionManager(connector)`.
   - Per simulare `KILL QUERY` si usa `FakeConnection.on_kill`.
-  - I controlli di sessione rispondono da `FakeConnection.session_variables` e `FakeConnection.grants` (default: sessione READ ONLY e account con solo SELECT), senza passare dall'`handler`.
+  - I controlli di sessione rispondono da `FakeConnection.session_variables` e `FakeConnection.grants` (default: sessione READ ONLY, `sql_mode` senza modi di quoting e account con solo SELECT), senza passare dall'`handler`.
   - `SchemaHandler` risponde a `SHOW FULL TABLES [FROM db]` e alle due letture delle colonne (`tables`, `columns` per il database predefinito, `schemas` per gli altri, `error`, `columns_error`, `statements`).
   - `FakeConnection.databases` risponde a `SHOW DATABASES` (anche al controllo interno) e `cmd_init_db` registra i cambi di database in `init_db`.
   - Per il keyring ci sono `MemoryKeyring` e `LockedKeyring`.

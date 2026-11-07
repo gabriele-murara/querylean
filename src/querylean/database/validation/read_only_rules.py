@@ -11,6 +11,9 @@ class ReadOnlyRules:
     NOT_ALLOWED = "Query not allowed: this application supports "
     NOT_ALLOWED += "read operations only (SELECT, SHOW, "
     NOT_ALLOWED += "DESCRIBE, EXPLAIN)."
+    # Format with the function name.
+    FUNCTION_NOT_ALLOWED = "The function {}() is not allowed in read-only "
+    FUNCTION_NOT_ALLOWED += "mode."
     MULTIPLE_STATEMENTS = "The text contains more than one SQL statement: "
     MULTIPLE_STATEMENTS += "this version runs one at a time."
 

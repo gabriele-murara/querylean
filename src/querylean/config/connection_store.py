@@ -45,10 +45,16 @@ class ConnectionStore:
         """True for identifiers produced by ``new_id``."""
         return bool(ConnectionStore.__ID.match(profile_id))
 
-    def path_of(self, profile_id: str) -> Path:
-        """File of the connection ``profile_id``."""
+    @staticmethod
+    def check_id(profile_id: str) -> None:
+        """Raise ``ValueError`` unless ``profile_id`` is valid (it becomes
+        part of a file name)."""
         if not ConnectionStore.is_valid_id(profile_id):
             raise ValueError("Invalid connection id: {!r}".format(profile_id))
+
+    def path_of(self, profile_id: str) -> Path:
+        """File of the connection ``profile_id``."""
+        ConnectionStore.check_id(profile_id)
         return self.__directory / "{}{}".format(
             profile_id, ConnectionStore.SUFFIX
         )

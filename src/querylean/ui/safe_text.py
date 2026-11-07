@@ -15,5 +15,14 @@ class SafeText:
     def tooltip(text: str) -> str:
         """``text`` as a tooltip that shows it literally, line breaks
         included."""
+        return SafeText.html(text)
+
+    @staticmethod
+    def html(text: str) -> str:
+        """``text`` as rich text that shows it literally, line breaks
+        included, for widgets in automatic format (tooltips,
+        ``QMessageBox``, ``QInputDialog`` labels). Always marked as rich
+        text: escaped text alone (``a &amp; b``) could be taken as plain
+        and shown with its entities."""
         escaped = html.escape(text).replace("\n", "<br>")
         return "<qt>{}</qt>".format(escaped)

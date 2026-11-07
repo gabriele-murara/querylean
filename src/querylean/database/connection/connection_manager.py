@@ -27,10 +27,17 @@ class ConnectionManager:
     ``kill_running_query`` which opens its own short-lived connection.
     """
 
-    # Align the server lexer with the validator (backslash escapes in
-    # strings).
-    __SQL_MODE = "SET SESSION sql_mode = REPLACE(@@SESSION.sql_mode, "
-    __SQL_MODE += "'NO_BACKSLASH_ESCAPES', '')"
+    # Align the server lexer with the validator: backslash escapes in
+    # strings, and "…" as a string, never an identifier (with ANSI_QUOTES
+    # a backslash would not escape and text the validator reads as one
+    # string could hide SQL). ANSI is removed too, since it implies
+    # ANSI_QUOTES.
+    __SQL_MODE = "SET SESSION sql_mode = REPLACE(REPLACE(REPLACE("
+    __SQL_MODE += "@@SESSION.sql_mode, 'NO_BACKSLASH_ESCAPES', ''), "
+    __SQL_MODE += "'ANSI_QUOTES', ''), 'ANSI', '')"
+    __SQL_MODE_CHECK = "SELECT @@SESSION.sql_mode"
+    # Modes the validator cannot follow: a session keeping one is closed.
+    LEXER_MODES = frozenset({"NO_BACKSLASH_ESCAPES", "ANSI_QUOTES"})
     # Fixed internal statements run when every session is opened.
     __SESSION_SETUP = (
         # Server-side barrier on top of the account privileges.
@@ -52,6 +59,10 @@ class ConnectionManager:
     __NOT_CONFIRMED = "Connection opened, but the server did not confirm "
     __NOT_CONFIRMED += "that the session is read-only, so it was closed. "
     __NOT_CONFIRMED += "See the log for details."
+    __LEXER_MISMATCH = "Connection opened, but the server keeps an "
+    __LEXER_MISMATCH += "sql_mode that changes how quotes are read "
+    __LEXER_MISMATCH += "(ANSI_QUOTES or NO_BACKSLASH_ESCAPES), so it was "
+    __LEXER_MISMATCH += "closed. See the log for details."
     __WRITE_ACCOUNT = "Connection refused: the account can change data in "
     __WRITE_ACCOUNT += "{}. {} uses such databases only in caution mode: "
     __WRITE_ACCOUNT += "open Connections → Edit…, press “Test connection” "
@@ -284,6 +295,34 @@ class ConnectionManager:
                 value,
             )
             raise DatabaseError(ConnectionManager.__NOT_CONFIRMED) from None
+        ConnectionManager.__check_sql_mode(conn)
+
+    @staticmethod
+    def __check_sql_mode(conn: Any) -> None:
+        """Read back the session sql_mode: quoting must follow the rules of
+        the validator (fail-closed when it cannot be read)."""
+        try:
+            rows = ConnectionManager.__fetch(
+                conn, ConnectionManager.__SQL_MODE_CHECK
+            )
+            value = rows[0][0] if rows and rows[0] else None
+            # NULL (or no row) cannot be verified.
+            mode = None if value is None else DriverValue.text(value)
+        except Exception as exc:
+            ConnectionManager.__log.warning(
+                "Could not read the session sql_mode: {!r}", exc
+            )
+            mode = None
+        modes = (
+            {item.strip().upper() for item in mode.split(",")}
+            if mode is not None
+            else None
+        )
+        if modes is None or modes & ConnectionManager.LEXER_MODES:
+            ConnectionManager.__log.warning(
+                "Session sql_mode not usable by the validator: {!r}", mode
+            )
+            raise DatabaseError(ConnectionManager.__LEXER_MISMATCH) from None
 
     @staticmethod
     def __check_account(

@@ -123,6 +123,12 @@ class TestReadOnlyValidator:
         "/*!40101 DROP TABLE users */",
         "SELECT /*+ SET_VAR(sql_mode='') */ 1",
         "SELECT 1--1\n, sleep(1)",
+        # "--" before a Unicode space: a comment for Python, not for MySQL
+        # (the space is an identifier character there).
+        "SELECT 1 --{}, GET_LOCK('l', 5)\nFROM t".format(chr(0xA0)),
+        "SELECT 1 --{}INTO OUTFILE '/tmp/x'\nFROM t".format(chr(0x2028)),
+        "SELECT 1 --{}FOR UPDATE\nFROM t".format(chr(0x85)),
+        "SELECT 1; --{}\nDELETE FROM t".format(chr(0x3000)),
         # reads with side effects
         "SELECT * FROM users INTO OUTFILE '/tmp/u.txt'",
         "SELECT * FROM users INTO DUMPFILE '/tmp/u.bin'",
@@ -166,6 +172,12 @@ class TestReadOnlyValidator:
         result = validator.validate(sql)
         assert not result.ok, "{!r} accepted".format(sql)
         assert result.reason
+
+    @pytest.mark.parametrize("after", [" ", "\t", "\r", "\x0b", "\x0c", "\x01"])
+    def test_dash_comment_after_ascii_space_or_control(self, validator, after):
+        sql = "SELECT 1 --{}comment\nFROM t".format(after)
+        result = validator.validate(sql)
+        assert result.ok, "{!r} rejected: {}".format(sql, result.reason)
 
     def test_trailing_semicolon_is_stripped_and_original_text_kept(
         self, validator
