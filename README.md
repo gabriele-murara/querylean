@@ -27,6 +27,7 @@ at a time, a SQL editor and a table of copyable results.
   - copy of cells or rows as tab-separated text, ready to paste into Excel and LibreOffice Calc;
   - export of the result to Excel (`.xlsx`), CSV or JSON.
 - The row limit (default 1,000, maximum 10,000) is enforced while fetching the data.
+- **Pages**: when a `SELECT`/`WITH` query returns more rows than the row limit, the first rows are shown at once ("Results limited to the first N rows"), then the rows are counted with `SELECT COUNT(*) FROM (<query>) AS querylean_count` and **«** **‹** "Page N of M" **›** **»** appear on the right of the line below the results (the total is in the tooltip). One page holds as many rows as the row limit. The count runs only when the result was truncated. Every other page is read with `SELECT * FROM (<query>) AS querylean_page LIMIT <limit> OFFSET <n>`; the first page is the result already loaded. Both statements go through the read-only validator and run only on the session that ran the query; the pages disappear with a new query, another active database or a disconnection. Row numbers continue from page to page; copying and **Export** take the page shown. Without `ORDER BY` MySQL does not guarantee the order of the rows across pages. A query that cannot be a derived table (for example `SELECT *` on a join with two columns named alike) has no pages: the message says why. `SHOW`, `DESCRIBE` and `EXPLAIN` have no pages.
 - Window, splitter and side bar sizes are remembered between sessions.
 - No telemetry, no cloud services, no local database.
 
@@ -72,7 +73,7 @@ While a query runs, an activity bar and the text of the query appear below the r
 
 1. **Connections** → **New connection…**: fill in name (optional), host, port, database (or check "All the databases the account can access"), username, password and timeouts, then use **Test connection** and **Save**. Saving does not open the connection (see [Connections](#connections)).
 2. **Connect** opens the active connection, the one checked in the **Connections** menu: the state goes from *Disconnected* to *Connecting* and then to *Connected* or *Connection error*. If the password is not in the keychain, it is asked for.
-3. Write the query, helped by the [autocompletion](#autocompletion), and press **Run** or `Ctrl/Cmd+Enter`. Alternatively click a table in the side bar (see [Table side bar](#table-side-bar)). Below the results you see rows and time, then "Query executed:" followed by the query just executed, on one line. Beyond 160 characters the query is cut with "…"; the full text is in the message tooltip.
+3. Write the query, helped by the [autocompletion](#autocompletion), and press **Run** or `Ctrl/Cmd+Enter`. Alternatively click a table in the side bar (see [Table side bar](#table-side-bar)). Below the results, on one line, you see "Query executed:" followed by the query just executed, then rows and time and, when there is more than one page, the page buttons on the right (see below). Beyond 160 characters the query is cut with "…"; the full text is in the message tooltip. While the query runs the same line shows "Running:" followed by the query.
 4. Select cells or rows and press `Ctrl/Cmd+C`. The context menu also offers the "with headers" and "whole rows" variants.
 5. To save the result to a file open the **Export** menu and choose the format (see [Export](#export)).
 
@@ -232,7 +233,7 @@ Copied cells are separated by tabs and rows by newlines. The selection is copied
 - **Excel (.xlsx)**, **CSV (.csv)**, **JSON (.json)**: the save dialog offers only that format. If the name lacks its extension, it is added.
 - **Export…**: the save dialog offers every format. The extension of the name (`.xlsx`, `.csv`, `.json`) decides or, when missing, the format selected in the dialog.
 
-- **The rows already loaded** are exported, that is at most the configured row limit: the query is not run again. If the result was truncated, the final message says so.
+- **The rows already loaded** are exported (the page shown, see Pages), that is at most the configured row limit: the query is not run again. If the result was truncated, the final message says so.
 - The file is written in a separate thread, so the window stays usable. It is first written to a temporary file in the same folder and then renamed: an existing file is replaced only by a complete export.
 - The file is readable only by your user (permissions `0600`), because it may contain confidential data.
 - Exporting is still possible after disconnecting.

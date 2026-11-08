@@ -14,7 +14,8 @@ from querylean.ui.results.value_formatter import ValueFormatter
 
 class ResultsTable(QTableView):
     """Read-only table with extended selection and TSV copy (cells, rows,
-    headers)."""
+    headers). ``show_rows`` replaces the rows with another page of the
+    same result; copies take the selection of the rows shown."""
 
     __MAX_INITIAL_COLUMN_WIDTH = 400
 
@@ -59,6 +60,18 @@ class ResultsTable(QTableView):
                 self.setColumnWidth(
                     col, ResultsTable.__MAX_INITIAL_COLUMN_WIDTH
                 )
+
+    def show_rows(self, rows: list[tuple[Any, ...]], offset: int) -> None:
+        """Show other rows of the same result (a page), numbered after
+        ``offset``; columns too narrow for them are widened, never
+        narrowed."""
+        self.__model.set_result(self.__model.columns, rows, offset)
+        self.scrollToTop()
+        limit = ResultsTable.__MAX_INITIAL_COLUMN_WIDTH
+        for col in range(self.__model.columnCount()):
+            width = min(self.sizeHintForColumn(col), limit)
+            if width > self.columnWidth(col):
+                self.setColumnWidth(col, width)
 
     def clear(self) -> None:
         """Remove the displayed result."""

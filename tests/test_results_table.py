@@ -75,3 +75,21 @@ class TestResultsTable:
         model = table.results_model
         tip = model.data(model.index(0, 0), Qt.ItemDataRole.ToolTipRole)
         assert "<img" not in tip and "&lt;img" in tip
+
+    def test_rows_of_another_page(self, qtbot):
+        table = ResultsTable()
+        qtbot.addWidget(table)
+        table.set_result(["name"], [("a",)])
+        narrow = table.columnWidth(0)
+        table.show_rows([("x" * 40,), (None,)], 2000)
+        model = table.results_model
+        assert model.columns == ["name"]
+        assert model.rowCount() == 2
+        assert model.offset == 2000
+        assert model.headerData(1, Qt.Orientation.Vertical) == "2002"
+        assert table.columnWidth(0) > narrow
+        wide = table.columnWidth(0)
+        table.show_rows([("b",)], 0)
+        assert table.columnWidth(0) == wide
+        table.selectAll()
+        assert table.copy_selection() == "b"

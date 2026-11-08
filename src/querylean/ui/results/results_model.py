@@ -31,6 +31,7 @@ class ResultsModel(QAbstractTableModel):
         super().__init__(parent)
         self.__columns: list[str] = []
         self.__rows: list[tuple[Any, ...]] = []
+        self.__offset = 0
         self.__null_font = QFont()
         self.__null_font.setItalic(True)
 
@@ -39,13 +40,23 @@ class ResultsModel(QAbstractTableModel):
         """Column names."""
         return list(self.__columns)
 
+    @property
+    def offset(self) -> int:
+        """Rows of the result before the first displayed one (a page)."""
+        return self.__offset
+
     def set_result(
-        self, columns: list[str], rows: list[tuple[Any, ...]]
+        self,
+        columns: list[str],
+        rows: list[tuple[Any, ...]],
+        offset: int = 0,
     ) -> None:
-        """Replace the displayed result."""
+        """Replace the displayed rows; row numbers start after
+        ``offset``."""
         self.beginResetModel()
         self.__columns = list(columns)
         self.__rows = rows
+        self.__offset = offset
         self.endResetModel()
 
     def clear(self) -> None:
@@ -126,4 +137,4 @@ class ResultsModel(QAbstractTableModel):
                 if section < len(self.__columns)
                 else None
             )
-        return str(section + 1)
+        return str(self.__offset + section + 1)

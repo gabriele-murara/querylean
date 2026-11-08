@@ -27,6 +27,7 @@ volta, un editor SQL e una tabella di risultati copiabili.
   - copia di celle o righe in formato tabulato, incollabile in Excel e LibreOffice Calc;
   - esportazione del risultato in Excel (`.xlsx`), CSV o JSON.
 - Il limite di righe (predefinito 1.000, massimo 10.000) è applicato durante il recupero dei dati.
+- **Pagine**: quando una query `SELECT`/`WITH` restituisce più righe del limite di righe, le prime righe si vedono subito ("Results limited to the first N rows"), poi le righe vengono contate con `SELECT COUNT(*) FROM (<query>) AS querylean_count` e compaiono **«** **‹** "Page N of M" (Pagina N di M) **›** **»** a destra della riga sotto i risultati (il totale è nel tooltip). Una pagina contiene tante righe quanto il limite di righe. Il conteggio si esegue solo se il risultato è stato troncato. Ogni altra pagina si legge con `SELECT * FROM (<query>) AS querylean_page LIMIT <limite> OFFSET <n>`; la prima pagina è il risultato già caricato. Entrambe le istruzioni passano dal validatore di sola lettura e girano solo sulla sessione che ha eseguito la query; le pagine spariscono con una nuova query, un altro database attivo o una disconnessione. I numeri di riga proseguono da una pagina all'altra; la copia e **Export** prendono la pagina mostrata. Senza `ORDER BY` MySQL non garantisce l'ordine delle righe tra le pagine. Una query che non può essere una tabella derivata (per esempio `SELECT *` su una join con due colonne con lo stesso nome) non ha pagine: il messaggio spiega il motivo. `SHOW`, `DESCRIBE` ed `EXPLAIN` non hanno pagine.
 - Dimensioni della finestra, del divisore e della barra laterale vengono ricordate tra una sessione e l'altra.
 - Nessuna telemetria, nessun servizio cloud, nessun database locale.
 
@@ -72,7 +73,7 @@ Mentre una query è in esecuzione, sotto i risultati compaiono una barra di atti
 
 1. **Connections** → **New connection…** (Connessioni → Nuova connessione…): compila nome (facoltativo), host, porta, database (oppure spunta "All the databases the account can access", Tutti i database a cui l'account ha accesso), username, password e i timeout, poi usa **Test connection** (Test connessione) e **Save** (Salva). Salvare non apre la connessione (vedi [Connessioni](#connessioni)).
 2. **Connect** apre la connessione attiva, quella con la spunta nel menu **Connections**: lo stato passa da *Disconnected* (Disconnesso) a *Connecting* (Connessione in corso) e poi a *Connected* (Connesso) o *Connection error* (Errore di connessione). Se la password non è nel portachiavi, viene richiesta.
-3. Scrivi la query, aiutato dall'[autocompletamento](#autocompletamento), e premi **Run** oppure `Ctrl/Cmd+Invio`. In alternativa fai clic su una tabella nella barra laterale (vedi [Barra delle tabelle](#barra-delle-tabelle)). Sotto i risultati compaiono righe e tempo, poi "Query executed:" (Query eseguita:) seguito dalla query appena eseguita, su una riga. Oltre i 160 caratteri la query è troncata con "…"; il testo completo è nel tooltip del messaggio.
+3. Scrivi la query, aiutato dall'[autocompletamento](#autocompletamento), e premi **Run** oppure `Ctrl/Cmd+Invio`. In alternativa fai clic su una tabella nella barra laterale (vedi [Barra delle tabelle](#barra-delle-tabelle)). Sotto i risultati, su una sola riga, compaiono "Query executed:" (Query eseguita:) seguito dalla query appena eseguita, poi righe e tempo e, quando c'è più di una pagina, i pulsanti delle pagine a destra (vedi sotto). Oltre i 160 caratteri la query è troncata con "…"; il testo completo è nel tooltip del messaggio. Durante l'esecuzione la stessa riga mostra "Running:" (In esecuzione:) seguito dalla query.
 4. Seleziona celle o righe e premi `Ctrl/Cmd+C`. Il menu contestuale offre anche le varianti "con intestazioni" e "righe intere".
 5. Per salvare il risultato su file apri il menu **Export** e scegli il formato (vedi [Esportazione](#esportazione)).
 
@@ -232,7 +233,7 @@ Le celle copiate sono separate da tabulazioni e le righe da a capo. La selezione
 - **Excel (.xlsx)**, **CSV (.csv)**, **JSON (.json)**: la finestra di salvataggio propone solo quel formato. Se il nome non ha la sua estensione, viene aggiunta.
 - **Export…** (Esporta…): la finestra di salvataggio propone tutti i formati. Decide l'estensione del nome (`.xlsx`, `.csv`, `.json`) oppure, se manca, il formato selezionato nella finestra.
 
-- Si esportano **le righe già caricate**, cioè al massimo il limite di righe impostato: la query non viene rieseguita. Se il risultato era troncato, il messaggio finale lo ricorda.
+- Si esportano **le righe già caricate** (la pagina mostrata, vedi Pagine), cioè al massimo il limite di righe impostato: la query non viene rieseguita. Se il risultato era troncato, il messaggio finale lo ricorda.
 - Il file viene scritto in un thread separato, quindi la finestra resta utilizzabile. Lo si scrive prima in un file temporaneo nella stessa cartella, poi lo si rinomina: un file esistente viene sostituito solo da un'esportazione completa.
 - Il file è leggibile solo dal tuo utente (permessi `0600`), perché può contenere dati riservati.
 - L'esportazione resta possibile anche dopo la disconnessione.

@@ -18,6 +18,7 @@ from querylean.database.connection.connection_manager import ConnectionManager
 from querylean.database.errors.database_error import DatabaseError
 from querylean.database.errors.query_cancelled import QueryCancelled
 from querylean.database.errors.query_timeout import QueryTimeout
+from querylean.database.execution.paged_query import PagedQuery
 from querylean.database.execution.query_executor import QueryExecutor
 from querylean.database.schema.column_catalog import ColumnCatalog
 from querylean.database.schema.database_catalog import DatabaseCatalog
@@ -114,6 +115,23 @@ class TestMysqlIntegration:
         assert executor.execute(
             "SELECT COUNT(*) FROM numbers", 10, 10
         ).rows == [(2500,)]
+
+    def test_count_and_pages_of_a_truncated_result(self, executor):
+        sql = "SELECT n FROM numbers ORDER BY n DESC -- newest first"
+        first = executor.execute(sql, row_limit=1000, timeout=10)
+        assert first.truncated
+        count = executor.execute(
+            PagedQuery.count_statement(first.statement), 1, 10
+        )
+        assert count.rows == [(2500,)]
+        page = executor.execute(
+            PagedQuery.page_statement(first.statement, 1000, 2), 1000, 10
+        )
+        assert not page.truncated
+        assert page.columns == ["n"]
+        # The ORDER BY of the query holds across the pages.
+        assert page.rows[0] == (500,) and page.rows[-1] == (1,)
+        assert len(page.rows) == 500
 
     def test_server_side_timeout(self, executor):
         started = time.monotonic()

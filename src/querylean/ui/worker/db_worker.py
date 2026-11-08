@@ -10,6 +10,7 @@ from querylean.bookmarks.query_bookmark import QueryBookmark
 from querylean.config.connection_config import ConnectionConfig
 from querylean.database.connection.connection_manager import ConnectionManager
 from querylean.database.errors.database_error import DatabaseError
+from querylean.database.execution.paged_query import PagedQuery
 from querylean.database.execution.query_executor import QueryExecutor
 from querylean.database.schema.column_catalog import ColumnCatalog
 from querylean.database.schema.database_catalog import DatabaseCatalog
@@ -30,6 +31,8 @@ class DbWorker(QObject):
     WRONG_TARGET = "The bookmarked query was not run: it was saved for "
     WRONG_TARGET += "another connection."
     WRONG_TARGET_KIND = "bookmark_target"
+    PAGES_TARGET = "The pages were not read: the result comes from another "
+    PAGES_TARGET += "connection."
 
     # Requests (GUI -> worker)
     connect_requested = Signal(object, str)
@@ -38,6 +41,10 @@ class DbWorker(QObject):
     query_requested = Signal(str, int, int)
     # Bookmarked query: sql, target it was saved for, row limit, timeout.
     bookmark_requested = Signal(str, str, int, int)
+    # Pages of a truncated result: statement, target of the session that
+    # ran it, (page, page size,) timeout in seconds.
+    count_requested = Signal(str, str, int)
+    page_requested = Signal(str, str, int, int, int)
     databases_requested = Signal(int)  # timeout in seconds
     database_requested = Signal(str)  # make it the active database
     tables_requested = Signal(str, int)  # database, timeout in seconds
@@ -51,6 +58,10 @@ class DbWorker(QObject):
     test_finished = Signal(bool, str, object)  # ok, message, AccountCheck
     query_finished = Signal(object)
     query_failed = Signal(str, str)  # message, error kind
+    count_finished = Signal(str, int)  # statement, rows
+    count_failed = Signal(str, str, str)  # statement, message, error kind
+    page_finished = Signal(str, int, object)  # statement, page, QueryResult
+    page_failed = Signal(str, int, str, str)  # statement, page, message, kind
     databases_loaded = Signal(object)  # list[str]
     databases_failed = Signal(str)
     database_changed = Signal(str)
@@ -76,6 +87,8 @@ class DbWorker(QObject):
         self.test_requested.connect(self.__on_test)
         self.query_requested.connect(self.__on_query)
         self.bookmark_requested.connect(self.__on_bookmark)
+        self.count_requested.connect(self.__on_count)
+        self.page_requested.connect(self.__on_page)
         self.databases_requested.connect(self.__on_databases)
         self.database_requested.connect(self.__on_database)
         self.tables_requested.connect(self.__on_tables)
@@ -164,15 +177,75 @@ class DbWorker(QObject):
     ) -> None:
         """Run a bookmarked query only on a session opened for the target it
         was saved for."""
-        # Without a session the executor reports "not connected".
-        config = self.__manager.config
-        if config is not None and QueryBookmark.target_of(config) != target:
+        if not self.__same_target(target):
             self.__log.warning("Bookmarked query refused: different target")
             self.query_failed.emit(
                 DbWorker.WRONG_TARGET, DbWorker.WRONG_TARGET_KIND
             )
             return
         self.__on_query(sql, row_limit, timeout)
+
+    @Slot(str, str, int)
+    def __on_count(self, statement: str, target: str, timeout: int) -> None:
+        """Count the rows of ``statement`` (``PagedQuery.count_statement``,
+        through the validator) on a session for ``target`` only."""
+        if not self.__same_target(target):
+            self.__log.warning("Row count refused: different target")
+            self.count_failed.emit(
+                statement, DbWorker.PAGES_TARGET, DbWorker.WRONG_TARGET_KIND
+            )
+            return
+        try:
+            result = self.__executor.execute(
+                PagedQuery.count_statement(statement), 1, timeout
+            )
+            rows = int(result.rows[0][0])
+        except DatabaseError as exc:
+            self.count_failed.emit(statement, exc.message, exc.kind)
+        except Exception:
+            self.__log.exception("Unexpected error while counting the rows")
+            self.count_failed.emit(
+                statement, DbWorker.UNEXPECTED_ERROR, "generic"
+            )
+        else:
+            self.count_finished.emit(statement, rows)
+
+    @Slot(str, str, int, int, int)
+    def __on_page(
+        self, statement: str, target: str, page: int, size: int, timeout: int
+    ) -> None:
+        """Read page ``page`` of ``statement`` (``PagedQuery.page_statement``,
+        through the validator) on a session for ``target`` only."""
+        if not self.__same_target(target):
+            self.__log.warning("Page refused: different target")
+            self.page_failed.emit(
+                statement,
+                page,
+                DbWorker.PAGES_TARGET,
+                DbWorker.WRONG_TARGET_KIND,
+            )
+            return
+        try:
+            result = self.__executor.execute(
+                PagedQuery.page_statement(statement, size, page),
+                size,
+                timeout,
+            )
+        except DatabaseError as exc:
+            self.page_failed.emit(statement, page, exc.message, exc.kind)
+        except Exception:
+            self.__log.exception("Unexpected error while reading a page")
+            self.page_failed.emit(
+                statement, page, DbWorker.UNEXPECTED_ERROR, "generic"
+            )
+        else:
+            self.page_finished.emit(statement, page, result)
+
+    def __same_target(self, target: str) -> bool:
+        """False when a session is open for a target other than ``target``
+        (without a session the executor reports "not connected")."""
+        config = self.__manager.config
+        return config is None or QueryBookmark.target_of(config) == target
 
     @Slot(int)
     def __on_databases(self, timeout: int) -> None:

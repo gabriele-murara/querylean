@@ -55,3 +55,37 @@ class TestDbWorker:
         target = QueryBookmark.target_of(self.CFG)
         worker.bookmark_requested.emit(self.SQL, target, 100, 30)
         assert failed == ["not_connected"]
+
+    def test_count_and_page_run_through_the_validator(self, worker, connector):
+        counted, pages = [], []
+        worker.count_finished.connect(lambda s, n: counted.append((s, n)))
+        worker.page_finished.connect(lambda s, p, r: pages.append((p, r)))
+        connector.connections[-1].handler = lambda sql: (["c"], [(7,)])
+        target = QueryBookmark.target_of(self.CFG)
+        worker.count_requested.emit(self.SQL, target, 30)
+        assert counted == [(self.SQL, 7)]
+        worker.page_requested.emit(self.SQL, target, 2, 50, 30)
+        assert pages[0][0] == 2
+        assert pages[0][1].statement.endswith("LIMIT 50 OFFSET 100")
+
+    def test_count_and_page_for_another_target_are_refused(
+        self, worker, connector
+    ):
+        failed = []
+        worker.count_failed.connect(lambda s, m, k: failed.append(m))
+        worker.page_failed.connect(lambda s, p, m, k: failed.append(m))
+        worker.count_requested.emit(self.SQL, "ro@db2:3306/app", 30)
+        worker.page_requested.emit(self.SQL, "ro@db2:3306/app", 1, 50, 30)
+        assert failed == [DbWorker.PAGES_TARGET] * 2
+        assert not any("COUNT" in sql for sql in self.executed(connector))
+        assert not any("OFFSET" in sql for sql in self.executed(connector))
+
+    def test_built_statements_are_still_validated(self, worker, connector):
+        failed = []
+        worker.count_failed.connect(lambda s, m, k: failed.append(k))
+        target = QueryBookmark.target_of(self.CFG)
+        worker.count_requested.emit(
+            "SELECT 1) AS x; DROP TABLE t; (", target, 30
+        )
+        assert failed == ["rejected"]
+        assert not any("DROP" in sql for sql in self.executed(connector))

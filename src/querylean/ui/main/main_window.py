@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QProgressBar,
+    QSizePolicy,
     QSplitter,
     QStatusBar,
     QToolBar,
@@ -48,6 +49,7 @@ from querylean.config.connection_store import ConnectionStore
 from querylean.database.connection.connection_manager import (
     ConnectionManager,
 )
+from querylean.database.execution.paged_query import PagedQuery
 from querylean.database.execution.query_executor import QueryExecutor
 from querylean.database.execution.query_result import QueryResult
 from querylean.database.privileges.account_check import AccountCheck
@@ -73,7 +75,6 @@ from querylean.ui.dialogs.import_bookmarks_dialog import (
     ImportBookmarksDialog,
 )
 from querylean.ui.dialogs.save_mask_dialog import SaveMaskDialog
-from querylean.ui.dialogs.status_label import StatusLabel
 from querylean.ui.editor.sql_editor import SqlEditor
 from querylean.ui.icons.toolbar_icons import ToolbarIcons
 from querylean.ui.main.bookmarks_menu import BookmarksMenu
@@ -81,6 +82,7 @@ from querylean.ui.main.caution_palette import CautionPalette
 from querylean.ui.main.connection_state import ConnectionState
 from querylean.ui.main.connections_menu import ConnectionsMenu
 from querylean.ui.main.stop_button import StopButton
+from querylean.ui.results.results_pager import ResultsPager
 from querylean.ui.results.results_table import ResultsTable
 from querylean.ui.safe_text import SafeText
 from querylean.ui.sidebar.table_sidebar import TableSidebar
@@ -181,6 +183,12 @@ class MainWindow(QMainWindow):
         self.__result: QueryResult | None = None
         self.__export_thread: ExportThread | None = None
         self.__export_source: QueryResult | None = None
+        # Target of the session that runs the current query.
+        self.__run_target = ""
+        # Truncated result with pages (its first page) and where it ran.
+        self.__paged: QueryResult | None = None
+        self.__paged_target = ""
+        self.__page_shown = 0
         # Remembered for the session only.
         self.__export_dir = Path.home()
         self.__export_filter = ResultExporters.all()[0].name_filter
@@ -375,9 +383,9 @@ class MainWindow(QMainWindow):
         return self.__message_label
 
     @property
-    def running_label(self) -> QLabel:
-        """Query currently running."""
-        return self.__running_label
+    def pager(self) -> ResultsPager:
+        """Pages of the result, shown when it has more than one."""
+        return self.__pager
 
     @property
     def progress(self) -> QProgressBar:
@@ -905,19 +913,16 @@ class MainWindow(QMainWindow):
             self.show_message(ConnectionManager.NOT_CONNECTED, error=True)
             return
         cfg = self.__active_config()
-        self.__running = True
-        self.__update_actions()
-        self.__progress.show()
-        self.__stop_button.start()
+        self.__run_target = self.session_target if target is None else target
+        self.__drop_pages()
+        self.__begin_run()
         self.__rows_label.clear()
         self.__time_label.clear()
         self.__limit_label.clear()
         preview = MainWindow.query_preview(sql)
-        self.__running_label.setText("Running: {}".format(preview))
-        self.__running_label.show()
-        self.show_message("Running the query…")
-        self.__watchdog.start(
-            cfg.query_timeout * 1000 + MainWindow.WATCHDOG_GRACE_MS
+        cut = preview != " ".join(sql.split())
+        self.show_message(
+            "Running: {}".format(preview), tooltip=sql if cut else ""
         )
         if target is None:
             self.worker.query_requested.emit(
@@ -927,6 +932,39 @@ class MainWindow(QMainWindow):
             self.worker.bookmark_requested.emit(
                 sql, target, cfg.row_limit, cfg.query_timeout
             )
+
+    def __begin_run(self) -> None:
+        """Busy state of a query, a row count or a page: Run disabled,
+        activity, Stop and the watchdog."""
+        self.__running = True
+        self.__update_actions()
+        self.__progress.show()
+        self.__stop_button.start()
+        self.__watchdog.start(
+            self.__active_config().query_timeout * 1000
+            + MainWindow.WATCHDOG_GRACE_MS
+        )
+
+    def show_page(self, page: int) -> None:
+        """Show ``page`` (from 0) of the truncated result: the first one is
+        the loaded result, the others are read from the server with
+        ``PagedQuery.page_statement`` (through the validator, only on the
+        session of the result)."""
+        paged = self.__paged
+        if paged is None or self.__running:
+            self.__pager.show_page(self.__page_shown)
+            return
+        if page == 0:
+            self.__show_rows(0, paged)
+            return
+        self.__begin_run()
+        self.worker.page_requested.emit(
+            paged.statement,
+            self.__paged_target,
+            page,
+            paged.row_limit,
+            self.__active_config().query_timeout,
+        )
 
     def stop_query(self) -> None:
         """Interrupt the running query."""
@@ -1405,26 +1443,29 @@ class MainWindow(QMainWindow):
         self.__message_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
-        self.__running_label = QLabel()
-        self.__running_label.setTextFormat(Qt.TextFormat.PlainText)
-        self.__running_label.setStyleSheet(StatusLabel.HINT_STYLE)
-        self.__running_label.hide()
+        # Takes the free width of its line, wrapping only when it is full.
+        self.__message_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
+        self.__pager = ResultsPager()
+        self.__pager.page_changed.connect(self.show_page)
 
+        # One line below the results: Stop and activity, the message, the
+        # figures of the result and, on the right, its pages.
         info = QHBoxLayout()
         info.addWidget(self.__stop_button)
         info.addWidget(self.__progress)
+        info.addWidget(self.__message_label, 1)
         info.addWidget(self.__rows_label)
         info.addWidget(self.__time_label)
         info.addWidget(self.__limit_label)
-        info.addStretch(1)
+        info.addWidget(self.__pager)
 
         panel = QWidget()
         panel_layout = QVBoxLayout(panel)
         panel_layout.setContentsMargins(0, 4, 0, 0)
         panel_layout.addWidget(self.__results, 1)
         panel_layout.addLayout(info)
-        panel_layout.addWidget(self.__running_label)
-        panel_layout.addWidget(self.__message_label)
 
         self.__splitter = QSplitter(Qt.Orientation.Vertical)
         self.__splitter.setObjectName("editor-results-splitter")
@@ -1470,6 +1511,10 @@ class MainWindow(QMainWindow):
         worker.disconnected.connect(self.__on_disconnected)
         worker.query_finished.connect(self.__on_query_finished)
         worker.query_failed.connect(self.__on_query_failed)
+        worker.count_finished.connect(self.__on_count_finished)
+        worker.count_failed.connect(self.__on_count_failed)
+        worker.page_finished.connect(self.__on_page_finished)
+        worker.page_failed.connect(self.__on_page_failed)
         worker.tables_loaded.connect(self.__on_tables_loaded)
         worker.tables_failed.connect(self.__on_tables_failed)
         worker.columns_loaded.connect(self.__on_columns_loaded)
@@ -1485,6 +1530,7 @@ class MainWindow(QMainWindow):
     def __set_state(self, state: ConnectionState) -> None:
         self.__state = state
         if state != ConnectionState.CONNECTED:
+            self.__drop_pages()
             self.__check = None
             self.__schema.clear()
             self.__pending_tables.clear()
@@ -1548,6 +1594,7 @@ class MainWindow(QMainWindow):
         self.__save_query_action.setEnabled(connected and not self.__running)
         self.__bookmarks_action.setEnabled(connected and not self.__running)
         self.__stop_action.setEnabled(self.__running)
+        self.__pager.setEnabled(not self.__running)
         self.__export_action.setEnabled(
             self.__can_export() and not self.__running
         )
@@ -1782,8 +1829,6 @@ class MainWindow(QMainWindow):
         self.__running = False
         self.__progress.hide()
         self.__stop_button.finish()
-        self.__running_label.clear()
-        self.__running_label.hide()
         self.__update_actions()
 
     def __on_query_finished(self, result: QueryResult) -> None:
@@ -1805,13 +1850,92 @@ class MainWindow(QMainWindow):
         cut = preview != " ".join(result.statement.split())
         full = result.statement if cut else ""
         self.show_message(msg.format(preview), tooltip=full)
+        if (
+            result.truncated
+            and result.columns
+            and PagedQuery.is_pageable(result.statement)
+        ):
+            # More rows than the limit: count them for the pages.
+            self.__paged = result
+            self.__paged_target = self.__run_target
+            self.__pager.show_counting()
+            self.__begin_run()
+            self.worker.count_requested.emit(
+                result.statement,
+                self.__paged_target,
+                self.__active_config().query_timeout,
+            )
 
     def __on_query_failed(self, message: str, kind: str) -> None:
         self.__finish_run()
         self.show_message(message, error=True)
         if kind == MainWindow.__REJECTED_KIND:
             self.__show_read_only_notice(message)
-        elif kind == "not_connected":
+        else:
+            self.__after_failure(kind)
+
+    def __on_count_finished(self, statement: str, rows: int) -> None:
+        self.__finish_run()
+        paged = self.__paged
+        if paged is None or paged.statement != statement:
+            return  # result no longer shown
+        pages = PagedQuery.page_count(rows, paged.row_limit)
+        self.__pager.set_page_count(pages, rows)
+        if pages <= 1:
+            self.__paged = None
+
+    def __on_count_failed(
+        self, statement: str, message: str, kind: str
+    ) -> None:
+        self.__finish_run()
+        paged = self.__paged
+        if paged is None or paged.statement != statement:
+            return
+        self.__drop_pages()
+        msg = "The rows could not be counted, so there are no pages: {}"
+        self.show_message(msg.format(message), error=True)
+        self.__after_failure(kind)
+
+    def __on_page_finished(
+        self, statement: str, page: int, result: QueryResult
+    ) -> None:
+        self.__finish_run()
+        paged = self.__paged
+        if paged is None or paged.statement != statement:
+            return
+        self.__show_rows(page, result)
+
+    def __on_page_failed(
+        self, statement: str, page: int, message: str, kind: str
+    ) -> None:
+        self.__finish_run()
+        if self.__paged is None or self.__paged.statement != statement:
+            return
+        self.__pager.show_page(self.__page_shown)
+        msg = "Page {} could not be read: {}"
+        self.show_message(msg.format(page + 1, message), error=True)
+        self.__after_failure(kind)
+
+    def __show_rows(self, page: int, result: QueryResult) -> None:
+        """Rows of ``page`` in the table; "Export" saves them."""
+        paged = self.__paged
+        if paged is None:
+            return
+        self.__result = result
+        self.__page_shown = page
+        self.__results.show_rows(result.rows, page * paged.row_limit)
+        self.__rows_label.setText("{} rows".format(len(result.rows)))
+        self.__update_actions()
+
+    def __drop_pages(self) -> None:
+        """No pages: a new query, another database or no session."""
+        self.__paged = None
+        self.__page_shown = 0
+        self.__pager.set_page_count(1)
+
+    def __after_failure(self, kind: str) -> None:
+        """State after an error of the session."""
+        if kind == "not_connected":
             self.__set_state(ConnectionState.DISCONNECTED)
         elif kind == "connection_lost":
             self.__set_state(ConnectionState.ERROR)
@@ -1902,6 +2026,8 @@ class MainWindow(QMainWindow):
             return
         self.__schema.database = database
         self.__sidebar.set_active_database(database)
+        # Pages of unqualified queries would read the new database.
+        self.__drop_pages()
         self.__set_state(self.__state)
         self.show_message("Active database: {}.".format(database))
         self.load_tables(database)

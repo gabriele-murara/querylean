@@ -1,6 +1,9 @@
 """GUI tests of the main window."""
 
+import re
+
 from mysql.connector import errors as mysql_errors
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import QToolBar
 
@@ -81,7 +84,7 @@ class TestMainWindow(MainWindowTestBase):
         assert window.rows_label.text() == "3 rows"
         assert "ms" in window.time_label.text()
         assert window.limit_label.text() == ""
-        assert window.running_label.isHidden()
+        assert window.pager.isHidden()
 
     def test_truncation_is_signalled(self, qtbot, window, connector):
         self.connect(qtbot, window)
@@ -90,6 +93,143 @@ class TestMainWindow(MainWindowTestBase):
         self.run(qtbot, window, "SELECT n FROM t")
         assert window.results.results_model.rowCount() == 100
         assert "limited to the first 100" in window.limit_label.text()
+
+    TOTAL = 2500
+
+    @classmethod
+    def table_of_rows(cls, sql: str):
+        """A table of ``TOTAL`` rows that answers counts and pages."""
+        if sql.startswith("SELECT COUNT(*) FROM ("):
+            return ["COUNT(*)"], [(cls.TOTAL,)]
+        found = re.search(r"LIMIT (\d+) OFFSET (\d+)$", sql)
+        start, size = 0, cls.TOTAL
+        if found:
+            size, start = int(found.group(1)), int(found.group(2))
+        end = min(start + size, cls.TOTAL)
+        return ["n"], [(i,) for i in range(start, end)]
+
+    def sent(self, connector) -> list[str]:
+        return [sql for conn in connector.connections for sql in conn.executed]
+
+    def wait(self, qtbot, window) -> None:
+        qtbot.waitUntil(lambda: not window.running, timeout=self.WAIT_MS)
+
+    def test_truncated_result_is_counted_and_paged(
+        self, qtbot, window, connector
+    ):
+        connector.configure = lambda conn: setattr(
+            conn, "handler", self.table_of_rows
+        )
+        self.connect(qtbot, window)
+        self.run(qtbot, window, "SELECT n FROM t -- all")
+        model = window.results.results_model
+        pager = window.pager
+        assert window.rows_label.text() == "1000 rows"
+        assert "limited to the first 1000" in window.limit_label.text()
+        assert "Query executed" in window.message_label.text()
+        count = "SELECT COUNT(*) FROM (\nSELECT n FROM t -- all\n) AS "
+        count += "querylean_count"
+        assert count in self.sent(connector)
+        assert pager.isVisible()
+        assert pager.label.text() == "Page 1 of 3"
+        assert pager.label.toolTip() == "2,500 rows"
+        assert model.rowCount() == 1000
+
+        pager.next_button.click()
+        self.wait(qtbot, window)
+        assert pager.label.text() == "Page 2 of 3"
+        assert model.headerData(0, Qt.Orientation.Vertical) == "1001"
+        assert model.raw_value(0, 0) == 1000
+        page = "SELECT * FROM (\nSELECT n FROM t -- all\n) AS "
+        page += "querylean_page LIMIT 1000 OFFSET 1000"
+        assert page in self.sent(connector)
+
+        pager.last_button.click()
+        self.wait(qtbot, window)
+        assert model.rowCount() == 500
+        assert window.rows_label.text() == "500 rows"
+        assert not pager.next_button.isEnabled()
+
+        # The first page is the loaded result: no query.
+        sent = len(self.sent(connector))
+        pager.first_button.click()
+        assert not window.running
+        assert len(self.sent(connector)) == sent
+        assert model.raw_value(0, 0) == 0
+
+        # On the line of the message, at its right.
+        message = window.message_label.geometry()
+        assert pager.geometry().left() > message.right()
+        assert message.top() <= pager.geometry().center().y()
+        assert pager.geometry().center().y() <= message.bottom()
+
+    def test_no_count_without_truncation(self, qtbot, window, connector):
+        self.connect(qtbot, window)
+        self.run(qtbot, window, "SELECT n FROM t")
+        assert window.pager.isHidden()
+        assert not any("COUNT(*)" in sql for sql in self.sent(connector))
+
+    def test_statements_other_than_select_have_no_pages(
+        self, qtbot, window, connector
+    ):
+        connector.configure = lambda conn: setattr(
+            conn, "handler", self.table_of_rows
+        )
+        self.connect(qtbot, window)
+        self.run(qtbot, window, "SHOW TABLES")
+        assert "limited to the first 1000" in window.limit_label.text()
+        assert window.pager.isHidden()
+        assert not any("COUNT(*)" in sql for sql in self.sent(connector))
+
+    def test_count_failure_leaves_the_first_rows(
+        self, qtbot, window, connector
+    ):
+        def handler(sql):
+            if sql.startswith("SELECT COUNT(*)"):
+                return mysql_errors.ProgrammingError(
+                    msg="Duplicate column name 'id'", errno=1060
+                )
+            return self.table_of_rows(sql)
+
+        connector.configure = lambda conn: setattr(conn, "handler", handler)
+        self.connect(qtbot, window)
+        self.run(qtbot, window, "SELECT * FROM a JOIN b")
+        assert window.results.results_model.rowCount() == 1000
+        assert window.pager.isHidden()
+        assert "could not be counted" in window.message_label.text()
+        assert window.state == ConnectionState.CONNECTED
+
+    def test_page_failure_keeps_the_page_shown(self, qtbot, window, connector):
+        def handler(sql):
+            if "OFFSET" in sql:
+                return mysql_errors.DatabaseError(msg="boom", errno=1105)
+            return self.table_of_rows(sql)
+
+        connector.configure = lambda conn: setattr(conn, "handler", handler)
+        self.connect(qtbot, window)
+        self.run(qtbot, window, "SELECT n FROM t")
+        window.pager.next_button.click()
+        self.wait(qtbot, window)
+        assert window.pager.page == 0
+        assert window.pager.label.text() == "Page 1 of 3"
+        assert "Page 2 could not be read" in window.message_label.text()
+        assert window.results.results_model.raw_value(0, 0) == 0
+
+    def test_disconnecting_drops_the_pages(self, qtbot, window, connector):
+        connector.configure = lambda conn: setattr(
+            conn, "handler", self.table_of_rows
+        )
+        self.connect(qtbot, window)
+        self.run(qtbot, window, "SELECT n FROM t")
+        assert window.pager.isVisible()
+        window.toggle_connection()
+        qtbot.waitUntil(
+            lambda: window.state == ConnectionState.DISCONNECTED,
+            timeout=self.WAIT_MS,
+        )
+        assert window.pager.isHidden()
+        window.show_page(1)
+        assert not window.running
 
     def test_rejected_query_shows_error(self, qtbot, window):
         self.connect(qtbot, window)
@@ -124,7 +264,7 @@ class TestMainWindow(MainWindowTestBase):
         qtbot.waitUntil(
             lambda: window.stop_button.opacity < 1.0, timeout=self.WAIT_MS
         )
-        assert "Running: SELECT n FROM t" in window.running_label.text()
+        assert "Running: SELECT n FROM t" in window.message_label.text()
         # The GUI thread keeps processing events while the worker is blocked.
         qtbot.wait(100)
         window.editor.insertPlainText(" ")
