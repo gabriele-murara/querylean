@@ -1043,13 +1043,10 @@ class MainWindow(QMainWindow):
         """Bookmarked queries of every saved connection (those of its
         current target, as the menu offers them), sorted by connection
         and name."""
-        store = self.__config_manager.bookmarks
         entries = [
             BookmarkEntry(profile, bookmark)
             for profile in self.__profiles
-            for bookmark in store.load(
-                profile.profile_id, QueryBookmark.target_of(profile.config)
-            )
+            for bookmark in self.__saved_bookmarks(profile)
         ]
         entries.sort(key=lambda entry: entry.sort_key)
         return entries
@@ -1088,8 +1085,7 @@ class MainWindow(QMainWindow):
                 path, entries, include_last_values=include_last_values
             )
         except ConfigError as exc:
-            self.show_message(str(exc), error=True)
-            self.__warn(ExportBookmarksDialog.TITLE, str(exc))
+            self.__report_failure(ExportBookmarksDialog.TITLE, str(exc))
             return False
         noun = "query" if count == 1 else "queries"
         msg = "Exported {} bookmarked {} to {}."
@@ -1118,18 +1114,14 @@ class MainWindow(QMainWindow):
         try:
             source = BookmarkImport.read(path, self.__validator)
         except ConfigError as exc:
-            self.show_message(str(exc), error=True)
-            self.__warn(ImportBookmarksDialog.TITLE, str(exc))
+            self.__report_failure(ImportBookmarksDialog.TITLE, str(exc))
             return None
         if not source.items:
             msg = "The file {} contains no valid bookmarked queries."
             self.__warn(ImportBookmarksDialog.TITLE, msg.format(path.name))
             return None
-        store = self.__config_manager.bookmarks
         saved = {
-            profile.profile_id: store.load(
-                profile.profile_id, QueryBookmark.target_of(profile.config)
-            )
+            profile.profile_id: self.__saved_bookmarks(profile)
             for profile in self.__profiles
         }
         dialog = ImportBookmarksDialog(
@@ -1175,8 +1167,7 @@ class MainWindow(QMainWindow):
                 profile_id, target, accepted, conflict
             )
         except ConfigError as exc:
-            self.show_message(str(exc), error=True)
-            self.__warn(ImportBookmarksDialog.TITLE, str(exc))
+            self.__report_failure(ImportBookmarksDialog.TITLE, str(exc))
             return None
         self.__reload_bookmarks()
         renamed = "\n".join(
@@ -1578,6 +1569,14 @@ class MainWindow(QMainWindow):
             self.__config_manager.bookmarks.load(
                 self.__session_id, self.session_target
             )
+        )
+
+    def __saved_bookmarks(
+        self, profile: ConnectionProfile
+    ) -> list[QueryBookmark]:
+        """Bookmarks of ``profile`` for its current target."""
+        return self.__config_manager.bookmarks.load(
+            profile.profile_id, QueryBookmark.target_of(profile.config)
         )
 
     def __set_bookmarks(self, bookmarks: list[QueryBookmark]) -> None:
@@ -2059,6 +2058,11 @@ class MainWindow(QMainWindow):
         HTML."""
         answer = QMessageBox.question(self, title, SafeText.html(text))
         return answer == QMessageBox.StandardButton.Yes
+
+    def __report_failure(self, title: str, text: str) -> None:
+        """Red message in the result panel and warning dialog."""
+        self.show_message(text, error=True)
+        self.__warn(title, text)
 
     def __warn(self, title: str, text: str) -> None:
         """Warning dialog; ``text`` is never rendered as HTML."""

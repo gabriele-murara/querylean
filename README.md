@@ -211,7 +211,7 @@ Each bookmark has the same fields as the bookmark files, without the connection 
 - **When the name is in use**: **Import it with a new name** (default: "Users (2)", "Users (3)", …), **Replace the saved query** (it keeps the last values of the saved mask when the file has none) or **Skip it**. Two bookmarks of the file with the same name are both imported, the second with a new name;
 - the filter, **Select all** and **Select none** work as in the export; **Import the last values used in masks** is offered, and checked, only when the file has them.
 
-The file is treated as untrusted: it must be an export (`format` `querylean-bookmarks`) with a known `format_version` (a file written by a newer QueryLean is refused), at most 5 MB and 10,000 bookmarks. Invalid entries are left out and counted, unknown fields are ignored. As when saving from the editor, **only read queries are imported**: the query, or the mask compiled with its defaults, must pass the read-only validator, otherwise the row shows **Refused** with the reason (in the tooltip) and cannot be checked. The queries are validated again at every execution.
+The file is treated as untrusted: it must be a regular file containing an export (`format` `querylean-bookmarks`) with a known `format_version` (a file written by a newer QueryLean is refused), at most 5 MB and 10,000 bookmarks. Invalid entries are left out and counted, unknown fields are ignored. As when saving from the editor, **only read queries are imported**: the query, or the mask compiled with its defaults, must pass the read-only validator, otherwise the row shows **Refused** with the reason (in the tooltip) and cannot be checked. The queries are validated again at every execution.
 
 ### Execution rules
 

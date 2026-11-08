@@ -9,7 +9,6 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QDialogButtonBox,
-    QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -18,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from querylean.bookmarks.bookmark_entry import BookmarkEntry
+from querylean.ui.dialogs.bookmark_chooser import BookmarkChooser
 from querylean.ui.dialogs.bookmark_table import BookmarkTable
 from querylean.ui.dialogs.status_label import StatusLabel
 
@@ -64,25 +64,18 @@ class ExportBookmarksDialog(QDialog):
         intro.setTextFormat(Qt.TextFormat.PlainText)
         intro.setWordWrap(True)
 
-        self.__filter = QLineEdit()
-        self.__filter.setPlaceholderText(
-            "Filter by name, connection, target or query"
-        )
-        self.__filter.setClearButtonEnabled(True)
-        self.__select_all = QPushButton("Select all")
-        self.__select_none = QPushButton("Select none")
-        top = QHBoxLayout()
-        top.addWidget(self.__filter, 1)
-        top.addWidget(self.__select_all)
-        top.addWidget(self.__select_none)
-
-        self.__table = BookmarkTable(
+        self.__chooser = BookmarkChooser(
             ExportBookmarksDialog.__COLUMNS,
             len(self.__entries),
             ExportBookmarksDialog.__QUERY,
+            "Filter by name, connection, target or query",
         )
+        self.__table = self.__chooser.table
         for row, entry in enumerate(self.__entries):
             self.__add_row(row, entry)
+        self.__chooser.set_haystacks(
+            [ExportBookmarksDialog.__haystack(e) for e in self.__entries]
+        )
 
         self.__last_values = QCheckBox("Include the last values used in masks")
         self.__last_values.setToolTip(
@@ -100,16 +93,12 @@ class ExportBookmarksDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.addWidget(intro)
-        layout.addLayout(top)
-        layout.addWidget(self.__table, 1)
+        layout.addWidget(self.__chooser, 1)
         layout.addWidget(self.__last_values)
         layout.addWidget(self.__status)
         layout.addWidget(buttons)
 
-        self.__filter.textChanged.connect(self.apply_filter)
-        self.__select_all.clicked.connect(lambda: self.set_all_checked(True))
-        self.__select_none.clicked.connect(lambda: self.set_all_checked(False))
-        self.__table.itemChanged.connect(self.refresh)
+        self.__chooser.changed.connect(self.refresh)
         self.refresh()
 
     # -------------------------------------------------------------- widgets
@@ -121,17 +110,17 @@ class ExportBookmarksDialog(QDialog):
     @property
     def filter_edit(self) -> QLineEdit:
         """Text that the visible rows contain."""
-        return self.__filter
+        return self.__chooser.filter_edit
 
     @property
     def select_all_button(self) -> QPushButton:
         """Checks the visible rows."""
-        return self.__select_all
+        return self.__chooser.select_all_button
 
     @property
     def select_none_button(self) -> QPushButton:
         """Unchecks the visible rows."""
-        return self.__select_none
+        return self.__chooser.select_none_button
 
     @property
     def last_values_box(self) -> QCheckBox:
@@ -154,17 +143,9 @@ class ExportBookmarksDialog(QDialog):
         """Every listed bookmark, in row order."""
         return self.__entries
 
-    def is_checked(self, row: int) -> bool:
-        """True when ``row`` is chosen for the export."""
-        return self.__table.is_checked(row)
-
     def set_checked(self, row: int, checked: bool) -> None:
         """Choose ``row`` for the export, or not."""
         self.__table.set_checked(row, checked)
-
-    def set_all_checked(self, checked: bool) -> None:
-        """Check or uncheck every visible row."""
-        self.__table.set_visible_checked(checked)
 
     def selected(self) -> list[BookmarkEntry]:
         """Checked bookmarks, in row order (hidden rows included)."""
@@ -174,19 +155,12 @@ class ExportBookmarksDialog(QDialog):
         """True when the last values of masks are exported too."""
         return self.__last_values.isChecked()
 
-    def apply_filter(self, *_: object) -> None:
-        """Hide the rows that do not contain the filter text."""
-        self.__table.filter_rows(
-            self.__filter.text(),
-            [ExportBookmarksDialog.__haystack(e) for e in self.__entries],
-        )
-        self.refresh()
-
     def refresh(self, *_: object) -> None:
         """Count the checked rows and enable "Export…"."""
         checked = len(self.selected())
-        message = "{} of {} bookmarked queries selected."
-        self.__status.show_neutral(message.format(checked, len(self.__entries)))
+        self.__status.show_neutral(
+            BookmarkChooser.SELECTED.format(checked, len(self.__entries))
+        )
         self.__export_button.setEnabled(checked > 0)
 
     def accept(self) -> None:

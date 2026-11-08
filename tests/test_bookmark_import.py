@@ -1,6 +1,7 @@
 """Tests of the reading of an export file of bookmarked queries."""
 
 import json
+import os
 
 import pytest
 
@@ -188,3 +189,12 @@ class TestBookmarkImport:
         assert source.exported_by == "querylean"
         assert source.exported_at == "2026-11-08 T09:30"
         assert BookmarkImport.parse(self.payload(), validator).items == ()
+
+    def test_only_regular_files_are_read(self, tmp_path, validator):
+        fifo = tmp_path / "pipe.json"
+        os.mkfifo(fifo)
+        # Opening a FIFO would block until a writer appears.
+        with pytest.raises(ConfigError, match="not a regular file"):
+            BookmarkImport.read(fifo, validator)
+        with pytest.raises(ConfigError, match="not a regular file"):
+            BookmarkImport.read(tmp_path, validator)

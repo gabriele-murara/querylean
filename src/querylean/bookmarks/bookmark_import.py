@@ -78,6 +78,10 @@ class BookmarkImport:
         """Read and check the export file ``path``. Raises ``ConfigError``
         when it cannot be read or is not an export of bookmarks."""
         path = Path(path)
+        if path.exists() and not path.is_file():
+            # A FIFO or a device would block the reading (GUI thread).
+            msg = "{} is not a regular file."
+            raise ConfigError(msg.format(path))
         try:
             with path.open("rb") as stream:
                 raw = stream.read(BookmarkImport.MAX_FILE_SIZE + 1)

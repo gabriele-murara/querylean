@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
-    QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -24,6 +23,7 @@ from querylean.bookmarks.bookmark_import_plan import BookmarkImportPlan
 from querylean.bookmarks.name_conflict import NameConflict
 from querylean.bookmarks.query_bookmark import QueryBookmark
 from querylean.config.connection_profile import ConnectionProfile
+from querylean.ui.dialogs.bookmark_chooser import BookmarkChooser
 from querylean.ui.dialogs.bookmark_table import BookmarkTable
 from querylean.ui.dialogs.status_label import StatusLabel
 
@@ -94,21 +94,13 @@ class ImportBookmarksDialog(QDialog):
         form.addRow("", self.__target)
         form.addRow("When the name is in use:", self.__conflict)
 
-        self.__filter = QLineEdit()
-        self.__filter.setPlaceholderText("Filter by name or query")
-        self.__filter.setClearButtonEnabled(True)
-        self.__select_all = QPushButton("Select all")
-        self.__select_none = QPushButton("Select none")
-        top = QHBoxLayout()
-        top.addWidget(self.__filter, 1)
-        top.addWidget(self.__select_all)
-        top.addWidget(self.__select_none)
-
-        self.__table = BookmarkTable(
+        self.__chooser = BookmarkChooser(
             ImportBookmarksDialog.__COLUMNS,
             len(self.__items),
             ImportBookmarksDialog.__QUERY,
+            "Filter by name or query",
         )
+        self.__table = self.__chooser.table
         for row, item in enumerate(self.__items):
             bookmark = item.bookmark
             self.__table.set_bookmark_row(
@@ -131,6 +123,12 @@ class ImportBookmarksDialog(QDialog):
                 ),
                 checkable=item.importable,
             )
+        self.__chooser.set_haystacks(
+            [
+                "{}\n{}".format(item.bookmark.name, item.bookmark.sql)
+                for item in self.__items
+            ]
+        )
 
         has_values = any(
             item.importable and item.bookmark.last_values
@@ -153,21 +151,13 @@ class ImportBookmarksDialog(QDialog):
         layout.addWidget(intro)
         layout.addWidget(self.__origin)
         layout.addLayout(form)
-        layout.addLayout(top)
-        layout.addWidget(self.__table, 1)
+        layout.addWidget(self.__chooser, 1)
         layout.addWidget(self.__last_values)
         layout.addWidget(self.__status)
         layout.addWidget(buttons)
 
         self.__connection.currentIndexChanged.connect(self.show_statuses)
-        self.__filter.textChanged.connect(self.apply_filter)
-        self.__select_all.clicked.connect(
-            lambda: self.__table.set_visible_checked(True)
-        )
-        self.__select_none.clicked.connect(
-            lambda: self.__table.set_visible_checked(False)
-        )
-        self.__table.itemChanged.connect(self.refresh)
+        self.__chooser.changed.connect(self.refresh)
         self.show_statuses()
 
     # -------------------------------------------------------------- widgets
@@ -194,17 +184,17 @@ class ImportBookmarksDialog(QDialog):
     @property
     def filter_edit(self) -> QLineEdit:
         """Text that the visible rows contain."""
-        return self.__filter
+        return self.__chooser.filter_edit
 
     @property
     def select_all_button(self) -> QPushButton:
         """Checks the visible rows."""
-        return self.__select_all
+        return self.__chooser.select_all_button
 
     @property
     def select_none_button(self) -> QPushButton:
         """Unchecks the visible rows."""
-        return self.__select_none
+        return self.__chooser.select_none_button
 
     @property
     def last_values_box(self) -> QCheckBox:
@@ -239,10 +229,6 @@ class ImportBookmarksDialog(QDialog):
         value = self.__conflict.currentData()
         return value if isinstance(value, NameConflict) else NameConflict.SKIP
 
-    def set_conflict(self, conflict: NameConflict) -> None:
-        """Choose ``conflict``."""
-        self.__conflict.setCurrentIndex(self.__conflict.findData(conflict))
-
     def selected(self) -> list[QueryBookmark]:
         """Checked bookmarks, in file order, for the target of the chosen
         connection (with their last values only when requested)."""
@@ -255,10 +241,6 @@ class ImportBookmarksDialog(QDialog):
             self.__items[row].for_target(target, last_values=keep)
             for row in self.__table.checked_rows()
         ]
-
-    def status_text(self, row: int) -> str:
-        """Status shown for ``row``."""
-        return self.__table.item(row, ImportBookmarksDialog.__STATUS).text()
 
     def show_statuses(self, *_: object) -> None:
         """Compare the bookmarks with those of the chosen connection."""
@@ -283,22 +265,11 @@ class ImportBookmarksDialog(QDialog):
             )
         self.refresh()
 
-    def apply_filter(self, *_: object) -> None:
-        """Hide the rows that do not contain the filter text."""
-        self.__table.filter_rows(
-            self.__filter.text(),
-            [
-                "{}\n{}".format(item.bookmark.name, item.bookmark.sql)
-                for item in self.__items
-            ],
-        )
-        self.refresh()
-
     def refresh(self, *_: object) -> None:
         """Count the checked rows and enable "Import"."""
         checked = len(self.__table.checked_rows())
         refused = sum(1 for item in self.__items if not item.importable)
-        message = "{} of {} bookmarked queries selected."
+        message = BookmarkChooser.SELECTED
         if refused:
             message += " {} refused: not read queries."
         message = message.format(checked, len(self.__items), refused)

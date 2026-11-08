@@ -94,6 +94,9 @@ class TestImportBookmarksDialog:
     def text(self, dialog, row, column) -> str:
         return dialog.table.item(row, column).text()
 
+    def status(self, dialog, row) -> str:
+        return self.text(dialog, row, self.STATUS)
+
     def test_rows(self, dialog):
         assert dialog.table.rowCount() == 3
         assert self.text(dialog, 0, self.NAME) == "Users"
@@ -110,7 +113,7 @@ class TestImportBookmarksDialog:
         assert not dialog.table.is_checkable(2)
         dialog.table.set_checked(2, True)
         assert not dialog.table.is_checked(2)
-        assert dialog.status_text(2) == ImportBookmarksDialog.REFUSED
+        assert self.status(dialog, 2) == ImportBookmarksDialog.REFUSED
         tip = dialog.table.item(2, self.STATUS).toolTip()
         assert "Not a read query" in tip
         assert dialog.status.text() == (
@@ -119,12 +122,12 @@ class TestImportBookmarksDialog:
 
     def test_statuses_follow_the_connection(self, dialog, profiles):
         assert dialog.profile() is profiles[1]
-        assert dialog.status_text(0) == BookmarkImportPlan.SAVED
-        assert dialog.status_text(1) == BookmarkImportPlan.NAME_TAKEN
+        assert self.status(dialog, 0) == BookmarkImportPlan.SAVED
+        assert self.status(dialog, 1) == BookmarkImportPlan.NAME_TAKEN
         assert dialog.target_label.text() == "Saved for me@localhost:3306/dev"
         dialog.connection_box.setCurrentIndex(0)
-        assert dialog.status_text(0) == BookmarkImportPlan.NEW
-        assert dialog.status_text(1) == BookmarkImportPlan.NEW
+        assert self.status(dialog, 0) == BookmarkImportPlan.NEW
+        assert self.status(dialog, 1) == BookmarkImportPlan.NEW
         assert "ro@db:3306/app" in dialog.target_label.text()
 
     def test_selected_for_the_chosen_target(self, dialog, profiles):
@@ -139,7 +142,8 @@ class TestImportBookmarksDialog:
 
     def test_conflict_choice(self, dialog):
         assert dialog.conflict() == NameConflict.RENAME
-        dialog.set_conflict(NameConflict.SKIP)
+        box = dialog.conflict_box
+        box.setCurrentIndex(box.findData(NameConflict.SKIP))
         assert dialog.conflict() == NameConflict.SKIP
 
     def test_filter_and_selection(self, dialog):
