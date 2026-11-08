@@ -69,7 +69,9 @@ class BookmarksMenu(QMenu):
             return
         for bookmark in bookmarks:
             label = bookmark.name
-            tooltip = BookmarksMenu.__tooltip(bookmark.sql)
+            tooltip = SafeText.one_line(
+                bookmark.sql, BookmarksMenu.__MAX_TOOLTIP
+            )
             if bookmark.is_mask:
                 label = BookmarksMenu.MASK_LABEL.format(bookmark.name)
                 tokens = ", ".join(p.token for p in bookmark.placeholders)
@@ -104,11 +106,3 @@ class BookmarksMenu(QMenu):
             and action.menu() is None
             and action is not self.__export_action
         ]
-
-    @staticmethod
-    def __tooltip(sql: str) -> str:
-        text = " ".join(sql.split())
-        limit = BookmarksMenu.__MAX_TOOLTIP
-        if len(text) <= limit:
-            return text
-        return "{}…".format(text[: limit - 1])

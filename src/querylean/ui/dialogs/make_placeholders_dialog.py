@@ -91,7 +91,7 @@ class MakePlaceholdersDialog(QDialog):
 
         buttons = QDialogButtonBox()
         self.__ok_button: QPushButton = buttons.addButton(
-            "Make placeholders", QDialogButtonBox.ButtonRole.AcceptRole
+            MakePlaceholdersDialog.TITLE, QDialogButtonBox.ButtonRole.AcceptRole
         )
         buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
@@ -213,10 +213,11 @@ class MakePlaceholdersDialog(QDialog):
         use.setToolTip("Replace this value with a placeholder")
         name = QLineEdit(placeholder.name)
         name.setMaxLength(Placeholder.MAX_NAME_LENGTH)
-        text = " ".join(candidate.text.split())
-        if len(text) > MakePlaceholdersDialog.__MAX_VALUE_TEXT:
-            text = "{}…".format(text[: MakePlaceholdersDialog.__MAX_VALUE_TEXT])
-        value = QTableWidgetItem(text)
+        value = QTableWidgetItem(
+            SafeText.one_line(
+                candidate.text, MakePlaceholdersDialog.__MAX_VALUE_TEXT
+            )
+        )
         value.setToolTip(SafeText.tooltip(candidate.text))
         kind = placeholder.kind.label
         if placeholder.is_list:

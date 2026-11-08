@@ -123,7 +123,7 @@ class FillMaskDialog(QDialog):
                 description = QLabel(placeholder.description)
                 description.setTextFormat(Qt.TextFormat.PlainText)
                 description.setWordWrap(True)
-                description.setStyleSheet("color: palette(placeholder-text);")
+                description.setStyleSheet(StatusLabel.HINT_STYLE)
                 form.addRow("", description)
 
         self.__legend = QLabel(

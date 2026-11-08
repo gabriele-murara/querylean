@@ -130,13 +130,13 @@ src/querylean/
     validation/        ReadOnlyValidator → stadi ValidationStage su ValidationContext;
                        MySqlLexer, SqlToken, LexedStatement, ReadOnlyRules, ValidationResult
   ui/
-    main/              MainWindow, StopButton (Stop lampeggiante sotto i risultati, solo per query lunghe), ConnectionState, CautionPalette (sfondo rosa in modalità attenzione), ConnectionsMenu, BookmarksMenu ("Bookmarked queries") (menu "Connections": New connection…, Connect/Edit…/Delete… per connessione)
-    dialogs/           ConnectionDialog, SaveMaskDialog (salvataggio di una maschera), FillMaskDialog (valori ed esecuzione di una maschera), MakePlaceholdersDialog (Ctrl+Shift+P senza selezione: scelta dei valori da trasformare), ExportBookmarksDialog (scelta dei segnalibri da esportare), QueryPreview e StatusLabel (anteprima della query ed esito, condivisi dai dialog), AboutDialog (versione/autore da AppInfo)
+    main/              MainWindow, StopButton (Stop lampeggiante sotto i risultati, solo per query lunghe), ConnectionState, CautionPalette (sfondo rosa in modalità attenzione), ConnectionsMenu, BookmarksMenu ("Bookmarked queries": esecuzione, Delete, Export…) (menu "Connections": New connection…, Connect/Edit…/Delete… per connessione, Export bookmarked queries…)
+    dialogs/           ConnectionDialog, SaveMaskDialog (salvataggio di una maschera), FillMaskDialog (valori ed esecuzione di una maschera), MakePlaceholdersDialog (Ctrl+Shift+P senza selezione: scelta dei valori da trasformare), ExportBookmarksDialog (scelta dei segnalibri da esportare), QueryPreview e StatusLabel (anteprima della query ed esito, condivisi dai dialog; `StatusLabel.HINT_STYLE` = colore dei suggerimenti), AboutDialog (versione/autore da AppInfo)
     icons/             ToolbarIcons, CompletionIcons (icone disegnate con QPainter: nessun asset da impacchettare)
     editor/            SqlEditor (autocompletamento), SqlCompleter (popup), CompletionDelegate, SqlHighlighter, LineNumberArea
     results/           ResultsTable, ResultsModel, ValueFormatter
     sidebar/           TableSidebar (albero database → tabelle → colonne con filtro; database_selected → MainWindow.select_database; table_chosen → MainWindow.use_table, column_chosen → MainWindow.use_column, column_added → add_column)
-    safe_text.py       SafeText (tooltip con testo non fidato: escape HTML)
+    safe_text.py       SafeText (tooltip con testo non fidato: escape HTML; `one_line`: anteprima su una riga troncata con "…")
     worker/            DbWorker (QObject nel thread DB), DbThread (avvio/arresto), ExportThread (scrittura dell'export)
 tests/                 test_<classe>.py; fakes/; support/; integration/
 ```

@@ -103,7 +103,7 @@ class SaveMaskDialog(QDialog):
         hint += "IN (…)). The preview uses the default values."
         hint_label = QLabel(hint)
         hint_label.setWordWrap(True)
-        hint_label.setStyleSheet("color: palette(placeholder-text);")
+        hint_label.setStyleSheet(StatusLabel.HINT_STYLE)
 
         buttons = QDialogButtonBox()
         self.__save_button: QPushButton = buttons.addButton(

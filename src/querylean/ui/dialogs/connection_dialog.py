@@ -136,7 +136,7 @@ class ConnectionDialog(QDialog):
         hint_text += "and check it in the caution mode list."
         hint = QLabel(hint_text)
         hint.setWordWrap(True)
-        hint.setStyleSheet("color: palette(placeholder-text);")
+        hint.setStyleSheet(StatusLabel.HINT_STYLE)
 
         # Server messages and database names: plain text, never HTML.
         self.__status = StatusLabel()

@@ -35,3 +35,17 @@ class TestSafeText:
         # <br> comes back as a line separator.
         shown = document.toPlainText().replace(chr(0x2028), chr(10))
         assert shown == text
+
+    @pytest.mark.parametrize(
+        ("text", "limit", "expected"),
+        [
+            (" SELECT\n\t1 ", 10, "SELECT 1"),
+            ("abcdef", 6, "abcdef"),
+            ("abcdefg", 6, "abcde…"),
+            ("a  b\nc", 3, "a …"),
+        ],
+    )
+    def test_one_line(self, text, limit, expected):
+        result = SafeText.one_line(text, limit)
+        assert result == expected
+        assert len(result) <= limit

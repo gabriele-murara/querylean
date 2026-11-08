@@ -10,10 +10,13 @@ class StatusLabel(QLabel):
     """Word-wrapped plain-text label (the messages may quote names or SQL
     typed by the user or sent by the server: never rendered as HTML).
     ``show_status`` colours it green for success and red for a problem;
-    ``show_neutral`` uses the normal text colour."""
+    ``show_neutral`` uses the normal text colour. ``HINT_STYLE`` is the
+    muted colour of hints, shared by the other widgets."""
 
     OK_COLOR = "#1a7f37"
     ERROR_COLOR = "#c62828"
+    # Muted text of hints and descriptions, also outside the dialogs.
+    HINT_STYLE = "color: palette(placeholder-text);"
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)

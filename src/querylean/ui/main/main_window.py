@@ -67,6 +67,7 @@ from querylean.ui.dialogs.export_bookmarks_dialog import (
 )
 from querylean.ui.dialogs.fill_mask_dialog import FillMaskDialog
 from querylean.ui.dialogs.save_mask_dialog import SaveMaskDialog
+from querylean.ui.dialogs.status_label import StatusLabel
 from querylean.ui.editor.sql_editor import SqlEditor
 from querylean.ui.icons.toolbar_icons import ToolbarIcons
 from querylean.ui.main.bookmarks_menu import BookmarksMenu
@@ -464,11 +465,7 @@ class MainWindow(QMainWindow):
     def query_preview(sql: str) -> str:
         """``sql`` on one line (whitespace runs collapsed), cut with "…"
         when longer than the preview limit."""
-        single_line = " ".join(sql.split())
-        limit = MainWindow.__MAX_RUNNING_PREVIEW
-        if len(single_line) <= limit:
-            return single_line
-        return "{}…".format(single_line[: limit - 1])
+        return SafeText.one_line(sql, MainWindow.__MAX_RUNNING_PREVIEW)
 
     def new_connection(self) -> ConnectionProfile | None:
         """Open the dialog for a new connection and save it."""
@@ -1247,7 +1244,8 @@ class MainWindow(QMainWindow):
         self.__about_action.triggered.connect(self.show_about)
         for action in self.toolbar_actions():
             toolbar.addAction(action)
-        # A click on "Export" or "Connections" opens the menu directly.
+        # A click on "Bookmarked queries", "Export" or "Connections" opens
+        # the menu directly.
         for action in (
             self.__bookmarks_action,
             self.__export_action,
@@ -1294,7 +1292,7 @@ class MainWindow(QMainWindow):
         )
         self.__running_label = QLabel()
         self.__running_label.setTextFormat(Qt.TextFormat.PlainText)
-        self.__running_label.setStyleSheet("color: palette(placeholder-text);")
+        self.__running_label.setStyleSheet(StatusLabel.HINT_STYLE)
         self.__running_label.hide()
 
         info = QHBoxLayout()

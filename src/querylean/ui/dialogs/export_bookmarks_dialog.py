@@ -239,10 +239,9 @@ class ExportBookmarksDialog(QDialog):
             else ExportBookmarksDialog.QUERY_TYPE
         )
         tokens = ", ".join(p.token for p in bookmark.placeholders)
-        query = " ".join(bookmark.sql.split())
-        limit = ExportBookmarksDialog.__MAX_QUERY_TEXT
-        if len(query) > limit:
-            query = "{}…".format(query[: limit - 1])
+        query = SafeText.one_line(
+            bookmark.sql, ExportBookmarksDialog.__MAX_QUERY_TEXT
+        )
         connection = QTableWidgetItem(entry.profile.display_name)
         connection.setToolTip(
             SafeText.tooltip(entry.profile.config.default_name())

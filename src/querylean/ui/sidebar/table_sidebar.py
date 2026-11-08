@@ -23,6 +23,7 @@ from querylean.completion.schema_model import SchemaModel
 from querylean.database.schema.column_info import ColumnInfo
 from querylean.database.schema.table_catalog import TableCatalog
 from querylean.database.schema.table_info import TableInfo
+from querylean.ui.dialogs.status_label import StatusLabel
 from querylean.ui.icons.completion_icons import CompletionIcons
 from querylean.ui.icons.toolbar_icons import ToolbarIcons
 from querylean.ui.safe_text import SafeText
@@ -140,7 +141,7 @@ class TableSidebar(QWidget):
         # Server messages: never rendered as HTML.
         self.__status_label.setTextFormat(Qt.TextFormat.PlainText)
         self.__status_label.setWordWrap(True)
-        self.__status_label.setStyleSheet("color: palette(placeholder-text);")
+        self.__status_label.setStyleSheet(StatusLabel.HINT_STYLE)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -450,9 +451,7 @@ class TableSidebar(QWidget):
         if not self.__status_error and self.__filter.text().strip() and total:
             text = "{} of {} tables".format(len(self.visible_tables()), total)
         self.__status_label.setStyleSheet(
-            "color: #c62828;"
-            if self.__status_error
-            else "color: palette(placeholder-text);"
+            "color: #c62828;" if self.__status_error else StatusLabel.HINT_STYLE
         )
         self.__status_label.setText(text)
 
