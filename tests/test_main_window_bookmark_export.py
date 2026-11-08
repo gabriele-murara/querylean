@@ -55,10 +55,10 @@ class TestMainWindowBookmarkExport(MainWindowTestBase):
             QMessageBox, "warning", lambda *a, **k: calls.append(a[1:])
         )
         assert not window.bookmarks_action.isEnabled()
-        export = window.connections_menu.actions()[-1]
+        export = window.connections_menu.actions()[-2]
         assert not export.isEnabled()
         self.save(window, self.PROD)
-        export = window.connections_menu.actions()[-1]
+        export = window.connections_menu.actions()[-2]
         assert export.isEnabled()
         export.trigger()
         assert calls[0][0] == ExportBookmarksDialog.TITLE

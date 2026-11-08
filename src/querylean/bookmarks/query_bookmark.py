@@ -91,6 +91,24 @@ class QueryBookmark:
             self.__last_values,
         )
 
+    def with_target(self, target: str) -> QueryBookmark:
+        """The same bookmark (and last values) saved for ``target``."""
+        return QueryBookmark(
+            self.__name,
+            self.__sql,
+            target,
+            self.__placeholders,
+            self.__last_values,
+        )
+
+    def same_query(self, other: QueryBookmark) -> bool:
+        """True when ``other`` has the same query and placeholders (name,
+        target and last values aside)."""
+        return (
+            self.__sql == other.sql
+            and self.__placeholders == other.placeholders
+        )
+
     @property
     def is_mask(self) -> bool:
         """True when the query has placeholders to fill in."""

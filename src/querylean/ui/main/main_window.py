@@ -30,8 +30,11 @@ from PySide6.QtWidgets import (
 from querylean.app.app_info import AppInfo
 from querylean.bookmarks.bookmark_entry import BookmarkEntry
 from querylean.bookmarks.bookmark_export import BookmarkExport
+from querylean.bookmarks.bookmark_import import BookmarkImport
+from querylean.bookmarks.bookmark_import_plan import BookmarkImportPlan
 from querylean.bookmarks.mask_error import MaskError
 from querylean.bookmarks.mask_template import MaskTemplate
+from querylean.bookmarks.name_conflict import NameConflict
 from querylean.bookmarks.placeholder import Placeholder
 from querylean.bookmarks.query_bookmark import QueryBookmark
 from querylean.completion.completion_engine import CompletionEngine
@@ -66,6 +69,9 @@ from querylean.ui.dialogs.export_bookmarks_dialog import (
     ExportBookmarksDialog,
 )
 from querylean.ui.dialogs.fill_mask_dialog import FillMaskDialog
+from querylean.ui.dialogs.import_bookmarks_dialog import (
+    ImportBookmarksDialog,
+)
 from querylean.ui.dialogs.save_mask_dialog import SaveMaskDialog
 from querylean.ui.dialogs.status_label import StatusLabel
 from querylean.ui.editor.sql_editor import SqlEditor
@@ -101,7 +107,9 @@ class MainWindow(QMainWindow):
     opens ``FillMaskDialog`` and runs the query compiled with its values;
     text with placeholders is never run from the editor. The bookmarks of
     every saved connection can be exported to a JSON file
-    (``export_bookmarks``, ``BookmarkExport``), also without a session."""
+    (``export_bookmarks``, ``BookmarkExport``) and imported from one into
+    a chosen connection (``import_bookmarks``, ``BookmarkImport``), also
+    without a session."""
 
     # Delay after the query timeout before the watchdog sends KILL QUERY: lets
     # the server-side MAX_EXECUTION_TIME act first.
@@ -1088,6 +1096,118 @@ class MainWindow(QMainWindow):
         self.show_message(msg.format(count, noun, path), tooltip=str(path))
         return True
 
+    # ------------------------------------------------------- bookmark import
+    def import_bookmarks(self) -> None:
+        """Ask for an export file of bookmarked queries and import it
+        (``import_bookmarks_from``)."""
+        if not self.__profiles:
+            self.__warn(
+                ImportBookmarksDialog.TITLE,
+                "Save a connection before importing bookmarked queries.",
+            )
+            return
+        path = self.__ask_import_path()
+        if path is not None:
+            self.import_bookmarks_from(path)
+
+    def import_bookmarks_from(self, path: Path) -> BookmarkImportPlan | None:
+        """Read ``path`` (``BookmarkImport``: untrusted, checked by the
+        validator), let the user choose bookmarks and connection in
+        ``ImportBookmarksDialog``, then save them. None when nothing was
+        imported (error, cancel)."""
+        try:
+            source = BookmarkImport.read(path, self.__validator)
+        except ConfigError as exc:
+            self.show_message(str(exc), error=True)
+            self.__warn(ImportBookmarksDialog.TITLE, str(exc))
+            return None
+        if not source.items:
+            msg = "The file {} contains no valid bookmarked queries."
+            self.__warn(ImportBookmarksDialog.TITLE, msg.format(path.name))
+            return None
+        store = self.__config_manager.bookmarks
+        saved = {
+            profile.profile_id: store.load(
+                profile.profile_id, QueryBookmark.target_of(profile.config)
+            )
+            for profile in self.__profiles
+        }
+        dialog = ImportBookmarksDialog(
+            source,
+            self.__profiles,
+            saved,
+            profile_id=(
+                self.__session_id or self.__app_config.active_connection
+            ),
+            file_name=path.name,
+            parent=self,
+        )
+        if dialog.exec() != ImportBookmarksDialog.DialogCode.Accepted:
+            return None
+        profile = dialog.profile()
+        if profile is None:
+            return None
+        return self.import_bookmarks_into(
+            profile.profile_id, dialog.selected(), dialog.conflict()
+        )
+
+    def import_bookmarks_into(
+        self,
+        profile_id: str,
+        bookmarks: list[QueryBookmark],
+        conflict: NameConflict = NameConflict.RENAME,
+    ) -> BookmarkImportPlan | None:
+        """Save ``bookmarks`` for the current target of the connection
+        ``profile_id`` (``BookmarkStore.import_bookmarks``). Bookmarks
+        refused by the validator are left out, as when saving. None (after
+        a warning) when they cannot be saved."""
+        profile = self.__profile(profile_id)
+        if profile is None:
+            return None
+        accepted = [
+            bookmark
+            for bookmark in bookmarks
+            if not BookmarkImport.refusal(bookmark, self.__validator)
+        ]
+        target = QueryBookmark.target_of(profile.config)
+        try:
+            plan = self.__config_manager.bookmarks.import_bookmarks(
+                profile_id, target, accepted, conflict
+            )
+        except ConfigError as exc:
+            self.show_message(str(exc), error=True)
+            self.__warn(ImportBookmarksDialog.TITLE, str(exc))
+            return None
+        self.__reload_bookmarks()
+        renamed = "\n".join(
+            "{} → {}".format(old, new) for old, new in plan.renamed
+        )
+        self.show_message(
+            MainWindow.__import_summary(plan, profile.display_name),
+            tooltip=renamed,
+        )
+        return plan
+
+    @staticmethod
+    def __import_summary(plan: BookmarkImportPlan, connection: str) -> str:
+        """``Imported N bookmarked queries into “name” (details).``"""
+        count = len(plan.added)
+        noun = "query" if count == 1 else "queries"
+        details = []
+        if plan.renamed:
+            details.append("{} renamed".format(len(plan.renamed)))
+        if plan.replaced:
+            details.append("{} replaced".format(plan.replaced))
+        if plan.unchanged:
+            details.append("{} already saved".format(plan.unchanged))
+        if plan.skipped:
+            details.append("{} skipped: name in use".format(plan.skipped))
+        msg = "Imported {} bookmarked {} into “{}”"
+        msg = msg.format(count, noun, connection)
+        if details:
+            return "{} ({}).".format(msg, ", ".join(details))
+        return "{}.".format(msg)
+
     # --------------------------------------------------------- result export
     def export_results(self, exporter: ResultExporter | None = None) -> None:
         """Ask for a file name and export the displayed result.
@@ -1204,6 +1324,7 @@ class MainWindow(QMainWindow):
         self.__bookmarks_menu.run_requested.connect(self.run_bookmark)
         self.__bookmarks_menu.delete_requested.connect(self.delete_bookmark)
         self.__bookmarks_menu.export_requested.connect(self.export_bookmarks)
+        self.__bookmarks_menu.import_requested.connect(self.import_bookmarks)
         self.__bookmarks_action.setMenu(self.__bookmarks_menu)
         self.__export_action = QAction(ToolbarIcons.export(), "Export", self)
         self.__export_action.setToolTip(
@@ -1236,6 +1357,9 @@ class MainWindow(QMainWindow):
         self.__connections_menu.delete_requested.connect(self.delete_connection)
         self.__connections_menu.export_bookmarks_requested.connect(
             self.export_bookmarks
+        )
+        self.__connections_menu.import_bookmarks_requested.connect(
+            self.import_bookmarks
         )
         self.__connections_action.setMenu(self.__connections_menu)
         self.__about_action = QAction(ToolbarIcons.about(), "About", self)
@@ -1905,6 +2029,20 @@ class MainWindow(QMainWindow):
                 path, ExportBookmarksDialog.TITLE
             ):
                 return None
+        self.__export_dir = path.parent
+        return path
+
+    def __ask_import_path(self) -> Path | None:
+        """Export file chosen for an import; None when cancelled."""
+        name, _selected = QFileDialog.getOpenFileName(
+            self,
+            ImportBookmarksDialog.TITLE,
+            str(self.__export_dir),
+            "{};;All files (*)".format(BookmarkExport.NAME_FILTER),
+        )
+        if not name:
+            return None
+        path = Path(name)
         self.__export_dir = path.parent
         return path
 

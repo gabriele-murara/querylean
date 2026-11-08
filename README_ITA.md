@@ -17,7 +17,7 @@ volta, un editor SQL e una tabella di risultati copiabili.
   - [autocompletamento](#autocompletamento) di tabelle, colonne, alias, parole chiave e funzioni con `Ctrl+Spazio`, che si apre anche da solo mentre si scrive.
 - Una connessione usa un database oppure [tutti i database](#tutti-i-database) a cui l'account ha accesso.
 - Barra laterale con i database, le tabelle e le viste a cui si ha accesso: un clic su una tabella prepara nell'editor `SELECT * FROM <tabella> LIMIT 1;` e ne mostra le colonne (tipo, chiavi, commenti).
-- Query nei segnalibri: una query salvata con un nome per una connessione si riesegue dal menu **Bookmarked queries**, solo su quella connessione. Un segnalibro può essere una [maschera](#maschere) con segnaposto `${NOME}` per i valori che cambiano. I segnalibri si possono [esportare](#esportare-le-query-nei-segnalibri) in un file JSON.
+- Query nei segnalibri: una query salvata con un nome per una connessione si riesegue dal menu **Bookmarked queries**, solo su quella connessione. Un segnalibro può essere una [maschera](#maschere) con segnaposto `${NOME}` per i valori che cambiano. I segnalibri si possono [esportare](#esportare-le-query-nei-segnalibri) in un file JSON e [importare](#importare-le-query-nei-segnalibri) in un'altra connessione o installazione.
 - Sono ammesse solo istruzioni di lettura (`SELECT`, `WITH … SELECT`, `UNION`, `SHOW`, `DESCRIBE`/`DESC`, `EXPLAIN SELECT`). Ogni query passa da un validatore basato sul parsing.
 - Alla connessione vengono controllati i privilegi dell'account database per database: un database che l'account può modificare viene rifiutato finché non lo si accetta in [modalità attenzione](#modalità-attenzione).
 - L'esecuzione avviene fuori dal thread della GUI, con indicatore di attività, timeout e un pulsante **Stop** (Interrompi) lampeggiante che compare solo quando una query dura più di un secondo.
@@ -86,7 +86,7 @@ Ogni voce ha un sottomenu:
 - **Edit…** (Modifica…): apre la finestra di compilazione con i valori salvati. Se è la connessione in uso, le modifiche valgono dalla prossima connessione.
 - **Delete…** (Elimina…): chiede conferma, poi cancella il file della connessione e le sue query nei segnalibri. Se è quella in uso, la chiude.
 
-In fondo, **Export bookmarked queries…** esporta i segnalibri delle connessioni salvate (vedi [Esportare le query nei segnalibri](#esportare-le-query-nei-segnalibri)).
+In fondo, **Export bookmarked queries…** esporta i segnalibri delle connessioni salvate e **Import bookmarked queries…** (Importa le query nei segnalibri) li importa da un file esportato (vedi [Esportare le query nei segnalibri](#esportare-le-query-nei-segnalibri) e [Importare le query nei segnalibri](#importare-le-query-nei-segnalibri)).
 
 Il pulsante **Connect** (Connetti) della barra usa la connessione attiva; se non ne esiste nessuna, apre **New connection…**. Una connessione appena salvata diventa attiva se in quel momento non si è connessi.
 
@@ -181,7 +181,7 @@ SELECT * FROM documents WHERE code IN (${CODES}) AND importDateTime >= '${IMPORT
 - ogni riga parte selezionata; il filtro mostra solo le righe che contengono il testo scritto (nome, connessione, target o query), **Select all** (Seleziona tutto) e **Select none** (Deseleziona tutto) agiscono sulle righe visibili. **Export…** si attiva quando almeno una riga è selezionata e chiede il nome del file (`querylean-bookmarks.json` come predefinito);
 - **Include the last values used in masks** (Includi gli ultimi valori usati nelle maschere) è disattivata come predefinito: quei valori possono essere dati reali.
 
-Sono elencati solo i segnalibri del target attuale di ogni connessione (quelli che mostra il suo menu). La connessione serve solo a scegliere: **il file contiene solo le query e le maschere**, senza host, porta, utente, database né password, così si può condividere con utenti che eseguono le query sui propri server (per esempio un database locale di sviluppo) con le proprie credenziali. Lo stesso segnalibro salvato per più connessioni viene scritto una volta sola. Il file è scritto con permessi 0600. Il formato, pensato per un futuro import in un'altra installazione di QueryLean:
+Sono elencati solo i segnalibri del target attuale di ogni connessione (quelli che mostra il suo menu). La connessione serve solo a scegliere: **il file contiene solo le query e le maschere**, senza host, porta, utente, database né password, così si può condividere con utenti che eseguono le query sui propri server (per esempio un database locale di sviluppo) con le proprie credenziali. Lo stesso segnalibro salvato per più connessioni viene scritto una volta sola. Il file è scritto con permessi 0600. Il formato, letto dall'[importazione](#importare-le-query-nei-segnalibri) di un'altra installazione di QueryLean:
 
 ```json
 {
@@ -201,6 +201,17 @@ Sono elencati solo i segnalibri del target attuale di ogni connessione (quelli c
 ```
 
 Ogni segnalibro ha gli stessi campi dei file dei segnalibri, senza la connessione (`last_values` solo se richiesto): chi lo importa sceglie la connessione per cui salvarlo. `format_version` cambia solo con modifiche incompatibili.
+
+### Importare le query nei segnalibri
+
+**Connections** → **Import bookmarked queries…** (Importa le query nei segnalibri, anche senza connessione) oppure **Bookmarked queries** → **Import…** (Importa) chiede un file scritto dall'esportazione, poi apre **Import bookmarked queries**:
+
+- **Import into** (Importa in) sceglie la connessione salvata (viene proposta quella aperta o quella attiva): i segnalibri si salvano per il suo target attuale e si eseguono sul suo database con le sue credenziali. Il file non sceglie mai un server;
+- una riga per segnalibro del file, con nome, tipo, stato, segnaposto e la query su una riga. Lo stato lo confronta con i segnalibri già salvati per la connessione scelta: **New** (nuovo), **Already saved** (già salvato: stesso nome, query e segnaposto, non si scrive niente) oppure **Name in use** (nome in uso: un segnalibro diverso con lo stesso nome);
+- **When the name is in use** (se il nome è in uso): **Import it with a new name** (importalo con un nuovo nome, predefinito: "Users (2)", "Users (3)", …), **Replace the saved query** (sostituisci la query salvata, che conserva gli ultimi valori della maschera salvata se il file non ne ha) oppure **Skip it** (saltalo). Due segnalibri del file con lo stesso nome vengono importati entrambi, il secondo con un nuovo nome;
+- il filtro, **Select all** e **Select none** funzionano come nell'esportazione; **Import the last values used in masks** (Importa gli ultimi valori usati nelle maschere) è proposta, e selezionata, solo se il file li contiene.
+
+Il file è trattato come non fidato: deve essere un'esportazione (`format` `querylean-bookmarks`) con un `format_version` conosciuto (un file scritto da un QueryLean più recente viene rifiutato), di al massimo 5 MB e 10.000 segnalibri. Le voci non valide vengono scartate e contate, i campi sconosciuti ignorati. Come nel salvataggio dall'editor, **si importano solo query di lettura**: la query, o la maschera compilata con i suoi predefiniti, deve passare il validatore di sola lettura, altrimenti la riga mostra **Refused** (rifiutata) con il motivo (nel tooltip) e non si può selezionare. Le query vengono validate di nuovo a ogni esecuzione.
 
 ### Regole di esecuzione
 
@@ -552,7 +563,7 @@ Per verificare un download: `sha256sum -c SHA256SUMS --ignore-missing`.
 
 - Una sola connessione aperta e una sola query alla volta, una sola istruzione per esecuzione.
 - Non sono supportati: TLS/SSH tunnel configurabili da GUI, cronologia, paginazione.
-- Le query nei segnalibri si possono esportare ma non ancora importare.
+- Le query nei segnalibri si importano in una connessione alla volta.
 - L'esportazione salva solo le righe caricate (al massimo 10.000): per esportarne di più serve uno strumento come `mysqldump` o `mysql --batch`.
 - `SHOW` è ammesso solo nelle forme riconosciute dal parser; le altre vengono rifiutate.
 - Colonne, tabelle e alias il cui nome è una parola di scrittura (`update`, `delete`, `insert`, …) vengono rifiutati anche se quotati o qualificati; i nomi che contengono soltanto una di queste parole (`updated_at`, `delete_flag`) sono ammessi. Viene rifiutata anche la funzione di stringa `INSERT()`. Le parole dentro stringhe e commenti non vengono controllate.

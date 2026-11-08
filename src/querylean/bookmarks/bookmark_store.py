@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from querylean.bookmarks.bookmark_import_plan import BookmarkImportPlan
+from querylean.bookmarks.name_conflict import NameConflict
 from querylean.bookmarks.query_bookmark import QueryBookmark
 from querylean.config.config_error import ConfigError
 from querylean.config.connection_store import ConnectionStore
@@ -78,6 +80,32 @@ class BookmarkStore:
         bookmarks.append(bookmark)
         self.__write(profile_id, bookmarks)
         self.__log.info("Bookmark saved for connection {}", profile_id)
+
+    def import_bookmarks(
+        self,
+        profile_id: str,
+        target: str,
+        bookmarks: list[QueryBookmark],
+        conflict: NameConflict = NameConflict.RENAME,
+    ) -> BookmarkImportPlan:
+        """Add ``bookmarks`` (already for ``target``) to those of
+        ``profile_id`` for ``target`` as ``BookmarkImportPlan`` describes,
+        with one write. Raises ``ConfigError``."""
+        stored = self.__read(profile_id)
+        others = [b for b in stored if b.target != target]
+        plan = BookmarkImportPlan(
+            [b for b in stored if b.target == target],
+            [b.with_target(target) for b in bookmarks],
+            conflict,
+        )
+        if plan.changed:
+            self.__write(profile_id, others + plan.bookmarks)
+        self.__log.info(
+            "{} bookmarks imported for connection {}",
+            len(plan.added),
+            profile_id,
+        )
+        return plan
 
     def remember_values(
         self,

@@ -13,9 +13,9 @@ from querylean.ui.safe_text import SafeText
 
 class BookmarksMenu(QMenu):
     """One entry per bookmarked query of the current connection, then
-    a "Delete" sub-menu and "Export…" (the bookmarks of every saved
-    connection). Without bookmarks a disabled entry explains how to add
-    one.
+    a "Delete" sub-menu, "Export…" and "Import…" (the bookmarks of every
+    saved connection, from or to a JSON file). Without bookmarks a
+    disabled entry explains how to add one.
 
     A click on a plain query (sheet icon, ``ToolbarIcons.query``) runs it;
     a mask (``${}`` icon, name ending with "…") opens its values first.
@@ -26,11 +26,13 @@ class BookmarksMenu(QMenu):
     run_requested = Signal(str)
     delete_requested = Signal(str)
     export_requested = Signal()
+    import_requested = Signal()
 
     TITLE = "Bookmarked queries"
     EMPTY_TEXT = "No bookmarked queries for this connection"
     DELETE_TEXT = "Delete"
     EXPORT_TEXT = "Export…"
+    IMPORT_TEXT = "Import…"
     # Masks open their placeholders instead of running at once.
     MASK_LABEL = "{}…"
     __MAX_TOOLTIP = 300
@@ -40,6 +42,7 @@ class BookmarksMenu(QMenu):
         self.setToolTipsVisible(True)
         self.__delete_menu: QMenu | None = None
         self.__export_action: QAction
+        self.__import_action: QAction
         self.set_bookmarks([])
 
     @property
@@ -52,20 +55,31 @@ class BookmarksMenu(QMenu):
         """ "Export…" entry."""
         return self.__export_action
 
+    @property
+    def import_action(self) -> QAction:
+        """ "Import…" entry."""
+        return self.__import_action
+
     def set_bookmarks(self, bookmarks: list[QueryBookmark]) -> None:
         """Rebuild the entries for ``bookmarks``."""
-        # clear() deletes the entries, "Export…" included: rebuilt below.
+        # clear() deletes the entries, "Export…" and "Import…" included:
+        # rebuilt below.
         self.clear()
         self.__delete_menu = None
         self.__export_action = QAction(BookmarksMenu.EXPORT_TEXT, self)
         self.__export_action.triggered.connect(
             lambda: self.export_requested.emit()
         )
+        self.__import_action = QAction(BookmarksMenu.IMPORT_TEXT, self)
+        self.__import_action.triggered.connect(
+            lambda: self.import_requested.emit()
+        )
         if not bookmarks:
             empty = self.addAction(BookmarksMenu.EMPTY_TEXT)
             empty.setEnabled(False)
             self.addSeparator()
             self.addAction(self.__export_action)
+            self.addAction(self.__import_action)
             return
         for bookmark in bookmarks:
             label = bookmark.name
@@ -95,6 +109,7 @@ class BookmarksMenu(QMenu):
                 lambda _c=False, n=bookmark.name: self.delete_requested.emit(n)
             )
         self.addAction(self.__export_action)
+        self.addAction(self.__import_action)
 
     def names(self) -> list[str]:
         """Names of the bookmarks offered, in menu order."""
@@ -105,4 +120,5 @@ class BookmarksMenu(QMenu):
             and not action.isSeparator()
             and action.menu() is None
             and action is not self.__export_action
+            and action is not self.__import_action
         ]

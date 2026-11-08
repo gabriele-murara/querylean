@@ -43,11 +43,7 @@ class BookmarkExport:
     ``last_values`` is written only on request: they may be real data.
     The same bookmark saved for several connections is written once.
 
-    An import must treat the file as untrusted: check ``format`` and
-    ``format_version``, rebuild each bookmark with ``QueryBookmark.from_dict``
-    (adding the target of the chosen connection) and accept it only if
-    ``ReadOnlyValidator`` accepts its query (compiled with the defaults for
-    a mask), as when saving.
+    ``BookmarkImport`` reads the file back, as untrusted data.
     """
 
     FORMAT = "querylean-bookmarks"

@@ -10,9 +10,10 @@ from querylean.config.connection_profile import ConnectionProfile
 
 class ConnectionsMenu(QMenu):
     """ "New connection…", then one sub-menu per saved connection with
-    "Connect", "Edit…" and "Delete…", then "Export bookmarked queries…"
-    (available also without a session). The active connection is
-    checked; connections in caution mode are marked in the title.
+    "Connect", "Edit…" and "Delete…", then "Export bookmarked queries…" and
+    "Import bookmarked queries…" (available also without a session). The
+    active connection is checked; connections in caution mode are marked
+    in the title.
 
     Signals carry the connection identifier; the menu holds no logic.
     """
@@ -22,12 +23,14 @@ class ConnectionsMenu(QMenu):
     edit_requested = Signal(str)
     delete_requested = Signal(str)
     export_bookmarks_requested = Signal()
+    import_bookmarks_requested = Signal()
 
     NEW_TEXT = "New connection…"
     CONNECT_TEXT = "Connect"
     EDIT_TEXT = "Edit…"
     DELETE_TEXT = "Delete…"
     EXPORT_BOOKMARKS_TEXT = "Export bookmarked queries…"
+    IMPORT_BOOKMARKS_TEXT = "Import bookmarked queries…"
     # Title of a connection in caution mode.
     CAUTION_TITLE = "{} (caution mode)"
 
@@ -86,3 +89,6 @@ class ConnectionsMenu(QMenu):
         export = self.addAction(ConnectionsMenu.EXPORT_BOOKMARKS_TEXT)
         export.setEnabled(bool(profiles))
         export.triggered.connect(lambda: self.export_bookmarks_requested.emit())
+        load = self.addAction(ConnectionsMenu.IMPORT_BOOKMARKS_TEXT)
+        load.setEnabled(bool(profiles))
+        load.triggered.connect(lambda: self.import_bookmarks_requested.emit())

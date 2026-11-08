@@ -111,7 +111,8 @@ src/querylean/
                        UiPreferences, AppConfig (active_connection + ui), ConfigManager (config.json + migrazione; espone connections e bookmarks), ConfigError
   bookmarks/           QueryBookmark (nome, sql, target `user@host:port/database`, placeholders → maschera, last_values), BookmarkStore (bookmarks/<id connessione>.json, formato 2),
                        MaskTemplate (segnaposto `${NOME}`: analisi, compilazione, make_placeholder, candidates/make_placeholders), ValueCandidate, PlaceholderOccurrence, Placeholder, PlaceholderType, MaskError,
-                       BookmarkEntry (connessione salvata + segnalibro), BookmarkExport (file JSON `querylean-bookmarks` per l'esportazione)
+                       BookmarkEntry (connessione salvata + segnalibro), BookmarkExport (file JSON `querylean-bookmarks` per l'esportazione),
+                       BookmarkImport (lettura non fidata del file esportato) → ImportedBookmark (segnalibro + motivo del rifiuto), BookmarkImportPlan (unione con i segnalibri salvati), NameConflict (RENAME/REPLACE/SKIP)
   completion/          SqlScanner/ScanToken (tokenizer tollerante), StatementAnalyzer → StatementContext (+ TableReference),
                        SchemaModel (tabelle/colonne della sessione), SqlVocabulary, CompletionEngine → CompletionResult/CompletionItem/CompletionKind
   files/               PrivateFile (sostituzione atomica di un file 0600: temporaneo + os.replace), PrivateJsonFile (JSON tramite PrivateFile)
@@ -130,8 +131,8 @@ src/querylean/
     validation/        ReadOnlyValidator → stadi ValidationStage su ValidationContext;
                        MySqlLexer, SqlToken, LexedStatement, ReadOnlyRules, ValidationResult
   ui/
-    main/              MainWindow, StopButton (Stop lampeggiante sotto i risultati, solo per query lunghe), ConnectionState, CautionPalette (sfondo rosa in modalità attenzione), ConnectionsMenu, BookmarksMenu ("Bookmarked queries": esecuzione, Delete, Export…) (menu "Connections": New connection…, Connect/Edit…/Delete… per connessione, Export bookmarked queries…)
-    dialogs/           ConnectionDialog, SaveMaskDialog (salvataggio di una maschera), FillMaskDialog (valori ed esecuzione di una maschera), MakePlaceholdersDialog (Ctrl+Shift+P senza selezione: scelta dei valori da trasformare), ExportBookmarksDialog (scelta dei segnalibri da esportare), QueryPreview e StatusLabel (anteprima della query ed esito, condivisi dai dialog; `StatusLabel.HINT_STYLE` = colore dei suggerimenti), AboutDialog (versione/autore da AppInfo)
+    main/              MainWindow, StopButton (Stop lampeggiante sotto i risultati, solo per query lunghe), ConnectionState, CautionPalette (sfondo rosa in modalità attenzione), ConnectionsMenu, BookmarksMenu ("Bookmarked queries": esecuzione, Delete, Export…, Import…) (menu "Connections": New connection…, Connect/Edit…/Delete… per connessione, Export/Import bookmarked queries…)
+    dialogs/           ConnectionDialog, SaveMaskDialog (salvataggio di una maschera), FillMaskDialog (valori ed esecuzione di una maschera), MakePlaceholdersDialog (Ctrl+Shift+P senza selezione: scelta dei valori da trasformare), ExportBookmarksDialog (scelta dei segnalibri da esportare), ImportBookmarksDialog (segnalibri da importare, connessione e conflitti di nome), BookmarkTable (tabella con caselle condivisa dai due), QueryPreview e StatusLabel (anteprima della query ed esito, condivisi dai dialog; `StatusLabel.HINT_STYLE` = colore dei suggerimenti), AboutDialog (versione/autore da AppInfo)
     icons/             ToolbarIcons, CompletionIcons (icone disegnate con QPainter: nessun asset da impacchettare)
     editor/            SqlEditor (autocompletamento), SqlCompleter (popup), CompletionDelegate, SqlHighlighter, LineNumberArea
     results/           ResultsTable, ResultsModel, ValueFormatter
@@ -206,7 +207,13 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
   - `MainWindow.export_bookmarks` elenca i segnalibri di **tutte** le connessioni salvate (target attuale di ciascuna, `bookmark_entries`), anche senza sessione; voci in **Connections** e in **Bookmarked queries**;
   - file scritto con `PrivateJsonFile` (0600, atomico) che contiene **solo query e maschere**, per condividerle con altri utenti che le eseguono sui propri server con le proprie credenziali: **nessun dato di connessione** (host, porta, utente, database, target, nome della connessione, id, password, impostazioni). La connessione nel dialog serve solo a scegliere; `last_values` solo se richiesto (casella disattivata come predefinito); segnalibri identici scritti una volta;
   - formato `{"format": "querylean-bookmarks", "format_version": 1, "exported_at", "exported_by", "bookmarks": [...]}`; ogni segnalibro ha le chiavi di `QueryBookmark.to_dict` senza `target` più `kind` (solo informativo). Una modifica incompatibile incrementa `FORMAT_VERSION`;
-  - un futuro import dovrà trattare il file come non fidato: controllo di `format`/`format_version`, scelta della connessione locale (il target è il suo), `QueryBookmark.from_dict`, validatore sulla query (compilata con i predefiniti per le maschere), come al salvataggio.
+  - la lettura per l'import è `BookmarkImport` (vedi sotto).
+- **Importazione dei segnalibri** (1.12, `BookmarkImport`, `MainWindow.import_bookmarks`):
+  - il file è **non fidato**: `format` esatto, `format_version` intero tra 1 e `BookmarkExport.FORMAT_VERSION` (più recente = rifiutato), al massimo `MAX_FILE_SIZE` (5 MB, letto senza superarlo) e `MAX_BOOKMARKS`; JSON illeggibile o troppo annidato = `ConfigError`;
+  - ogni segnalibro si ricostruisce con `QueryBookmark.from_dict` dalle sole chiavi note (`name`, `sql`, `placeholders`, `last_values`): `kind`, chiavi sconosciute e un eventuale `target` nel file non si usano mai; il target è sempre quello attuale della connessione scelta nel dialog (`QueryBookmark.target_of`), mai un dato del file;
+  - si importano solo query accettate da `ReadOnlyValidator` (le maschere compilate con i predefiniti, `BookmarkImport.refusal`), come al salvataggio; le righe rifiutate non hanno casella; `MainWindow.import_bookmarks_into` ricontrolla con il validatore prima di scrivere. L'esecuzione resta quella dei segnalibri (`bookmark_requested`, validatore);
+  - `BookmarkStore.import_bookmarks` scrive una volta sola (nessuna scrittura se nulla cambia; un file danneggiato non si sovrascrive); i nomi già usati seguono `NameConflict` (predefinito `RENAME`, "nome (2)"), i segnalibri identici non si duplicano;
+  - nomi, query e testi del file nei widget solo come testo semplice o tramite `SafeText`.
 - **Maschere** (1.10):
   - un valore non diventa mai SQL: fuori dagli apici `PlaceholderType.literal` (numero controllato, `TRUE`/`FALSE` o `MySqlLiteral.quote`), dentro gli apici contenuto di stringa con escape di `\` e dell'apice; una lista è fatta di letterali dello stesso tipo separati da virgola. Niente segnaposto per nomi (backtick rifiutati) né per testo SQL libero; non aggiungere tipi "raw" senza richiesta;
   - `MaskTemplate` riconosce i segnaposto fuori dai commenti, nelle stringhe e fuori; un `${` malformato rende la query una maschera non valida (`MaskError`), mai SQL eseguibile;
@@ -275,11 +282,12 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
   - 1.2: barra laterale con l'elenco delle tabelle del database configurato, che prepara `SELECT * FROM <tabella> LIMIT 1;`. Niente indici o altri database, niente esecuzione automatica;
   - 1.3: più connessioni salvate (profili), ma **una sola connessione aperta alla volta**. Niente connessioni simultanee, schede o finestre multiple.
   - 1.4: modalità attenzione per account con privilegi di scrittura (sempre e solo query di lettura) e validatore più severo.
-  - 1.6: query nei segnalibri per connessione (salva con nome, menu "Bookmarked queries" che le esegue). Niente cronologia automatica, cartelle, import o condivisione tra connessioni (l'esportazione è arrivata con la 1.11);
+  - 1.6: query nei segnalibri per connessione (salva con nome, menu "Bookmarked queries" che le esegue). Niente cronologia automatica, cartelle o condivisione tra connessioni (esportazione e importazione da file sono arrivate con la 1.11 e la 1.12);
   - 1.7: colonne delle tabelle nella barra laterale (albero tabella → colonne, filtro, menu contestuale) e autocompletamento SQL nell'editor (tabelle, colonne, alias, parole chiave, funzioni). Niente indici, chiavi esterne, altri database, snippet o formattazione automatica del codice;
   - 1.8: connessione a tutti i database accessibili (albero database → tabelle → colonne, database attivo) e modalità attenzione accettata per singolo database. Niente connessioni simultanee né altri server;
   - 1.10: maschere (segnalibri con segnaposto tipizzati `${NOME}`, liste per `IN`, finestre Save mask e Run mask con gli ultimi valori usati). Niente cronologia dei valori oltre l'ultima esecuzione, né funzioni o espressioni come valori.
-  - 1.11: esportazione dei segnalibri e delle maschere in un file JSON strutturato, pensato per un futuro import. L'import non c'è ancora: si aggiunge solo su richiesta.
+  - 1.11: esportazione dei segnalibri e delle maschere in un file JSON strutturato;
+  - 1.12: importazione di quel file in una connessione salvata scelta dall'utente. Niente sincronizzazione, import da altri formati o da URL.
 
 ## Packaging
 

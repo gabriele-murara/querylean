@@ -10,20 +10,16 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
     QLineEdit,
     QPushButton,
-    QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
 from querylean.bookmarks.bookmark_entry import BookmarkEntry
+from querylean.ui.dialogs.bookmark_table import BookmarkTable
 from querylean.ui.dialogs.status_label import StatusLabel
-from querylean.ui.icons.toolbar_icons import ToolbarIcons
-from querylean.ui.safe_text import SafeText
 
 
 class ExportBookmarksDialog(QDialog):
@@ -40,8 +36,8 @@ class ExportBookmarksDialog(QDialog):
     """
 
     TITLE = "Export bookmarked queries"
-    QUERY_TYPE = "Query"
-    MASK_TYPE = "Mask"
+    QUERY_TYPE = BookmarkTable.QUERY_TYPE
+    MASK_TYPE = BookmarkTable.MASK_TYPE
     __COLUMNS = (
         "Name",
         "Type",
@@ -50,8 +46,7 @@ class ExportBookmarksDialog(QDialog):
         "Placeholders",
         "Query",
     )
-    __NAME, __TYPE, __CONNECTION, __TARGET, __PLACEHOLDERS, __QUERY = range(6)
-    __MAX_QUERY_TEXT = 80
+    __TYPE, __CONNECTION, __TARGET, __PLACEHOLDERS, __QUERY = range(1, 6)
 
     def __init__(
         self, entries: Iterable[BookmarkEntry], parent: QWidget | None = None
@@ -81,21 +76,10 @@ class ExportBookmarksDialog(QDialog):
         top.addWidget(self.__select_all)
         top.addWidget(self.__select_none)
 
-        self.__table = QTableWidget(
-            len(self.__entries), len(ExportBookmarksDialog.__COLUMNS)
-        )
-        self.__table.setHorizontalHeaderLabels(
-            list(ExportBookmarksDialog.__COLUMNS)
-        )
-        self.__table.verticalHeader().setVisible(False)
-        self.__table.setSelectionBehavior(
-            QTableWidget.SelectionBehavior.SelectRows
-        )
-        self.__table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        header = self.__table.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(
-            ExportBookmarksDialog.__QUERY, QHeaderView.ResizeMode.Stretch
+        self.__table = BookmarkTable(
+            ExportBookmarksDialog.__COLUMNS,
+            len(self.__entries),
+            ExportBookmarksDialog.__QUERY,
         )
         for row, entry in enumerate(self.__entries):
             self.__add_row(row, entry)
@@ -130,7 +114,7 @@ class ExportBookmarksDialog(QDialog):
 
     # -------------------------------------------------------------- widgets
     @property
-    def table(self) -> QTableWidget:
+    def table(self) -> BookmarkTable:
         """One row per bookmark."""
         return self.__table
 
@@ -172,29 +156,19 @@ class ExportBookmarksDialog(QDialog):
 
     def is_checked(self, row: int) -> bool:
         """True when ``row`` is chosen for the export."""
-        item = self.__table.item(row, ExportBookmarksDialog.__NAME)
-        return item.checkState() == Qt.CheckState.Checked
+        return self.__table.is_checked(row)
 
     def set_checked(self, row: int, checked: bool) -> None:
         """Choose ``row`` for the export, or not."""
-        item = self.__table.item(row, ExportBookmarksDialog.__NAME)
-        item.setCheckState(
-            Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
-        )
+        self.__table.set_checked(row, checked)
 
     def set_all_checked(self, checked: bool) -> None:
         """Check or uncheck every visible row."""
-        for row in range(self.__table.rowCount()):
-            if not self.__table.isRowHidden(row):
-                self.set_checked(row, checked)
+        self.__table.set_visible_checked(checked)
 
     def selected(self) -> list[BookmarkEntry]:
         """Checked bookmarks, in row order (hidden rows included)."""
-        return [
-            entry
-            for row, entry in enumerate(self.__entries)
-            if self.is_checked(row)
-        ]
+        return [self.__entries[row] for row in self.__table.checked_rows()]
 
     def include_last_values(self) -> bool:
         """True when the last values of masks are exported too."""
@@ -202,10 +176,10 @@ class ExportBookmarksDialog(QDialog):
 
     def apply_filter(self, *_: object) -> None:
         """Hide the rows that do not contain the filter text."""
-        text = self.__filter.text().strip().casefold()
-        for row, entry in enumerate(self.__entries):
-            shown = not text or text in ExportBookmarksDialog.__haystack(entry)
-            self.__table.setRowHidden(row, not shown)
+        self.__table.filter_rows(
+            self.__filter.text(),
+            [ExportBookmarksDialog.__haystack(e) for e in self.__entries],
+        )
         self.refresh()
 
     def refresh(self, *_: object) -> None:
@@ -223,46 +197,31 @@ class ExportBookmarksDialog(QDialog):
     # ------------------------------------------------------------ internals
     def __add_row(self, row: int, entry: BookmarkEntry) -> None:
         bookmark = entry.bookmark
-        name = QTableWidgetItem(bookmark.name)
-        name.setFlags(
-            Qt.ItemFlag.ItemIsEnabled
-            | Qt.ItemFlag.ItemIsSelectable
-            | Qt.ItemFlag.ItemIsUserCheckable
+        self.__table.set_bookmark_row(
+            row,
+            bookmark,
+            (
+                (
+                    ExportBookmarksDialog.__TYPE,
+                    BookmarkTable.kind_text(bookmark),
+                    "",
+                ),
+                (
+                    ExportBookmarksDialog.__CONNECTION,
+                    entry.profile.display_name,
+                    entry.profile.config.default_name(),
+                ),
+                (ExportBookmarksDialog.__TARGET, bookmark.target, ""),
+                (
+                    ExportBookmarksDialog.__PLACEHOLDERS,
+                    BookmarkTable.placeholders_text(bookmark),
+                    "",
+                ),
+                BookmarkTable.query_cell(
+                    ExportBookmarksDialog.__QUERY, bookmark
+                ),
+            ),
         )
-        name.setCheckState(Qt.CheckState.Checked)
-        name.setIcon(
-            ToolbarIcons.mask() if bookmark.is_mask else ToolbarIcons.query()
-        )
-        kind = (
-            ExportBookmarksDialog.MASK_TYPE
-            if bookmark.is_mask
-            else ExportBookmarksDialog.QUERY_TYPE
-        )
-        tokens = ", ".join(p.token for p in bookmark.placeholders)
-        query = SafeText.one_line(
-            bookmark.sql, ExportBookmarksDialog.__MAX_QUERY_TEXT
-        )
-        connection = QTableWidgetItem(entry.profile.display_name)
-        connection.setToolTip(
-            SafeText.tooltip(entry.profile.config.default_name())
-        )
-        sql = QTableWidgetItem(query)
-        sql.setToolTip(SafeText.tooltip(bookmark.sql))
-        items = (
-            (ExportBookmarksDialog.__NAME, name),
-            (ExportBookmarksDialog.__TYPE, QTableWidgetItem(kind)),
-            (ExportBookmarksDialog.__CONNECTION, connection),
-            (ExportBookmarksDialog.__TARGET, QTableWidgetItem(bookmark.target)),
-            (ExportBookmarksDialog.__PLACEHOLDERS, QTableWidgetItem(tokens)),
-            (ExportBookmarksDialog.__QUERY, sql),
-        )
-        for column, item in items:
-            if column != ExportBookmarksDialog.__NAME:
-                # Read only; the item text is never rendered as HTML.
-                item.setFlags(
-                    Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
-                )
-            self.__table.setItem(row, column, item)
 
     @staticmethod
     def __haystack(entry: BookmarkEntry) -> str:
@@ -274,4 +233,4 @@ class ExportBookmarksDialog(QDialog):
             bookmark.target,
             bookmark.sql,
         )
-        return "\n".join(parts).casefold()
+        return "\n".join(parts)

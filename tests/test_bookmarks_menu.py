@@ -23,9 +23,11 @@ class TestBookmarksMenu:
             BookmarksMenu.EMPTY_TEXT,
             "",
             BookmarksMenu.EXPORT_TEXT,
+            BookmarksMenu.IMPORT_TEXT,
         ]
         assert not actions[0].isEnabled()
         assert actions[2] is menu.export_action
+        assert actions[3] is menu.import_action
         assert menu.names() == []
         assert menu.delete_menu is None
 
@@ -65,14 +67,19 @@ class TestBookmarksMenu:
         assert plain_image != mask_image
         assert plain_image == ToolbarIcons.query().pixmap(size, size).toImage()
 
-    def test_export_entry_survives_every_rebuild(self, qtbot):
+    def test_export_entries_survive_every_rebuild(self, qtbot):
         menu = BookmarksMenu()
         for bookmarks in ([], self.BOOKMARKS, []):
             menu.set_bookmarks(bookmarks)
-            assert menu.actions()[-1] is menu.export_action
+            assert menu.actions()[-2] is menu.export_action
+            assert menu.actions()[-1] is menu.import_action
             assert menu.export_action.text() == BookmarksMenu.EXPORT_TEXT
+            assert menu.import_action.text() == BookmarksMenu.IMPORT_TEXT
             assert menu.export_action.isEnabled()
+            assert menu.import_action.isEnabled()
             with qtbot.waitSignal(menu.export_requested):
                 menu.export_action.trigger()
+            with qtbot.waitSignal(menu.import_requested):
+                menu.import_action.trigger()
         menu.set_bookmarks(self.BOOKMARKS)
         assert menu.names() == ["Users", "Orders"]

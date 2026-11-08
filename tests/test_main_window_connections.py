@@ -42,7 +42,12 @@ class TestMainWindowConnections(MainWindowTestBase):
     def wait_state(self, qtbot, window, state) -> None:
         qtbot.waitUntil(lambda: window.state == state, timeout=self.WAIT_MS)
 
-    EMPTY_MENU = ["New connection…", "", "Export bookmarked queries…"]
+    EMPTY_MENU = [
+        "New connection…",
+        "",
+        "Export bookmarked queries…",
+        "Import bookmarked queries…",
+    ]
 
     def menu_texts(self, window) -> list[str]:
         return [a.text() for a in window.connections_menu.actions()]
@@ -67,6 +72,7 @@ class TestMainWindowConnections(MainWindowTestBase):
             "ro@db2/test",
             "",
             ConnectionsMenu.EXPORT_BOOKMARKS_TEXT,
+            ConnectionsMenu.IMPORT_BOOKMARKS_TEXT,
         ]
         # When not connected, the connection just saved becomes active.
         assert window.active_connection.profile_id == test.profile_id

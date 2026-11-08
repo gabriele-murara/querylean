@@ -17,7 +17,7 @@ at a time, a SQL editor and a table of copyable results.
   - [autocompletion](#autocompletion) of tables, columns, aliases, keywords and functions with `Ctrl+Space`, also opening by itself while typing.
 - A connection uses one database or [all the databases](#all-the-databases) the account can access.
 - Side bar with databases, tables and views you have access to: a click on a table prepares `SELECT * FROM <table> LIMIT 1;` in the editor and shows its columns (type, keys, comments).
-- Bookmarked queries: a query saved with a name for one connection can be run again from the **Bookmarked queries** menu, only on that connection. A bookmark can be a [mask](#masks) with `${NAME}` placeholders for the values that change. Bookmarks can be [exported](#exporting-bookmarked-queries) to a JSON file.
+- Bookmarked queries: a query saved with a name for one connection can be run again from the **Bookmarked queries** menu, only on that connection. A bookmark can be a [mask](#masks) with `${NAME}` placeholders for the values that change. Bookmarks can be [exported](#exporting-bookmarked-queries) to a JSON file and [imported](#importing-bookmarked-queries) into another connection or installation.
 - Only read statements are allowed (`SELECT`, `WITH … SELECT`, `UNION`, `SHOW`, `DESCRIBE`/`DESC`, `EXPLAIN SELECT`). Every query goes through a parser-based validator.
 - On connection the account privileges are checked database by database: a database the account can change is refused until you accept it in [caution mode](#caution-mode).
 - Queries run outside the GUI thread, with an activity indicator, timeouts and a blinking **Stop** button that appears only when a query takes more than a second.
@@ -86,7 +86,7 @@ Each item has a sub-menu:
 - **Edit…**: opens the form with the saved values. If it is the connection in use, the changes apply from the next connection.
 - **Delete…**: asks for confirmation, then deletes the connection file and its bookmarked queries. If it is the one in use, it is closed.
 
-At the bottom, **Export bookmarked queries…** exports the bookmarks of the saved connections (see [Exporting bookmarked queries](#exporting-bookmarked-queries)).
+At the bottom, **Export bookmarked queries…** exports the bookmarks of the saved connections and **Import bookmarked queries…** imports them from an exported file (see [Exporting bookmarked queries](#exporting-bookmarked-queries) and [Importing bookmarked queries](#importing-bookmarked-queries)).
 
 The toolbar **Connect** button uses the active connection; if none exists, it opens **New connection…**. A connection that has just been saved becomes active if you are not connected at that moment.
 
@@ -181,7 +181,7 @@ SELECT * FROM documents WHERE code IN (${CODES}) AND importDateTime >= '${IMPORT
 - every row starts checked; the filter shows only the rows that contain its text (name, connection, target or query), **Select all** and **Select none** act on the visible rows. **Export…** is enabled when at least one row is checked and asks for the name of the file (`querylean-bookmarks.json` by default);
 - **Include the last values used in masks** is off by default: those values may be real data.
 
-Only the bookmarks of the current target of each connection are listed (the ones its menu shows). The connection only helps to choose: **the file contains only the queries and the masks**, with no host, port, user, database or password, so it can be shared with users who run the queries on their own servers (for example a local development database) with their own credentials. The same bookmark saved for several connections is written once. The file is written with permissions 0600. Its format, designed for a future import into another QueryLean installation:
+Only the bookmarks of the current target of each connection are listed (the ones its menu shows). The connection only helps to choose: **the file contains only the queries and the masks**, with no host, port, user, database or password, so it can be shared with users who run the queries on their own servers (for example a local development database) with their own credentials. The same bookmark saved for several connections is written once. The file is written with permissions 0600. Its format, read by the [import](#importing-bookmarked-queries) of another QueryLean installation:
 
 ```json
 {
@@ -201,6 +201,17 @@ Only the bookmarks of the current target of each connection are listed (the ones
 ```
 
 Each bookmark has the same fields as the bookmark files, without the connection (`last_values` only when requested): whoever imports it chooses the connection to save it for. `format_version` changes only with incompatible changes.
+
+### Importing bookmarked queries
+
+**Connections** → **Import bookmarked queries…** (also without a connection) or **Bookmarked queries** → **Import…** asks for a file written by the export, then opens **Import bookmarked queries**:
+
+- **Import into** chooses the saved connection (the open one or the active one is proposed): the bookmarks are saved for its current target and run on its database with its credentials. The file itself never chooses a server;
+- one row per bookmark of the file, with name, type, status, placeholders and the query on one line. The status compares it with the bookmarks already saved for the chosen connection: **New**, **Already saved** (same name, query and placeholders: nothing is written) or **Name in use** (a different bookmark with the same name);
+- **When the name is in use**: **Import it with a new name** (default: "Users (2)", "Users (3)", …), **Replace the saved query** (it keeps the last values of the saved mask when the file has none) or **Skip it**. Two bookmarks of the file with the same name are both imported, the second with a new name;
+- the filter, **Select all** and **Select none** work as in the export; **Import the last values used in masks** is offered, and checked, only when the file has them.
+
+The file is treated as untrusted: it must be an export (`format` `querylean-bookmarks`) with a known `format_version` (a file written by a newer QueryLean is refused), at most 5 MB and 10,000 bookmarks. Invalid entries are left out and counted, unknown fields are ignored. As when saving from the editor, **only read queries are imported**: the query, or the mask compiled with its defaults, must pass the read-only validator, otherwise the row shows **Refused** with the reason (in the tooltip) and cannot be checked. The queries are validated again at every execution.
 
 ### Execution rules
 
@@ -552,7 +563,7 @@ To verify a download: `sha256sum -c SHA256SUMS --ignore-missing`.
 
 - One open connection and one query at a time, one statement per execution.
 - Not supported: TLS/SSH tunnels configurable from the GUI, history, pagination.
-- Bookmarked queries can be exported but not imported yet.
+- Bookmarked queries are imported into one connection at a time.
 - The export saves only the loaded rows (at most 10,000): to export more, use a tool such as `mysqldump` or `mysql --batch`.
 - `SHOW` is allowed only in the forms recognized by the parser; the others are rejected.
 - Columns, tables and aliases whose name is a write word (`update`, `delete`, `insert`, …) are rejected even when quoted or qualified; names that only contain such a word (`updated_at`, `delete_flag`) are allowed. The `INSERT()` string function is rejected too. Words inside strings and comments are not checked.

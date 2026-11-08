@@ -6,6 +6,7 @@ import stat
 import pytest
 
 from querylean.bookmarks.bookmark_store import BookmarkStore
+from querylean.bookmarks.name_conflict import NameConflict
 from querylean.bookmarks.placeholder import Placeholder
 from querylean.bookmarks.placeholder_type import PlaceholderType
 from querylean.bookmarks.query_bookmark import QueryBookmark
@@ -173,3 +174,41 @@ class TestBookmarkStore:
         assert store.rename(profile_id, self.TARGET, "missing", "X") is None
         # A change of case only is allowed.
         assert store.rename(profile_id, self.TARGET, "taken", "TAKEN")
+
+    def test_import_bookmarks(self, store, profile_id):
+        store.add(profile_id, self.bookmark("Users"))
+        store.add(profile_id, self.bookmark("Users", target=self.OTHER_TARGET))
+        incoming = [
+            self.bookmark("users", "SELECT 2", target="-"),
+            self.bookmark("Orders", target="-"),
+        ]
+        plan = store.import_bookmarks(
+            profile_id, self.TARGET, incoming, NameConflict.REPLACE
+        )
+        assert plan.replaced == 1
+        found = store.load(profile_id, self.TARGET)
+        assert [(b.name, b.sql, b.target) for b in found] == [
+            ("Orders", "SELECT 1", self.TARGET),
+            ("users", "SELECT 2", self.TARGET),
+        ]
+        assert len(store.load(profile_id, self.OTHER_TARGET)) == 1
+
+    def test_import_without_changes_does_not_write(self, store, profile_id):
+        store.add(profile_id, self.bookmark("Users"))
+        path = store.path_of(profile_id)
+        before = path.stat().st_mtime_ns
+        plan = store.import_bookmarks(
+            profile_id, self.TARGET, [self.bookmark("Users")]
+        )
+        assert plan.unchanged == 1
+        assert path.stat().st_mtime_ns == before
+
+    def test_import_into_a_damaged_file_fails(self, store, profile_id):
+        path = store.path_of(profile_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{", encoding="utf-8")
+        with pytest.raises(ConfigError):
+            store.import_bookmarks(
+                profile_id, self.TARGET, [self.bookmark("A")]
+            )
+        assert path.read_text(encoding="utf-8") == "{"
