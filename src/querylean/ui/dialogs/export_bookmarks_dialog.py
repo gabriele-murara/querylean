@@ -1,0 +1,278 @@
+"""Dialog to choose the bookmarked queries to export."""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QDialog,
+    QDialogButtonBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
+from querylean.bookmarks.bookmark_entry import BookmarkEntry
+from querylean.ui.dialogs.status_label import StatusLabel
+from querylean.ui.icons.toolbar_icons import ToolbarIcons
+from querylean.ui.safe_text import SafeText
+
+
+class ExportBookmarksDialog(QDialog):
+    """Every bookmarked query and mask of the saved connections, one per
+    row with what tells them apart: name, type (query or mask with its
+    placeholders), connection, target ``user@host:port/database`` and
+    the query on one line (in full in the tooltip). The connection only
+    helps to choose: it is not part of the exported file.
+
+    Rows are checked to be exported (all at first); the filter hides the
+    rows that do not contain its text, "Select all"/"Select none" act on
+    the visible rows only. "Export…" stays disabled until a row is
+    checked. The last values of masks are left out unless requested.
+    """
+
+    TITLE = "Export bookmarked queries"
+    QUERY_TYPE = "Query"
+    MASK_TYPE = "Mask"
+    __COLUMNS = (
+        "Name",
+        "Type",
+        "Connection",
+        "Target",
+        "Placeholders",
+        "Query",
+    )
+    __NAME, __TYPE, __CONNECTION, __TARGET, __PLACEHOLDERS, __QUERY = range(6)
+    __MAX_QUERY_TEXT = 80
+
+    def __init__(
+        self, entries: Iterable[BookmarkEntry], parent: QWidget | None = None
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(ExportBookmarksDialog.TITLE)
+        self.setMinimumSize(820, 420)
+        self.__entries = tuple(entries)
+
+        text = "Choose the bookmarked queries to save in a JSON file. "
+        text += "Only queries and masks are exported: no connection "
+        text += "details or passwords, so they can be shared and run "
+        text += "elsewhere with other credentials."
+        intro = QLabel(text)
+        intro.setTextFormat(Qt.TextFormat.PlainText)
+        intro.setWordWrap(True)
+
+        self.__filter = QLineEdit()
+        self.__filter.setPlaceholderText(
+            "Filter by name, connection, target or query"
+        )
+        self.__filter.setClearButtonEnabled(True)
+        self.__select_all = QPushButton("Select all")
+        self.__select_none = QPushButton("Select none")
+        top = QHBoxLayout()
+        top.addWidget(self.__filter, 1)
+        top.addWidget(self.__select_all)
+        top.addWidget(self.__select_none)
+
+        self.__table = QTableWidget(
+            len(self.__entries), len(ExportBookmarksDialog.__COLUMNS)
+        )
+        self.__table.setHorizontalHeaderLabels(
+            list(ExportBookmarksDialog.__COLUMNS)
+        )
+        self.__table.verticalHeader().setVisible(False)
+        self.__table.setSelectionBehavior(
+            QTableWidget.SelectionBehavior.SelectRows
+        )
+        self.__table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        header = self.__table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(
+            ExportBookmarksDialog.__QUERY, QHeaderView.ResizeMode.Stretch
+        )
+        for row, entry in enumerate(self.__entries):
+            self.__add_row(row, entry)
+
+        self.__last_values = QCheckBox("Include the last values used in masks")
+        self.__last_values.setToolTip(
+            "The values a mask was last run with may be real data"
+        )
+        self.__status = StatusLabel()
+
+        buttons = QDialogButtonBox()
+        self.__export_button: QPushButton = buttons.addButton(
+            "Export…", QDialogButtonBox.ButtonRole.AcceptRole
+        )
+        buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(intro)
+        layout.addLayout(top)
+        layout.addWidget(self.__table, 1)
+        layout.addWidget(self.__last_values)
+        layout.addWidget(self.__status)
+        layout.addWidget(buttons)
+
+        self.__filter.textChanged.connect(self.apply_filter)
+        self.__select_all.clicked.connect(lambda: self.set_all_checked(True))
+        self.__select_none.clicked.connect(lambda: self.set_all_checked(False))
+        self.__table.itemChanged.connect(self.refresh)
+        self.refresh()
+
+    # -------------------------------------------------------------- widgets
+    @property
+    def table(self) -> QTableWidget:
+        """One row per bookmark."""
+        return self.__table
+
+    @property
+    def filter_edit(self) -> QLineEdit:
+        """Text that the visible rows contain."""
+        return self.__filter
+
+    @property
+    def select_all_button(self) -> QPushButton:
+        """Checks the visible rows."""
+        return self.__select_all
+
+    @property
+    def select_none_button(self) -> QPushButton:
+        """Unchecks the visible rows."""
+        return self.__select_none
+
+    @property
+    def last_values_box(self) -> QCheckBox:
+        """Whether the last values of masks are exported."""
+        return self.__last_values
+
+    @property
+    def status(self) -> StatusLabel:
+        """How many bookmarks are checked."""
+        return self.__status
+
+    @property
+    def export_button(self) -> QPushButton:
+        """ "Export…" button."""
+        return self.__export_button
+
+    # --------------------------------------------------------------- values
+    @property
+    def entries(self) -> tuple[BookmarkEntry, ...]:
+        """Every listed bookmark, in row order."""
+        return self.__entries
+
+    def is_checked(self, row: int) -> bool:
+        """True when ``row`` is chosen for the export."""
+        item = self.__table.item(row, ExportBookmarksDialog.__NAME)
+        return item.checkState() == Qt.CheckState.Checked
+
+    def set_checked(self, row: int, checked: bool) -> None:
+        """Choose ``row`` for the export, or not."""
+        item = self.__table.item(row, ExportBookmarksDialog.__NAME)
+        item.setCheckState(
+            Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
+        )
+
+    def set_all_checked(self, checked: bool) -> None:
+        """Check or uncheck every visible row."""
+        for row in range(self.__table.rowCount()):
+            if not self.__table.isRowHidden(row):
+                self.set_checked(row, checked)
+
+    def selected(self) -> list[BookmarkEntry]:
+        """Checked bookmarks, in row order (hidden rows included)."""
+        return [
+            entry
+            for row, entry in enumerate(self.__entries)
+            if self.is_checked(row)
+        ]
+
+    def include_last_values(self) -> bool:
+        """True when the last values of masks are exported too."""
+        return self.__last_values.isChecked()
+
+    def apply_filter(self, *_: object) -> None:
+        """Hide the rows that do not contain the filter text."""
+        text = self.__filter.text().strip().casefold()
+        for row, entry in enumerate(self.__entries):
+            shown = not text or text in ExportBookmarksDialog.__haystack(entry)
+            self.__table.setRowHidden(row, not shown)
+        self.refresh()
+
+    def refresh(self, *_: object) -> None:
+        """Count the checked rows and enable "Export…"."""
+        checked = len(self.selected())
+        message = "{} of {} bookmarked queries selected."
+        self.__status.show_neutral(message.format(checked, len(self.__entries)))
+        self.__export_button.setEnabled(checked > 0)
+
+    def accept(self) -> None:
+        """Close with ``Accepted`` only when a bookmark is checked."""
+        if self.selected():
+            super().accept()
+
+    # ------------------------------------------------------------ internals
+    def __add_row(self, row: int, entry: BookmarkEntry) -> None:
+        bookmark = entry.bookmark
+        name = QTableWidgetItem(bookmark.name)
+        name.setFlags(
+            Qt.ItemFlag.ItemIsEnabled
+            | Qt.ItemFlag.ItemIsSelectable
+            | Qt.ItemFlag.ItemIsUserCheckable
+        )
+        name.setCheckState(Qt.CheckState.Checked)
+        name.setIcon(
+            ToolbarIcons.mask() if bookmark.is_mask else ToolbarIcons.query()
+        )
+        kind = (
+            ExportBookmarksDialog.MASK_TYPE
+            if bookmark.is_mask
+            else ExportBookmarksDialog.QUERY_TYPE
+        )
+        tokens = ", ".join(p.token for p in bookmark.placeholders)
+        query = " ".join(bookmark.sql.split())
+        limit = ExportBookmarksDialog.__MAX_QUERY_TEXT
+        if len(query) > limit:
+            query = "{}…".format(query[: limit - 1])
+        connection = QTableWidgetItem(entry.profile.display_name)
+        connection.setToolTip(
+            SafeText.tooltip(entry.profile.config.default_name())
+        )
+        sql = QTableWidgetItem(query)
+        sql.setToolTip(SafeText.tooltip(bookmark.sql))
+        items = (
+            (ExportBookmarksDialog.__NAME, name),
+            (ExportBookmarksDialog.__TYPE, QTableWidgetItem(kind)),
+            (ExportBookmarksDialog.__CONNECTION, connection),
+            (ExportBookmarksDialog.__TARGET, QTableWidgetItem(bookmark.target)),
+            (ExportBookmarksDialog.__PLACEHOLDERS, QTableWidgetItem(tokens)),
+            (ExportBookmarksDialog.__QUERY, sql),
+        )
+        for column, item in items:
+            if column != ExportBookmarksDialog.__NAME:
+                # Read only; the item text is never rendered as HTML.
+                item.setFlags(
+                    Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+                )
+            self.__table.setItem(row, column, item)
+
+    @staticmethod
+    def __haystack(entry: BookmarkEntry) -> str:
+        """Text searched by the filter."""
+        bookmark = entry.bookmark
+        parts = (
+            bookmark.name,
+            entry.profile.display_name,
+            bookmark.target,
+            bookmark.sql,
+        )
+        return "\n".join(parts).casefold()

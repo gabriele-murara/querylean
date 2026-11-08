@@ -42,6 +42,8 @@ class TestMainWindowConnections(MainWindowTestBase):
     def wait_state(self, qtbot, window, state) -> None:
         qtbot.waitUntil(lambda: window.state == state, timeout=self.WAIT_MS)
 
+    EMPTY_MENU = ["New connection…", "", "Export bookmarked queries…"]
+
     def menu_texts(self, window) -> list[str]:
         return [a.text() for a in window.connections_menu.actions()]
 
@@ -53,7 +55,7 @@ class TestMainWindowConnections(MainWindowTestBase):
         assert (
             button.popupMode() == QToolButton.ToolButtonPopupMode.InstantPopup
         )
-        assert self.menu_texts(window) == [ConnectionsMenu.NEW_TEXT]
+        assert self.menu_texts(window) == self.EMPTY_MENU
 
     def test_menu_lists_saved_connections(self, window):
         prod = window.save_connection(self.PROD, "pw", remember=False)
@@ -63,6 +65,8 @@ class TestMainWindowConnections(MainWindowTestBase):
             "",
             "Produzione",
             "ro@db2/test",
+            "",
+            ConnectionsMenu.EXPORT_BOOKMARKS_TEXT,
         ]
         # When not connected, the connection just saved becomes active.
         assert window.active_connection.profile_id == test.profile_id
@@ -158,7 +162,7 @@ class TestMainWindowConnections(MainWindowTestBase):
         assert not path.exists()
         assert window.delete_connection(test.profile_id, confirm=False)
         assert window.active_connection is None
-        assert self.menu_texts(window) == [ConnectionsMenu.NEW_TEXT]
+        assert self.menu_texts(window) == self.EMPTY_MENU
 
     def test_password_is_shared_by_account_and_removed_with_it(self, window):
         backend = window.secrets.backend

@@ -17,7 +17,7 @@ volta, un editor SQL e una tabella di risultati copiabili.
   - [autocompletamento](#autocompletamento) di tabelle, colonne, alias, parole chiave e funzioni con `Ctrl+Spazio`, che si apre anche da solo mentre si scrive.
 - Una connessione usa un database oppure [tutti i database](#tutti-i-database) a cui l'account ha accesso.
 - Barra laterale con i database, le tabelle e le viste a cui si ha accesso: un clic su una tabella prepara nell'editor `SELECT * FROM <tabella> LIMIT 1;` e ne mostra le colonne (tipo, chiavi, commenti).
-- Query nei segnalibri: una query salvata con un nome per una connessione si riesegue dal menu **Bookmarked queries**, solo su quella connessione. Un segnalibro può essere una [maschera](#maschere) con segnaposto `${NOME}` per i valori che cambiano.
+- Query nei segnalibri: una query salvata con un nome per una connessione si riesegue dal menu **Bookmarked queries**, solo su quella connessione. Un segnalibro può essere una [maschera](#maschere) con segnaposto `${NOME}` per i valori che cambiano. I segnalibri si possono [esportare](#esportare-le-query-nei-segnalibri) in un file JSON.
 - Sono ammesse solo istruzioni di lettura (`SELECT`, `WITH … SELECT`, `UNION`, `SHOW`, `DESCRIBE`/`DESC`, `EXPLAIN SELECT`). Ogni query passa da un validatore basato sul parsing.
 - Alla connessione vengono controllati i privilegi dell'account database per database: un database che l'account può modificare viene rifiutato finché non lo si accetta in [modalità attenzione](#modalità-attenzione).
 - L'esecuzione avviene fuori dal thread della GUI, con indicatore di attività, timeout e un pulsante **Stop** (Interrompi) lampeggiante che compare solo quando una query dura più di un secondo.
@@ -85,6 +85,8 @@ Ogni voce ha un sottomenu:
 - **Connect** (Connetti): la rende attiva e si connette. Se si è già connessi a un'altra, quella viene chiusa prima.
 - **Edit…** (Modifica…): apre la finestra di compilazione con i valori salvati. Se è la connessione in uso, le modifiche valgono dalla prossima connessione.
 - **Delete…** (Elimina…): chiede conferma, poi cancella il file della connessione e le sue query nei segnalibri. Se è quella in uso, la chiude.
+
+In fondo, **Export bookmarked queries…** esporta i segnalibri delle connessioni salvate (vedi [Esportare le query nei segnalibri](#esportare-le-query-nei-segnalibri)).
 
 Il pulsante **Connect** (Connetti) della barra usa la connessione attiva; se non ne esiste nessuna, apre **New connection…**. Una connessione appena salvata diventa attiva se in quel momento non si è connessi.
 
@@ -170,6 +172,35 @@ SELECT * FROM documents WHERE code IN (${CODES}) AND importDateTime >= '${IMPORT
 - **Esecuzione**: nel menu una maschera ha l'icona `${}` e il nome termina con "…" (le query nei segnalibri senza segnaposto hanno l'icona di un foglio blu e si eseguono subito); sceglierla apre **Run mask** (Esegui maschera), con un campo per segnaposto: calendario per date e date-ora, editor dell'ora, TRUE/FALSE per i booleani, un riquadro con un valore per riga per le liste. Ogni valore è obbligatorio. I campi partono dai **valori usati l'ultima volta, evidenziati in giallo** finché non vengono cambiati, altrimenti dai predefiniti (**Defaults**, Predefiniti, li ripristina tutti). Sotto, la query compilata viene controllata a ogni modifica: **Run** si attiva solo con valori validi e una query di lettura. La query compilata va nell'editor (annullabile) e si esegue come un segnalibro, solo sulla sua connessione e passando dal validatore.
 - **Modificare una maschera**: il nome in cima a **Run mask** si può modificare; il nuovo nome (non vuoto e diverso da quello di un altro segnalibro della connessione) viene salvato quando la maschera viene eseguita o aperta nell'editor, mentre **Cancel** (Annulla) mantiene quello vecchio. **Open in editor** (Apri nell'editor) nella stessa finestra carica la maschera con i suoi segnaposto, senza eseguirla; **Save query** con lo stesso nome la sostituisce e conserva gli ultimi valori dei segnaposto che ha ancora. **Run** su una query con segnaposto nell'editor viene rifiutato con l'elenco dei segnaposto da sostituire, mostrato sia in rosso sotto i risultati sia nella finestra **Placeholders to fill in** (Segnaposto da compilare).
 - Le maschere, con i loro ultimi valori, sono salvate con gli altri segnalibri della connessione (file dei segnalibri versione 2; i file delle versioni precedenti vengono letti senza modifiche).
+
+### Esportare le query nei segnalibri
+
+**Connections** → **Export bookmarked queries…** (Esporta le query nei segnalibri, anche senza connessione) oppure **Bookmarked queries** → **Export…** (Esporta) apre **Export bookmarked queries**, con le query nei segnalibri e le maschere di **tutte le connessioni salvate**:
+
+- una riga per segnalibro, con quello che li distingue: nome, tipo (**Query** oppure **Mask**, maschera), connessione, target `<utente>@<host>:<porta>/<database>`, segnaposto e la query su una riga (completa nel tooltip). Due segnalibri con lo stesso nome su connessioni diverse sono righe distinte;
+- ogni riga parte selezionata; il filtro mostra solo le righe che contengono il testo scritto (nome, connessione, target o query), **Select all** (Seleziona tutto) e **Select none** (Deseleziona tutto) agiscono sulle righe visibili. **Export…** si attiva quando almeno una riga è selezionata e chiede il nome del file (`querylean-bookmarks.json` come predefinito);
+- **Include the last values used in masks** (Includi gli ultimi valori usati nelle maschere) è disattivata come predefinito: quei valori possono essere dati reali.
+
+Sono elencati solo i segnalibri del target attuale di ogni connessione (quelli che mostra il suo menu). La connessione serve solo a scegliere: **il file contiene solo le query e le maschere**, senza host, porta, utente, database né password, così si può condividere con utenti che eseguono le query sui propri server (per esempio un database locale di sviluppo) con le proprie credenziali. Lo stesso segnalibro salvato per più connessioni viene scritto una volta sola. Il file è scritto con permessi 0600. Il formato, pensato per un futuro import in un'altra installazione di QueryLean:
+
+```json
+{
+  "format": "querylean-bookmarks",
+  "format_version": 1,
+  "exported_at": "2026-11-08T09:30:00+00:00",
+  "exported_by": {"application": "querylean", "version": "…"},
+  "bookmarks": [
+    {"name": "Users", "kind": "query", "sql": "SELECT * FROM users"},
+    {"name": "Orders by year", "kind": "mask",
+     "sql": "SELECT * FROM orders WHERE year = ${YEAR}",
+     "placeholders": [{"name": "YEAR", "type": "integer", "list": false,
+                       "default": "2025", "description": ""}],
+     "last_values": {"YEAR": "2024"}}
+  ]
+}
+```
+
+Ogni segnalibro ha gli stessi campi dei file dei segnalibri, senza la connessione (`last_values` solo se richiesto): chi lo importa sceglie la connessione per cui salvarlo. `format_version` cambia solo con modifiche incompatibili.
 
 ### Regole di esecuzione
 
@@ -341,7 +372,7 @@ src/querylean/
   app/          avvio (Application), metadati (AppInfo), smoke test
   log/          logger dell'applicazione, log ruotato, redazione dei segreti
   config/       modello della configurazione e persistenza JSON
-  bookmarks/    query nei segnalibri per connessione (QueryBookmark, BookmarkStore) e maschere (MaskTemplate, Placeholder, PlaceholderType)
+  bookmarks/    query nei segnalibri per connessione (QueryBookmark, BookmarkStore) e maschere (MaskTemplate, Placeholder, PlaceholderType), esportazione (BookmarkExport, BookmarkEntry)
   completion/   autocompletamento: scanner tollerante, analisi dello statement, proposte (CompletionEngine)
   security/     password nel portachiavi (SecretStore astratta, KeyringSecretStore)
   export/       esportazione Excel/CSV/JSON (ResultExporter astratta)
@@ -521,6 +552,7 @@ Per verificare un download: `sha256sum -c SHA256SUMS --ignore-missing`.
 
 - Una sola connessione aperta e una sola query alla volta, una sola istruzione per esecuzione.
 - Non sono supportati: TLS/SSH tunnel configurabili da GUI, cronologia, paginazione.
+- Le query nei segnalibri si possono esportare ma non ancora importare.
 - L'esportazione salva solo le righe caricate (al massimo 10.000): per esportarne di più serve uno strumento come `mysqldump` o `mysql --batch`.
 - `SHOW` è ammesso solo nelle forme riconosciute dal parser; le altre vengono rifiutate.
 - Colonne, tabelle e alias il cui nome è una parola di scrittura (`update`, `delete`, `insert`, …) vengono rifiutati anche se quotati o qualificati; i nomi che contengono soltanto una di queste parole (`updated_at`, `delete_flag`) sono ammessi. Viene rifiutata anche la funzione di stringa `INSERT()`. Le parole dentro stringhe e commenti non vengono controllate.

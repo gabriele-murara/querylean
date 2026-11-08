@@ -28,6 +28,8 @@ from PySide6.QtWidgets import (
 )
 
 from querylean.app.app_info import AppInfo
+from querylean.bookmarks.bookmark_entry import BookmarkEntry
+from querylean.bookmarks.bookmark_export import BookmarkExport
 from querylean.bookmarks.mask_error import MaskError
 from querylean.bookmarks.mask_template import MaskTemplate
 from querylean.bookmarks.placeholder import Placeholder
@@ -60,6 +62,9 @@ from querylean.security.secret_storage_error import SecretStorageError
 from querylean.security.secret_store import SecretStore
 from querylean.ui.dialogs.about_dialog import AboutDialog
 from querylean.ui.dialogs.connection_dialog import ConnectionDialog
+from querylean.ui.dialogs.export_bookmarks_dialog import (
+    ExportBookmarksDialog,
+)
 from querylean.ui.dialogs.fill_mask_dialog import FillMaskDialog
 from querylean.ui.dialogs.save_mask_dialog import SaveMaskDialog
 from querylean.ui.editor.sql_editor import SqlEditor
@@ -93,7 +98,9 @@ class MainWindow(QMainWindow):
     (``user@host:port/database``): the menu offers, and the worker runs,
     only those of the open session. A mask (bookmark with placeholders)
     opens ``FillMaskDialog`` and runs the query compiled with its values;
-    text with placeholders is never run from the editor."""
+    text with placeholders is never run from the editor. The bookmarks of
+    every saved connection can be exported to a JSON file
+    (``export_bookmarks``, ``BookmarkExport``), also without a session."""
 
     # Delay after the query timeout before the watchdog sends KILL QUERY: lets
     # the server-side MAX_EXECUTION_TIME act first.
@@ -1026,6 +1033,65 @@ class MainWindow(QMainWindow):
             self.__editor.replace_query(statement)
         self.__editor.setFocus()
 
+    # ------------------------------------------------------- bookmark export
+    def bookmark_entries(self) -> list[BookmarkEntry]:
+        """Bookmarked queries of every saved connection (those of its
+        current target, as the menu offers them), sorted by connection
+        and name."""
+        store = self.__config_manager.bookmarks
+        entries = [
+            BookmarkEntry(profile, bookmark)
+            for profile in self.__profiles
+            for bookmark in store.load(
+                profile.profile_id, QueryBookmark.target_of(profile.config)
+            )
+        ]
+        entries.sort(key=lambda entry: entry.sort_key)
+        return entries
+
+    def export_bookmarks(self) -> None:
+        """List the bookmarked queries of every saved connection, then save
+        the chosen ones in a JSON file (``BookmarkExport``)."""
+        entries = self.bookmark_entries()
+        if not entries:
+            self.__warn(
+                ExportBookmarksDialog.TITLE, "No bookmarked queries to export."
+            )
+            return
+        dialog = ExportBookmarksDialog(entries, self)
+        if dialog.exec() != ExportBookmarksDialog.DialogCode.Accepted:
+            return
+        path = self.__ask_bookmarks_path()
+        if path is not None:
+            self.export_bookmarks_to(
+                path,
+                dialog.selected(),
+                include_last_values=dialog.include_last_values(),
+            )
+
+    def export_bookmarks_to(
+        self,
+        path: Path,
+        entries: list[BookmarkEntry],
+        *,
+        include_last_values: bool = False,
+    ) -> bool:
+        """Write ``entries`` to ``path``; False (after a warning) when the
+        file cannot be written."""
+        try:
+            count = BookmarkExport.write(
+                path, entries, include_last_values=include_last_values
+            )
+        except ConfigError as exc:
+            self.show_message(str(exc), error=True)
+            self.__warn(ExportBookmarksDialog.TITLE, str(exc))
+            return False
+        noun = "query" if count == 1 else "queries"
+        msg = "Exported {} bookmarked {} to {}."
+        self.show_message(msg.format(count, noun, path), tooltip=str(path))
+        return True
+
+    # --------------------------------------------------------- result export
     def export_results(self, exporter: ResultExporter | None = None) -> None:
         """Ask for a file name and export the displayed result.
 
@@ -1140,6 +1206,7 @@ class MainWindow(QMainWindow):
         self.__bookmarks_menu = BookmarksMenu(self)
         self.__bookmarks_menu.run_requested.connect(self.run_bookmark)
         self.__bookmarks_menu.delete_requested.connect(self.delete_bookmark)
+        self.__bookmarks_menu.export_requested.connect(self.export_bookmarks)
         self.__bookmarks_action.setMenu(self.__bookmarks_menu)
         self.__export_action = QAction(ToolbarIcons.export(), "Export", self)
         self.__export_action.setToolTip(
@@ -1170,6 +1237,9 @@ class MainWindow(QMainWindow):
         self.__connections_menu.connect_requested.connect(self.connect_to)
         self.__connections_menu.edit_requested.connect(self.edit_connection)
         self.__connections_menu.delete_requested.connect(self.delete_connection)
+        self.__connections_menu.export_bookmarks_requested.connect(
+            self.export_bookmarks
+        )
         self.__connections_action.setMenu(self.__connections_menu)
         self.__about_action = QAction(ToolbarIcons.about(), "About", self)
         self.__about_action.setToolTip("About {}".format(AppInfo.DISPLAY_NAME))
@@ -1814,9 +1884,37 @@ class MainWindow(QMainWindow):
         self.__export_dir = path.parent
         return path
 
-    def __confirm_overwrite(self, path: Path) -> bool:
+    def __ask_bookmarks_path(self) -> Path | None:
+        """JSON file chosen for the bookmark export (``.json`` added when
+        missing); None when cancelled."""
+        start = self.__export_dir / BookmarkExport.DEFAULT_FILE_NAME
+        name, _selected = QFileDialog.getSaveFileName(
+            self,
+            ExportBookmarksDialog.TITLE,
+            str(start),
+            BookmarkExport.NAME_FILTER,
+        )
+        if not name:
+            return None
+        path = Path(name)
+        if path.suffix.lower() != BookmarkExport.EXTENSION:
+            path = path.with_name(
+                "{}{}".format(path.name, BookmarkExport.EXTENSION)
+            )
+            # The dialog confirmed the overwrite of the name without the
+            # extension only.
+            if path.exists() and not self.__confirm_overwrite(
+                path, ExportBookmarksDialog.TITLE
+            ):
+                return None
+        self.__export_dir = path.parent
+        return path
+
+    def __confirm_overwrite(
+        self, path: Path, title: str = "Export result"
+    ) -> bool:
         return self.__confirm(
-            "Export result",
+            title,
             "The file {} already exists. Replace it?".format(path.name),
         )
 

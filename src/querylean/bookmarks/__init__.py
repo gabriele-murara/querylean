@@ -1,2 +1,2 @@
 """Bookmarked queries and masks (queries with placeholders), saved per
-connection."""
+connection, and their export to a JSON file."""
