@@ -31,15 +31,42 @@ class TestMainWindow(MainWindowTestBase):
         assert not window.execute_action.isEnabled()
         assert not window.stop_action.isEnabled()
 
-    def test_toolbar_order_and_icons(self, window):
-        texts = [action.text() for action in window.toolbar_actions()]
-        assert texts == [
+    def texts(self, window) -> list[str]:
+        return [action.text() for action in window.visible_toolbar_actions()]
+
+    def test_toolbar_order_and_icons(self, qtbot, window):
+        assert self.texts(window) == ["Connections", "Connect", "About"]
+        toolbar = window.findChild(QToolBar, "main-toolbar")
+        shown = [a for a in toolbar.actions() if a.isVisible()]
+        assert shown == window.visible_toolbar_actions()
+        self.connect(qtbot, window)
+        assert self.texts(window) == [
             "Run",
-            "Save query",
             "Bookmarked queries",
+            "Save query",
             "Export",
-            "Connect",
             "Connections",
+            "Disconnect",
+            "About",
+        ]
+        assert not window.save_query_action.isEnabled()
+        assert not window.export_action.isEnabled()
+        window.editor.setPlainText("SELECT n FROM t")
+        assert window.save_query_action.isEnabled()
+        window.editor.setPlainText("   ")
+        assert not window.save_query_action.isEnabled()
+        self.run(qtbot, window, "SELECT n FROM t")
+        assert window.export_action.isEnabled()
+        window.toggle_connection()
+        qtbot.waitUntil(
+            lambda: window.state == ConnectionState.DISCONNECTED,
+            timeout=self.WAIT_MS,
+        )
+        # Export stays while the result is in the table.
+        assert self.texts(window) == [
+            "Export",
+            "Connections",
+            "Connect",
             "About",
         ]
         for action in window.toolbar_actions():

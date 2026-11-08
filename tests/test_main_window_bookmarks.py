@@ -54,8 +54,10 @@ class TestMainWindowBookmarks(MainWindowTestBase):
         assert not window.save_query_action.isEnabled()
         assert not window.bookmarks_action.isEnabled()
         self.open(qtbot, window, self.PROD)
-        assert window.save_query_action.isEnabled()
         assert window.bookmarks_action.isEnabled()
+        assert not window.save_query_action.isEnabled()
+        window.editor.setPlainText("SELECT 1")
+        assert window.save_query_action.isEnabled()
 
     def test_save_asks_a_name_and_runs(
         self, qtbot, window, connector, monkeypatch

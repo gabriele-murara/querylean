@@ -449,16 +449,32 @@ class MainWindow(QMainWindow):
         return self.__stop_action
 
     def toolbar_actions(self) -> tuple[QAction, ...]:
-        """Toolbar actions in display order."""
+        """Toolbar actions in display order; the session ones
+        (``session_actions``) are hidden while not connected."""
         return (
             self.__execute_action,
-            self.__save_query_action,
             self.__bookmarks_action,
+            self.__save_query_action,
             self.__export_action,
-            self.__connect_action,
             self.__connections_action,
+            self.__connect_action,
             self.__about_action,
         )
+
+    def session_actions(self) -> tuple[QAction, ...]:
+        """Toolbar actions shown only while connected: Run, Bookmarked
+        queries, Save query and Export (Export also while a result is in
+        the table)."""
+        return (
+            self.__execute_action,
+            self.__bookmarks_action,
+            self.__save_query_action,
+            self.__export_action,
+        )
+
+    def visible_toolbar_actions(self) -> list[QAction]:
+        """Toolbar actions currently shown, in display order."""
+        return [a for a in self.toolbar_actions() if a.isVisible()]
 
     # ------------------------------------------------------------------ actions
     def show_about(self) -> None:
@@ -1325,8 +1341,9 @@ class MainWindow(QMainWindow):
         status_bar.addPermanentWidget(self.__state_label)
         self.setStatusBar(status_bar)
 
-        # Order: Run, Save query, Bookmarked queries, Export,
-        # Connect/Disconnect, Connections, About.
+        # Order: Run, Bookmarked queries, Save query, Export, Connections,
+        # Connect/Disconnect, About; without a session only the last three
+        # (and Export while a result is in the table).
         self.__connect_icon = ToolbarIcons.connect()
         self.__disconnect_icon = ToolbarIcons.disconnect()
         self.__execute_action = QAction(ToolbarIcons.play(), "Run", self)
@@ -1421,6 +1438,8 @@ class MainWindow(QMainWindow):
         self.__editor.completion_engine = CompletionEngine(self.__schema)
         self.__editor.columns_needed.connect(self.load_columns)
         self.__editor.tables_needed.connect(self.load_tables)
+        # "Save query" needs some text.
+        self.__editor.textChanged.connect(self.__update_actions)
 
         self.__results = ResultsTable()
         self.__rows_label = QLabel()
@@ -1590,8 +1609,15 @@ class MainWindow(QMainWindow):
         )
         self.__connect_action.setEnabled(not busy and not self.__running)
         self.__connections_action.setEnabled(not busy and not self.__running)
+        for action in self.session_actions():
+            action.setVisible(connected)
+        has_result = self.__result is not None and bool(self.__result.columns)
+        self.__export_action.setVisible(connected or has_result)
         self.__execute_action.setEnabled(connected and not self.__running)
-        self.__save_query_action.setEnabled(connected and not self.__running)
+        has_text = bool(self.__editor.toPlainText().strip())
+        self.__save_query_action.setEnabled(
+            connected and has_text and not self.__running
+        )
         self.__bookmarks_action.setEnabled(connected and not self.__running)
         self.__stop_action.setEnabled(self.__running)
         self.__pager.setEnabled(not self.__running)

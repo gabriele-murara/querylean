@@ -67,7 +67,7 @@ macOS compatibility should be considered confirmed only once the corresponding C
 
 ## Usage
 
-The toolbar contains, in order: **Run** (▶), **Save query** (☆) and **Bookmarked queries** (drop-down menu), both enabled only while connected, **Export** (drop-down menu, enabled when there is a result), **Connect**/**Disconnect**, **Connections** (drop-down menu) and **About** (version, author, license). The connection state is shown at the bottom right. The user interface is in English. On the left, for the whole height of the window, there is the **Tables** side bar.
+The toolbar changes with the connection. Without an open connection it contains, in order, only **Connections** (drop-down menu), **Connect** and **About** (version, author, license), preceded by **Export** while a result is left in the table. While connected it contains, in order: **Run** (▶), **Bookmarked queries** (drop-down menu), **Save query** (☆, enabled when the editor contains text), **Export** (drop-down menu, enabled when there is a result), **Connections**, **Disconnect** and **About**. After **Disconnect** it goes back to the first form. The connection state is shown at the bottom right. The user interface is in English. On the left, for the whole height of the window, there is the **Tables** side bar.
 
 While a query runs, an activity bar and the text of the query appear below the results. If the query is still running after one second, a red **Stop** button (■) appears next to the activity bar and blinks until the query ends: a click interrupts it. Quick queries never show it.
 
@@ -236,7 +236,7 @@ Copied cells are separated by tabs and rows by newlines. The selection is copied
 - **The rows already loaded** are exported (the page shown, see Pages), that is at most the configured row limit: the query is not run again. If the result was truncated, the final message says so.
 - The file is written in a separate thread, so the window stays usable. It is first written to a temporary file in the same folder and then renamed: an existing file is replaced only by a complete export.
 - The file is readable only by your user (permissions `0600`), because it may contain confidential data.
-- Exporting is still possible after disconnecting.
+- Exporting is still possible after disconnecting: **Export** stays in the toolbar while a result is left in the table.
 
 | Format | Content |
 | --- | --- |

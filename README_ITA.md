@@ -67,7 +67,7 @@ La compatibilità macOS va considerata confermata solo quando la pipeline CI cor
 
 ## Uso
 
-La barra in alto contiene, nell'ordine: **Run** (Esegui, ▶), **Save query** (Salva query, ☆) e **Bookmarked queries** (Query nei segnalibri, menu a tendina), attivi solo da connessi, **Export** (Esporta, menu a tendina, attivo quando c'è un risultato), **Connect**/**Disconnect** (Connetti/Disconnetti), **Connections** (Connessioni, menu a tendina) e **About** (Informazioni: versione, autore, licenza). Lo stato della connessione è in basso a destra. L'interfaccia è in inglese. A sinistra, per tutta l'altezza della finestra, c'è la barra **Tables** (Tabelle).
+La barra in alto cambia con la connessione. Senza una connessione aperta contiene, nell'ordine, solo **Connections** (Connessioni, menu a tendina), **Connect** (Connetti) e **About** (Informazioni: versione, autore, licenza), precedute da **Export** finché nella tabella resta un risultato. Da connessi contiene, nell'ordine: **Run** (Esegui, ▶), **Bookmarked queries** (Query nei segnalibri, menu a tendina), **Save query** (Salva query, ☆, attivo quando l'editor contiene testo), **Export** (Esporta, menu a tendina, attivo quando c'è un risultato), **Connections**, **Disconnect** (Disconnetti) e **About**. Dopo **Disconnect** torna alla prima forma. Lo stato della connessione è in basso a destra. L'interfaccia è in inglese. A sinistra, per tutta l'altezza della finestra, c'è la barra **Tables** (Tabelle).
 
 Mentre una query è in esecuzione, sotto i risultati compaiono una barra di attività e il testo della query. Se dopo un secondo la query è ancora in corso, accanto alla barra di attività compare un pulsante rosso **Stop** (Interrompi, ■) che lampeggia fino alla fine della query: un clic la interrompe. Le query veloci non lo mostrano mai.
 
@@ -236,7 +236,7 @@ Le celle copiate sono separate da tabulazioni e le righe da a capo. La selezione
 - Si esportano **le righe già caricate** (la pagina mostrata, vedi Pagine), cioè al massimo il limite di righe impostato: la query non viene rieseguita. Se il risultato era troncato, il messaggio finale lo ricorda.
 - Il file viene scritto in un thread separato, quindi la finestra resta utilizzabile. Lo si scrive prima in un file temporaneo nella stessa cartella, poi lo si rinomina: un file esistente viene sostituito solo da un'esportazione completa.
 - Il file è leggibile solo dal tuo utente (permessi `0600`), perché può contenere dati riservati.
-- L'esportazione resta possibile anche dopo la disconnessione.
+- L'esportazione resta possibile anche dopo la disconnessione: **Export** resta nella barra finché nella tabella c'è un risultato.
 
 | Formato | Contenuto |
 | --- | --- |

@@ -69,16 +69,22 @@ class TestMainWindowExport(MainWindowTestBase):
     def test_export_still_possible_after_disconnect(
         self, qtbot, window, tmp_path
     ):
+        assert not window.export_action.isVisible()
         self.connect(qtbot, window)
+        assert window.export_action.isVisible()
+        assert not window.export_action.isEnabled()
         self.run(qtbot, window, "SELECT n FROM t")
         window.toggle_connection()
         qtbot.waitUntil(
             lambda: window.connect_action.text() == "Connect",
             timeout=self.WAIT_MS,
         )
+        texts = [a.text() for a in window.visible_toolbar_actions()]
+        assert texts == ["Export", "Connections", "Connect", "About"]
         assert window.export_action.isEnabled()
         self.export(qtbot, window, tmp_path / "r.csv")
         assert (tmp_path / "r.csv").exists()
+        assert window.export_action.isVisible()
 
     def test_unsupported_extension(self, qtbot, window, tmp_path):
         self.connect(qtbot, window)
