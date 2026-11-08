@@ -18,9 +18,9 @@ class ResultsPager(QWidget):
 
     page_changed = Signal(int)
 
-    TEXT = "Page {} of {}"
+    __TEXT = "Page {} of {}"
     COUNTING = "Counting the rows…"
-    ROWS = "{:,} rows"
+    __ROWS = "{:,} rows"
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -89,7 +89,7 @@ class ResultsPager(QWidget):
         self.__count = max(count, 1)
         self.__page = 0
         self.__label.setToolTip(
-            ResultsPager.ROWS.format(rows) if rows is not None else ""
+            ResultsPager.__ROWS.format(rows) if rows is not None else ""
         )
         self.__update()
         self.setVisible(self.__count > 1)
@@ -124,7 +124,7 @@ class ResultsPager(QWidget):
 
     def __update(self) -> None:
         self.__label.setText(
-            ResultsPager.TEXT.format(
+            ResultsPager.__TEXT.format(
                 "{:,}".format(self.__page + 1), "{:,}".format(self.__count)
             )
         )

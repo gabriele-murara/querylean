@@ -207,3 +207,35 @@ class TestMainWindowDatabases(MainWindowTestBase):
         self.open(qtbot, window)
         assert window.sidebar.is_writable("shop") is False
         assert window.sidebar.is_writable("crm") is False
+
+    def test_pages_are_dropped_as_soon_as_the_database_changes(
+        self, qtbot, window, connector
+    ):
+        schema = SchemaHandler(schemas={"shop": self.SHOP, "crm": self.CRM})
+        sent = []
+
+        def handler(sql):
+            sent.append(sql)
+            if sql.startswith("SELECT COUNT(*) FROM ("):
+                return ["COUNT(*)"], [(2500,)]
+            if sql.startswith("SELECT n FROM t"):
+                return ["n"], [(i,) for i in range(2500)]
+            return schema(sql)
+
+        def configure(conn):
+            conn.handler = handler
+            conn.databases = ["information_schema", "shop", "crm"]
+
+        connector.configure = configure
+        self.open(qtbot, window, database="shop")
+        self.run(qtbot, window, "SELECT n FROM t")
+        assert window.pager.isVisible()
+        # The page must not be read on the database chosen meanwhile.
+        window.select_database("crm")
+        window.pager.next_button.click()
+        qtbot.waitUntil(
+            lambda: window.schema.database == "crm", timeout=self.WAIT_MS
+        )
+        qtbot.waitUntil(lambda: not window.running, timeout=self.WAIT_MS)
+        assert not any("OFFSET" in sql for sql in sent)
+        assert window.pager.isHidden()

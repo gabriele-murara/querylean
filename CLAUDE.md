@@ -174,7 +174,7 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
 - **Sicurezza read-only su più livelli**:
   - Il validatore è **fail-closed**: in caso di dubbio rifiuta, anche per eccezioni impreviste.
   - Ha tre stadi indipendenti: lexer MySQL, parole e funzioni, AST sqlglot.
-  - Al server si invia il **testo originale** (`ValidationResult.statement`), mai SQL rigenerato. Unica eccezione: le pagine (`PagedQuery`), che racchiudono il testo originale invariato e vengono validate di nuovo per intero.
+  - Al server si invia il **testo originale** (`ValidationResult.statement`), mai SQL rigenerato. Unica eccezione (1.13): le pagine (`PagedQuery`), che racchiudono il testo originale invariato e vengono validate di nuovo per intero.
   - Non sostituirlo con una ricerca di parole chiave nel testo.
   - Ogni nuova forma ammessa richiede test, sia di accettazione sia di rifiuto, in `tests/test_read_only_validator.py`.
 - **Opzioni di connessione da mantenere** (`ConnectionParams.to_connect_kwargs`, `ConnectionManager`):
@@ -232,7 +232,7 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
   - va applicato durante il fetch: cursore non bufferizzato, `fetchmany` fino a `limit+1`;
   - se le righe sono troncate, `abort_session()`; la riconnessione è trasparente.
   - Il massimo è 10.000.
-  - **Pagine** (scelta dell'utente, 1.12): solo se il risultato è troncato e la query è `SELECT`/`WITH` (`PagedQuery.is_pageable`), `MainWindow` chiede il conteggio (`count_requested`, `PagedQuery.count_statement`) e poi le pagine oltre la prima (`page_requested`, `PagedQuery.page_statement`, pagina = `row_limit` del risultato). Lo statement validato va **invariato** dentro una tabella derivata, chiuso su una riga a sé (un commento finale non può nascondere la parentesi); le istruzioni costruite passano **sempre** da `QueryExecutor` (validatore, timeout, limite di righe), mai SQL fuori dal validatore. Il worker le esegue solo se la sessione ha ancora il target della query (`DbWorker.PAGES_TARGET`); le pagine si scartano a ogni nuova query, cambio di database attivo o sessione non `CONNECTED`. Nessun cursore tenuto aperto tra una pagina e l'altra.
+  - **Pagine** (scelta dell'utente, 1.13): solo se il risultato è troncato e la query è `SELECT`/`WITH` (`PagedQuery.is_pageable`), `MainWindow` chiede il conteggio (`count_requested`, `PagedQuery.count_statement`) e poi le pagine oltre la prima (`page_requested`, `PagedQuery.page_statement`, pagina = `row_limit` del risultato). Lo statement validato va **invariato** dentro una tabella derivata, chiuso su una riga a sé (un commento finale non può nascondere la parentesi); le istruzioni costruite passano **sempre** da `QueryExecutor` (validatore, timeout, limite di righe), mai SQL fuori dal validatore. Il worker le esegue solo se la sessione ha ancora il target della query (`DbWorker.PAGES_TARGET`); le pagine si scartano a ogni nuova query, alla **richiesta** di cambio del database attivo (`select_database`, prima che il cambio vada in coda al worker: una pagina chiesta dopo leggerebbe il nuovo database) o con la sessione non `CONNECTED`. Nessun cursore tenuto aperto tra una pagina e l'altra.
   - Sotto i risultati una sola riga: Stop, avanzamento, messaggio (`Running: …`/`Query executed: …`), righe · tempo · avviso del limite e, a destra, `ResultsPager`.
 - **Export**:
   - esporta solo le righe già caricate (`MainWindow.__result`), senza rieseguire la query e senza superare il limite di righe;
@@ -290,7 +290,7 @@ L'interruzione (`DbWorker.cancel_query`) gira in un thread a sé e manda `KILL Q
   - 1.10: maschere (segnalibri con segnaposto tipizzati `${NOME}`, liste per `IN`, finestre Save mask e Run mask con gli ultimi valori usati). Niente cronologia dei valori oltre l'ultima esecuzione, né funzioni o espressioni come valori.
   - 1.11: esportazione dei segnalibri e delle maschere in un file JSON strutturato;
   - 1.12: importazione di quel file in una connessione salvata scelta dall'utente. Niente sincronizzazione, import da altri formati o da URL;
-  - 1.12: pagine dei risultati troncati (conteggio e `LIMIT`/`OFFSET` su tabella derivata, vedi "Limite di righe"), nonostante PROJECT.md §8.1 escluda la paginazione remota.
+  - 1.13: pagine dei risultati troncati (conteggio e `LIMIT`/`OFFSET` su tabella derivata, vedi "Limite di righe"), nonostante PROJECT.md §8.1 escluda la paginazione remota.
 
 ## Packaging
 

@@ -27,7 +27,7 @@ at a time, a SQL editor and a table of copyable results.
   - copy of cells or rows as tab-separated text, ready to paste into Excel and LibreOffice Calc;
   - export of the result to Excel (`.xlsx`), CSV or JSON.
 - The row limit (default 1,000, maximum 10,000) is enforced while fetching the data.
-- **Pages**: when a `SELECT`/`WITH` query returns more rows than the row limit, the first rows are shown at once ("Results limited to the first N rows"), then the rows are counted with `SELECT COUNT(*) FROM (<query>) AS querylean_count` and **«** **‹** "Page N of M" **›** **»** appear on the right of the line below the results (the total is in the tooltip). One page holds as many rows as the row limit. The count runs only when the result was truncated. Every other page is read with `SELECT * FROM (<query>) AS querylean_page LIMIT <limit> OFFSET <n>`; the first page is the result already loaded. Both statements go through the read-only validator and run only on the session that ran the query; the pages disappear with a new query, another active database or a disconnection. Row numbers continue from page to page; copying and **Export** take the page shown. Without `ORDER BY` MySQL does not guarantee the order of the rows across pages. A query that cannot be a derived table (for example `SELECT *` on a join with two columns named alike) has no pages: the message says why. `SHOW`, `DESCRIBE` and `EXPLAIN` have no pages.
+- **Pages**: when a `SELECT`/`WITH` query returns more rows than the row limit, the first rows are shown at once ("Results limited to the first N rows"), then the rows are counted with `SELECT COUNT(*) FROM (<query>) AS querylean_count` and **«** **‹** "Page N of M" **›** **»** appear on the right of the line below the results (the total is in the tooltip). One page holds as many rows as the row limit. The count runs only when the result was truncated. Every other page is read with `SELECT * FROM (<query>) AS querylean_page LIMIT <limit> OFFSET <n>`; the first page is the result already loaded. Both statements go through the read-only validator and run only on the session that ran the query; the pages disappear with a new query, as soon as another active database is chosen, or with a disconnection. Row numbers continue from page to page; copying and **Export** take the page shown. Without `ORDER BY` MySQL does not guarantee the order of the rows across pages. A query that cannot be a derived table (for example `SELECT *` on a join with two columns named alike) has no pages: the message says why. `SHOW`, `DESCRIBE` and `EXPLAIN` have no pages.
 - Window, splitter and side bar sizes are remembered between sessions.
 - No telemetry, no cloud services, no local database.
 
@@ -563,7 +563,8 @@ To verify a download: `sha256sum -c SHA256SUMS --ignore-missing`.
 ## Limitations of this version
 
 - One open connection and one query at a time, one statement per execution.
-- Not supported: TLS/SSH tunnels configurable from the GUI, history, pagination.
+- Not supported: TLS/SSH tunnels configurable from the GUI, history.
+- Pages exist only for `SELECT`/`WITH` queries that can be a derived table, and each page is read again from the server (see Pages).
 - Bookmarked queries are imported into one connection at a time.
 - The export saves only the loaded rows (at most 10,000): to export more, use a tool such as `mysqldump` or `mysql --batch`.
 - `SHOW` is allowed only in the forms recognized by the parser; the others are rejected.

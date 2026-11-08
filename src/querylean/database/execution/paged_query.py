@@ -25,8 +25,8 @@ class PagedQuery:
     a derived table.
     """
 
-    COUNT_ALIAS = "querylean_count"
-    PAGE_ALIAS = "querylean_page"
+    __COUNT_ALIAS = "querylean_count"
+    __PAGE_ALIAS = "querylean_page"
     __QUERY_WORDS = ("SELECT", "WITH")
 
     @staticmethod
@@ -49,7 +49,7 @@ class PagedQuery:
     def count_statement(statement: str) -> str:
         """Statement that counts the rows of ``statement``."""
         sql = "SELECT COUNT(*) FROM (\n{}\n) AS {}"
-        return sql.format(statement, PagedQuery.COUNT_ALIAS)
+        return sql.format(statement, PagedQuery.__COUNT_ALIAS)
 
     @staticmethod
     def page_statement(statement: str, size: int, page: int) -> str:
@@ -57,7 +57,7 @@ class PagedQuery:
         size = max(int(size), 1)
         page = max(int(page), 0)
         sql = "SELECT * FROM (\n{}\n) AS {} LIMIT {} OFFSET {}"
-        return sql.format(statement, PagedQuery.PAGE_ALIAS, size, size * page)
+        return sql.format(statement, PagedQuery.__PAGE_ALIAS, size, size * page)
 
     @staticmethod
     def page_count(rows: int, size: int) -> int:

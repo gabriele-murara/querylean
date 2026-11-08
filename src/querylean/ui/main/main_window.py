@@ -135,6 +135,8 @@ class MainWindow(QMainWindow):
     SAVE_QUERY_TEXT = "Save query"
     __SAVE_QUERY_TIP = "Bookmark the selection or the whole query for the "
     __SAVE_QUERY_TIP += "current connection"
+    # Rows shown below the results.
+    __ROWS = "{} rows"
     __log = LogManager.get_logger(__name__)
 
     def __init__(
@@ -450,7 +452,8 @@ class MainWindow(QMainWindow):
 
     def toolbar_actions(self) -> tuple[QAction, ...]:
         """Toolbar actions in display order; the session ones
-        (``session_actions``) are hidden while not connected."""
+        (``session_actions``) are hidden while not connected, except
+        Export while a result is in the table."""
         return (
             self.__execute_action,
             self.__bookmarks_action,
@@ -935,11 +938,7 @@ class MainWindow(QMainWindow):
         self.__rows_label.clear()
         self.__time_label.clear()
         self.__limit_label.clear()
-        preview = MainWindow.query_preview(sql)
-        cut = preview != " ".join(sql.split())
-        self.show_message(
-            "Running: {}".format(preview), tooltip=sql if cut else ""
-        )
+        self.__show_query_message("Running: {}", sql)
         if target is None:
             self.worker.query_requested.emit(
                 sql, cfg.row_limit, cfg.query_timeout
@@ -1056,6 +1055,9 @@ class MainWindow(QMainWindow):
         ):
             return
         self.__pending_database = database
+        # From now on a page would be read on ``database``: drop them before
+        # the change is queued, not when it is confirmed.
+        self.__drop_pages()
         self.worker.database_requested.emit(database)
 
     def use_column(self, table: TableInfo, column: str) -> None:
@@ -1861,21 +1863,17 @@ class MainWindow(QMainWindow):
         self.__result = result
         self.__finish_run()
         self.__results.set_result(result.columns, result.rows)
-        self.__rows_label.setText("{} rows".format(len(result.rows)))
+        self.__rows_label.setText(MainWindow.__ROWS.format(len(result.rows)))
         elapsed_ms = result.elapsed * 1000
         self.__time_label.setText("· {:.0f} ms".format(elapsed_ms))
         if result.truncated:
             msg = "· Results limited to the first {} rows"
             self.__limit_label.setText(msg.format(result.row_limit))
-        preview = MainWindow.query_preview(result.statement)
         if result.columns:
             msg = "Query executed: {}"
         else:
             msg = "Query executed (no tabular result): {}"
-        # The full statement is in the tooltip when the preview is cut.
-        cut = preview != " ".join(result.statement.split())
-        full = result.statement if cut else ""
-        self.show_message(msg.format(preview), tooltip=full)
+        self.__show_query_message(msg, result.statement)
         if (
             result.truncated
             and result.columns
@@ -1900,11 +1898,26 @@ class MainWindow(QMainWindow):
         else:
             self.__after_failure(kind)
 
-    def __on_count_finished(self, statement: str, rows: int) -> None:
-        self.__finish_run()
+    def __show_query_message(self, template: str, sql: str) -> None:
+        """``template`` with the one-line preview of ``sql``; the full
+        statement is in the tooltip when the preview is cut."""
+        preview = MainWindow.query_preview(sql)
+        cut = preview != " ".join(sql.split())
+        self.show_message(template.format(preview), tooltip=sql if cut else "")
+
+    def __paged_result(self, statement: str) -> QueryResult | None:
+        """The truncated result with pages, when ``statement`` is still its
+        statement (otherwise a late answer, to ignore)."""
         paged = self.__paged
         if paged is None or paged.statement != statement:
-            return  # result no longer shown
+            return None
+        return paged
+
+    def __on_count_finished(self, statement: str, rows: int) -> None:
+        self.__finish_run()
+        paged = self.__paged_result(statement)
+        if paged is None:
+            return
         pages = PagedQuery.page_count(rows, paged.row_limit)
         self.__pager.set_page_count(pages, rows)
         if pages <= 1:
@@ -1914,8 +1927,7 @@ class MainWindow(QMainWindow):
         self, statement: str, message: str, kind: str
     ) -> None:
         self.__finish_run()
-        paged = self.__paged
-        if paged is None or paged.statement != statement:
+        if self.__paged_result(statement) is None:
             return
         self.__drop_pages()
         msg = "The rows could not be counted, so there are no pages: {}"
@@ -1926,16 +1938,14 @@ class MainWindow(QMainWindow):
         self, statement: str, page: int, result: QueryResult
     ) -> None:
         self.__finish_run()
-        paged = self.__paged
-        if paged is None or paged.statement != statement:
-            return
-        self.__show_rows(page, result)
+        if self.__paged_result(statement) is not None:
+            self.__show_rows(page, result)
 
     def __on_page_failed(
         self, statement: str, page: int, message: str, kind: str
     ) -> None:
         self.__finish_run()
-        if self.__paged is None or self.__paged.statement != statement:
+        if self.__paged_result(statement) is None:
             return
         self.__pager.show_page(self.__page_shown)
         msg = "Page {} could not be read: {}"
@@ -1950,7 +1960,7 @@ class MainWindow(QMainWindow):
         self.__result = result
         self.__page_shown = page
         self.__results.show_rows(result.rows, page * paged.row_limit)
-        self.__rows_label.setText("{} rows".format(len(result.rows)))
+        self.__rows_label.setText(MainWindow.__ROWS.format(len(result.rows)))
         self.__update_actions()
 
     def __drop_pages(self) -> None:
